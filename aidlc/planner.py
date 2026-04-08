@@ -55,6 +55,11 @@ class Planner:
         finalization_pct = self.config.get("finalization_budget_percent", 10)
         finalization_threshold = 1.0 - (finalization_pct / 100.0)
 
+        # Diminishing returns tracking
+        recent_new_issues = []  # Track new issue counts per cycle (last N cycles)
+        diminishing_returns_window = self.config.get("diminishing_returns_window", 5)
+        diminishing_returns_threshold = self.config.get("diminishing_returns_threshold", 3)
+
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
         if self.config.get("dry_run") and max_cycles == 0:
@@ -88,14 +93,41 @@ class Planner:
                 save_state(self.state, self.run_dir)
 
             # Run one planning cycle
+            issues_before = self.state.issues_created
             result = self._planning_cycle()
 
             if result is None:
                 self.state.stop_reason = "Planning frontier is clear"
                 self.logger.info("No more planning work identified.")
                 break
+            elif result == "complete":
+                # Claude explicitly declared planning complete
+                break
             elif result:
                 consecutive_failures = 0
+
+                # Track new issues created this cycle for diminishing returns
+                new_this_cycle = self.state.issues_created - issues_before
+                recent_new_issues.append(new_this_cycle)
+                if len(recent_new_issues) > diminishing_returns_window:
+                    recent_new_issues.pop(0)
+
+                # Diminishing returns check: if the last N cycles produced
+                # zero new issues (only updates), planning is winding down
+                if (
+                    len(recent_new_issues) >= diminishing_returns_threshold
+                    and all(n == 0 for n in recent_new_issues[-diminishing_returns_threshold:])
+                    and self.state.issues_created > 0
+                ):
+                    self.state.stop_reason = (
+                        f"Planning complete — {diminishing_returns_threshold} consecutive "
+                        f"cycles with no new issues (only refinements)"
+                    )
+                    self.logger.info(
+                        f"Diminishing returns detected: {diminishing_returns_threshold} cycles "
+                        f"with no new issues. Planning is complete."
+                    )
+                    break
             else:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
@@ -116,10 +148,11 @@ class Planner:
 
         save_state(self.state, self.run_dir)
 
-    def _planning_cycle(self) -> bool | None:
+    def _planning_cycle(self) -> bool | None | str:
         """Execute one planning cycle.
 
-        Returns True (success), False (failure), or None (frontier clear).
+        Returns True (success), False (failure), None (frontier clear),
+        or "complete" (Claude declared planning done).
         """
         self.state.planning_cycles += 1
         cycle_num = self.state.planning_cycles
@@ -180,6 +213,27 @@ class Planner:
                     f"{len(validation_errors)} validation error(s)"
                 )
                 return False
+
+        # Check if Claude declared planning complete
+        if planning_output.planning_complete:
+            reason = planning_output.completion_reason or "Claude declared planning complete"
+            self.state.stop_reason = f"Planning complete — {reason}"
+            self.logger.info(f"Planning declared complete: {reason}")
+
+            # Still apply any final actions that came with the completion signal
+            if planning_output.actions:
+                self.logger.info(f"Applying {len(planning_output.actions)} final actions...")
+                for action in planning_output.actions:
+                    errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
+                    if not errors:
+                        try:
+                            self._apply_action(action)
+                            if action.issue_id:
+                                known_ids.add(action.issue_id)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to apply final action: {e}")
+
+            return "complete"
 
         if not planning_output.actions:
             self.logger.info("No actions proposed — frontier may be clear")
@@ -293,7 +347,13 @@ implementation plan as a set of well-specified issues.
 3. Secondary features and enhancements
 4. Polish, optimization, and documentation
 
-Produce 1-15 high-quality actions per cycle. Quality over quantity."""
+Produce 1-15 high-quality actions per cycle. Quality over quantity.
+
+**When to declare planning complete:**
+- Set "planning_complete": true when all work from the docs has been captured as issues
+- The time budget is a MAXIMUM, not a target — finishing early with a complete plan is ideal
+- Do NOT keep cycling just to make minor refinements to existing issues
+- If you find yourself only updating existing issues with no new work to create, planning is done"""
 
     def _finalization_instructions(self) -> str:
         return """## Instructions — PLANNING FINALIZATION
@@ -312,7 +372,11 @@ The planning budget is nearly exhausted. Finalize the plan.
 - Expand project scope
 - Add nice-to-have features
 
-Produce only refinement and gap-filling actions."""
+Produce only refinement and gap-filling actions.
+
+**When to declare planning complete:**
+- Set "planning_complete": true once all issues are well-specified and no gaps remain
+- This is the finalization phase — wrapping up is the goal, not finding more work"""
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

@@ -183,3 +183,115 @@ class TestPlanner:
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
+
+    def test_planning_complete_signal(self, state, config, logger, tmp_path):
+        """Claude declares planning_complete: true -> planner exits early."""
+        cli = MagicMock()
+        complete_response = json.dumps({
+            "frontier_assessment": "All work captured",
+            "planning_complete": True,
+            "completion_reason": "All features from ROADMAP.md have been captured as issues",
+            "actions": [],
+            "cycle_notes": "Done",
+        })
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{complete_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        config["max_planning_cycles"] = 100
+        config["dry_run"] = False
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+        assert state.planning_cycles == 1
+        assert "complete" in (state.stop_reason or "").lower()
+
+    def test_planning_complete_with_final_actions(self, state, config, logger, tmp_path):
+        """Claude can declare complete while still submitting final refinements."""
+        cli = MagicMock()
+        complete_response = json.dumps({
+            "frontier_assessment": "Final cleanup",
+            "planning_complete": True,
+            "completion_reason": "Plan is comprehensive",
+            "actions": [{
+                "action_type": "create_issue",
+                "rationale": "Last issue",
+                "issue_id": "ISSUE-001",
+                "title": "Final cleanup task",
+                "description": "Clean up",
+                "priority": "low",
+                "acceptance_criteria": ["Code is clean"],
+            }],
+            "cycle_notes": "",
+        })
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{complete_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        config["max_planning_cycles"] = 100
+        config["dry_run"] = False
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+        assert state.planning_cycles == 1
+        assert state.issues_created == 1  # Final action was applied
+        assert "complete" in (state.stop_reason or "").lower()
+
+    def test_diminishing_returns_exits_early(self, state, config, logger, tmp_path):
+        """3 consecutive cycles with only updates (no new issues) -> exit."""
+        cli = MagicMock()
+        # Return a response with only update_issue actions (no new issues)
+        update_response = json.dumps({
+            "frontier_assessment": "Minor refinements",
+            "actions": [{
+                "action_type": "update_issue",
+                "rationale": "Polish",
+                "issue_id": "ISSUE-001",
+                "description": "Updated description",
+            }],
+            "cycle_notes": "",
+        })
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{update_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        config["max_planning_cycles"] = 100
+        config["dry_run"] = False
+        config["diminishing_returns_threshold"] = 3
+
+        # Pre-seed an existing issue so updates have something to target
+        from aidlc.models import Issue
+        issue = Issue(
+            id="ISSUE-001", title="Existing", description="Exists",
+            acceptance_criteria=["AC1"],
+        )
+        state.update_issue(issue)
+        state.issues_created = 1
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        issues_dir = Path(config["_issues_dir"])
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
+
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+        assert state.planning_cycles == 3  # Exits after 3 update-only cycles
+        assert "diminishing" in (state.stop_reason or "").lower() or "no new issues" in (state.stop_reason or "").lower()

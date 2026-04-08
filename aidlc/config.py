@@ -29,6 +29,8 @@ DEFAULTS = {
     "retry_max_delay_seconds": 300,
     "retry_backoff_factor": 2.0,
     "max_consecutive_failures": 3,
+    "diminishing_returns_window": 5,       # track last N cycles for diminishing returns
+    "diminishing_returns_threshold": 3,    # exit after N consecutive cycles with no new issues
     "finalization_budget_percent": 10,
     "max_implementation_attempts": 3,
     "max_planning_cycles": 0,       # 0 = unlimited (dry-run defaults to 3)

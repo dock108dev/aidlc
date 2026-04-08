@@ -100,6 +100,8 @@ class PlanningOutput:
     frontier_assessment: str
     actions: list[PlanningAction]
     cycle_notes: str = ""
+    planning_complete: bool = False
+    completion_reason: str = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlanningOutput":
@@ -108,6 +110,8 @@ class PlanningOutput:
             frontier_assessment=data.get("frontier_assessment", ""),
             actions=actions,
             cycle_notes=data.get("cycle_notes", ""),
+            planning_complete=data.get("planning_complete", False),
+            completion_reason=data.get("completion_reason", ""),
         )
 
     def validate(self, is_finalization: bool = False, known_issue_ids: set | None = None) -> list[str]:
@@ -195,6 +199,8 @@ You MUST output your planning actions as a single JSON block wrapped in ```json`
 ```
 {
   "frontier_assessment": "Summary of what you assessed and why you chose these actions",
+  "planning_complete": false,
+  "completion_reason": "",
   "actions": [
     {
       "action_type": "create_issue | update_issue | create_doc | update_doc",
@@ -233,6 +239,14 @@ Rules:
 - Produce 1-15 high-quality actions per cycle. Quality over quantity.
 - For create_doc, file_path must be relative to the project root
 - Every action must have a rationale explaining why it's needed
+
+IMPORTANT — Declaring planning complete:
+- Set "planning_complete": true when all planned work has been captured as issues
+- Include a "completion_reason" explaining why planning is done
+- You may still include final refinement actions alongside planning_complete: true
+- Do NOT keep cycling just to make minor tweaks — if the plan is comprehensive and
+  all issues have clear acceptance criteria, declare planning complete
+- The time budget is a MAXIMUM, not a target — finishing early with a good plan is ideal
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\
