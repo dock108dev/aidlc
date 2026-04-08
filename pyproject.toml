@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aidlc"
+version = "0.1.0"
+description = "AI Development Life Cycle — autonomous planning and implementation framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+
+[project.scripts]
+aidlc = "aidlc.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+
+[tool.setuptools.packages.find]
+include = ["aidlc*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--tb=short"
+
+[tool.coverage.run]
+source = ["aidlc"]
+omit = ["aidlc/configs/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90

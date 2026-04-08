@@ -1,0 +1,10 @@
+{
+  "plan_budget_hours": 0.1,
+  "checkpoint_interval_minutes": 1,
+  "dry_run": true,
+  "max_planning_cycles": 3,
+  "max_implementation_cycles": 3,
+  "claude_timeout_seconds": 60,
+  "max_consecutive_failures": 2,
+  "max_implementation_attempts": 1
+}
