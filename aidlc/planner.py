@@ -41,6 +41,10 @@ class Planner:
         self.project_context = project_context
         self.logger = logger
         self.project_root = Path(config["_project_root"])
+        self.strict_mode = bool(
+            config.get("strict_mode", False)
+            or config.get("strict_planning_validation", False)
+        )
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
@@ -170,6 +174,12 @@ class Planner:
         if validation_errors:
             for err in validation_errors:
                 self.logger.warning(f"Validation: {err}")
+            if self.strict_mode:
+                self.logger.error(
+                    f"Strict mode: failing cycle {cycle_num} due to "
+                    f"{len(validation_errors)} validation error(s)"
+                )
+                return False
 
         if not planning_output.actions:
             self.logger.info("No actions proposed — frontier may be clear")
@@ -179,10 +189,16 @@ class Planner:
 
         # Apply actions
         applied = 0
+        action_errors = []
         for action in planning_output.actions:
             errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
             if errors:
                 self.logger.warning(f"Skipping invalid action: {errors}")
+                if self.strict_mode:
+                    self.logger.error(
+                        f"Strict mode: failing cycle {cycle_num} due to invalid action"
+                    )
+                    return False
                 continue
 
             try:
@@ -193,6 +209,18 @@ class Planner:
                     known_ids.add(action.issue_id)
             except Exception as e:
                 self.logger.error(f"Failed to apply action: {e}")
+                action_errors.append(str(e))
+                if self.strict_mode:
+                    self.logger.error(
+                        f"Strict mode: failing cycle {cycle_num} after action apply error"
+                    )
+                    return False
+
+        if action_errors and applied == 0:
+            self.logger.error(
+                f"Cycle {cycle_num} failed: all actions errored and none were applied"
+            )
+            return False
 
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True

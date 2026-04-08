@@ -65,6 +65,9 @@ class ClaudeCLI:
             cmd.append("--dangerously-skip-permissions")
 
         retries = 0
+        last_failure_type = None
+        last_error = None
+        last_duration = 0.0
         for attempt in range(self.max_retries + 1):
             start = time.time()
             try:
@@ -91,6 +94,9 @@ class ClaudeCLI:
                 else:
                     stderr_text = proc.stderr or ""
                     failure_type = self._classify_failure(proc.returncode, stderr_text)
+                    last_failure_type = failure_type
+                    last_error = stderr_text[:500]
+                    last_duration = duration
                     self.logger.warning(
                         f"Claude CLI returned {proc.returncode} ({failure_type}): {stderr_text[:200]}"
                     )
@@ -103,6 +109,9 @@ class ClaudeCLI:
             except subprocess.TimeoutExpired:
                 duration = time.time() - start
                 self.logger.error(f"Claude CLI timed out after {duration:.0f}s")
+                last_failure_type = "transient"
+                last_error = f"Timed out after {duration:.0f}s"
+                last_duration = duration
                 retries += 1
                 if attempt < self.max_retries:
                     delay = self._retry_delay(attempt)
@@ -117,9 +126,12 @@ class ClaudeCLI:
         return {
             "success": False,
             "output": None,
-            "error": f"Failed after {retries} retries",
-            "failure_type": "transient",
-            "duration_seconds": 0.0,
+            "error": (
+                f"Failed after {retries} retries"
+                + (f": {last_error}" if last_error else "")
+            ),
+            "failure_type": last_failure_type or "transient",
+            "duration_seconds": last_duration,
             "retries": retries,
         }
 

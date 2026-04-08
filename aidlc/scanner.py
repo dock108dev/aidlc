@@ -88,6 +88,11 @@ class ProjectScanner:
             "existing_issues": existing_issues,
             "total_docs": len(doc_files),
             "audit_result": audit_result,
+            "scan_warnings": {
+                "skipped_docs": getattr(self, "_skipped_docs_count", 0),
+                "skipped_issue_reads": getattr(self, "_skipped_issue_reads", 0),
+                "audit_result_load_errors": getattr(self, "_audit_load_errors", 0),
+            },
         }
 
     def _detect_project_type(self) -> str:
@@ -101,6 +106,7 @@ class ProjectScanner:
     def _scan_docs(self) -> list[dict]:
         """Find and read all documentation files."""
         all_docs = set()
+        self._skipped_docs_count = 0
 
         for pattern in self.scan_patterns:
             for path in self.project_root.rglob(pattern.lstrip("*").lstrip("/")):
@@ -133,6 +139,7 @@ class ProjectScanner:
                     "size": len(content),
                 })
             except (OSError, UnicodeDecodeError):
+                self._skipped_docs_count += 1
                 continue
 
         # Sort by priority (lower = higher priority), then path
@@ -201,6 +208,7 @@ class ProjectScanner:
             "docs/issues/*.md",
         ]
         issues = []
+        self._skipped_issue_reads = 0
         for pattern in issue_patterns:
             for path in self.project_root.glob(pattern):
                 if path.is_file():
@@ -209,6 +217,7 @@ class ProjectScanner:
                         rel = str(path.relative_to(self.project_root))
                         issues.append({"path": rel, "content": content})
                     except (OSError, UnicodeDecodeError):
+                        self._skipped_issue_reads += 1
                         continue
         return issues
 
@@ -216,12 +225,13 @@ class ProjectScanner:
         """Load audit results from .aidlc/audit_result.json if present."""
         import json
         audit_path = self.project_root / ".aidlc" / "audit_result.json"
+        self._audit_load_errors = 0
         if audit_path.exists():
             try:
                 with open(audit_path) as f:
                     return json.load(f)
             except (OSError, json.JSONDecodeError):
-                pass
+                self._audit_load_errors += 1
         return None
 
     def build_context_prompt(self, scan_result: dict) -> str:
@@ -231,6 +241,17 @@ class ProjectScanner:
         # Project type
         sections.append(f"**Project type**: {scan_result['project_type']}")
         sections.append(f"**Total documentation files**: {scan_result['total_docs']}")
+        warnings = scan_result.get("scan_warnings", {})
+        skipped_docs = warnings.get("skipped_docs", 0)
+        skipped_issue_reads = warnings.get("skipped_issue_reads", 0)
+        audit_load_errors = warnings.get("audit_result_load_errors", 0)
+        if skipped_docs or skipped_issue_reads or audit_load_errors:
+            sections.append(
+                "**Scanner degraded reads**: "
+                f"{skipped_docs} docs skipped, "
+                f"{skipped_issue_reads} issue files skipped, "
+                f"{audit_load_errors} audit result load errors"
+            )
         sections.append("")
 
         # Structure

@@ -102,6 +102,12 @@ class TestProjectScanner:
         assert "README.md" in context
         assert "Project Structure" in context
 
+    def test_scan_warnings_present(self, project, config):
+        scanner = ProjectScanner(project, config)
+        result = scanner.scan()
+        assert "scan_warnings" in result
+        assert "skipped_docs" in result["scan_warnings"]
+
     def test_context_prompt_caps_total_chars(self, project, config):
         config["max_context_chars"] = 100
         # Create many docs

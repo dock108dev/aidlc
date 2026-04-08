@@ -19,6 +19,12 @@
   "max_doc_chars": 10000,
   "max_context_chars": 80000,
   "max_implementation_context_chars": 30000,
+  "strict_mode": false,
+  "strict_planning_validation": false,
+  "allow_skip_precheck": true,
+  "allow_dependency_bypass": false,
+  "auto_break_dependency_cycles": false,
+  "allow_unstructured_success": false,
   "doc_scan_patterns": [
     "**/*.md",
     "**/*.txt",

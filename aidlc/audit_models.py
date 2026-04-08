@@ -139,6 +139,7 @@ class AuditResult:
     # Conflicts and output tracking
     conflicts: list = field(default_factory=list)  # list of AuditConflict
     generated_docs: list = field(default_factory=list)  # paths of generated docs
+    degraded_stats: dict = field(default_factory=dict)  # counters for skipped/failed reads
 
     def to_dict(self) -> dict:
         return {
@@ -154,6 +155,7 @@ class AuditResult:
             "tech_debt": [t.to_dict() if isinstance(t, TechDebtItem) else t for t in (self.tech_debt or [])],
             "conflicts": [c.to_dict() if isinstance(c, AuditConflict) else c for c in self.conflicts],
             "generated_docs": self.generated_docs,
+            "degraded_stats": self.degraded_stats,
         }
 
     @classmethod
@@ -167,6 +169,7 @@ class AuditResult:
             source_stats=data.get("source_stats", {}),
             features=data.get("features"),
             generated_docs=data.get("generated_docs", []),
+            degraded_stats=data.get("degraded_stats", {}),
         )
         result.modules = [
             ModuleInfo.from_dict(m) if isinstance(m, dict) else m

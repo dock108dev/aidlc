@@ -190,6 +190,7 @@ class TestCodeAuditorQuickScan:
         data = json.loads(json_path.read_text())
         assert data["depth"] == "quick"
         assert data["project_type"] != "unknown"
+        assert "degraded_stats" in data
 
     def test_empty_project(self, tmp_path, config):
         (tmp_path / ".aidlc").mkdir()

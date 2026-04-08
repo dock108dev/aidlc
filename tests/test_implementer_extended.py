@@ -101,6 +101,7 @@ class TestImplementIssueSuccess:
     def test_no_json_but_files_changed(self, mock_subproc, config, logger, tmp_path):
         """Non-JSON output with file changes should still succeed."""
         mock_subproc.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
+        config["allow_unstructured_success"] = True
         cli = MagicMock()
         cli.execute_prompt.return_value = {
             "success": True, "output": "I made the changes to main.py",
@@ -115,6 +116,25 @@ class TestImplementIssueSuccess:
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
         assert result is True
+
+    @patch("aidlc.implementer.subprocess.run")
+    def test_no_json_files_changed_fails_when_policy_disallows(self, mock_subproc, config, logger, tmp_path):
+        mock_subproc.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
+        config["allow_unstructured_success"] = False
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True, "output": "I made the changes to main.py",
+            "error": None, "failure_type": None,
+            "duration_seconds": 1.0, "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        result = impl._implement_issue(issue)
+        assert result is False
 
     @patch("aidlc.implementer.subprocess.run")
     def test_no_json_no_files_fails(self, mock_subproc, config, logger, tmp_path):
@@ -351,6 +371,32 @@ class TestBlockedIssues:
         blocked = impl._get_blocked_issues()
         assert len(blocked) == 1
         assert blocked[0].id == "ISSUE-001"
+
+    def test_run_stops_when_bypass_disabled(self, config, logger, tmp_path):
+        config["allow_dependency_bypass"] = False
+        config["max_implementation_cycles"] = 1
+        cli = make_cli_success({
+            "issue_id": "ISSUE-001", "success": True,
+            "summary": "Done", "files_changed": ["a.py"],
+            "tests_passed": True, "notes": "",
+        })
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            {
+                "id": "ISSUE-001", "title": "Blocked", "description": "D",
+                "priority": "high", "labels": [], "dependencies": ["ISSUE-999"],
+                "acceptance_criteria": ["AC1"], "status": "pending",
+                "implementation_notes": "", "verification_result": "",
+                "files_changed": [], "attempt_count": 0, "max_attempts": 3,
+            }
+        ]
+        state.total_issues = 1
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.run()
+        assert "blocked by unmet dependencies" in (state.stop_reason or "")
 
 
 class TestFixFailingTests:

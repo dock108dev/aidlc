@@ -349,7 +349,26 @@ def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
     project_root = args.project or str(Path.cwd())
     project_path = Path(project_root).resolve()
-    skip_precheck = args.resume or args.implement_only or getattr(args, "skip_precheck", False)
+    config = load_config(
+        config_path=args.config,
+        project_root=project_root,
+    )
+
+    skip_precheck_requested = getattr(args, "skip_precheck", False)
+    strict_mode = bool(config.get("strict_mode", False))
+    allow_skip_precheck = bool(config.get("allow_skip_precheck", True))
+    if skip_precheck_requested and (strict_mode or not allow_skip_precheck):
+        print(f"{_red('x')} --skip-precheck is disabled by configuration.")
+        print(
+            f"  strict_mode={strict_mode}, allow_skip_precheck={allow_skip_precheck}. "
+            "Remove --skip-precheck or relax config."
+        )
+        sys.exit(2)
+
+    skip_precheck = args.resume or args.implement_only or skip_precheck_requested
+    if skip_precheck_requested and not (args.resume or args.implement_only):
+        print(f"  {_yellow('!')} Running with precheck bypassed (--skip-precheck).")
+        print()
 
     # Run precheck before lifecycle (unless resuming or implementing only)
     if not skip_precheck:
@@ -371,11 +390,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         print()
         print(f"  Starting lifecycle...")
         print()
-
-    config = load_config(
-        config_path=args.config,
-        project_root=project_root,
-    )
 
     if args.plan_budget:
         config["plan_budget_hours"] = parse_budget(args.plan_budget)

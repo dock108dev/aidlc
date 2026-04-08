@@ -119,6 +119,20 @@ class TestExecutePrompt:
         assert result["success"] is False
         assert result["retries"] == 3  # initial + 2 retries
         assert mock_run.call_count == 3
+        assert result["failure_type"] == "transient"
+
+    @patch("aidlc.claude_cli.subprocess.run")
+    def test_preserves_non_transient_failure_type(self, mock_run, base_config, logger, tmp_path):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="syntax error in prompt",
+        )
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["success"] is False
+        assert result["failure_type"] == "issue"
+        assert "syntax error" in result["error"]
 
     @patch("aidlc.claude_cli.subprocess.run")
     def test_timeout_retries(self, mock_run, base_config, logger, tmp_path):

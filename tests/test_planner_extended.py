@@ -119,6 +119,61 @@ class TestPlanningCycleWithRealOutput:
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
 
+    def test_strict_mode_fails_on_validation_errors(self, config, logger, tmp_path):
+        response = make_planning_response(actions=[
+            {
+                "action_type": "create_issue",
+                "rationale": "Need auth",
+                "issue_id": "ISSUE-001",
+                "title": "Add authentication",
+                # Missing required description + acceptance_criteria
+            },
+        ])
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True, "output": response,
+            "error": None, "failure_type": None,
+            "duration_seconds": 1.0, "retries": 0,
+        }
+        state = RunState(run_id="test", config_name="default")
+        state.plan_budget_seconds = 3600
+        config["strict_mode"] = True
+        config["max_consecutive_failures"] = 1
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+        assert "failures" in (state.stop_reason or "").lower()
+
+    def test_cycle_fails_when_all_actions_error(self, config, logger, tmp_path):
+        response = make_planning_response(actions=[
+            {
+                "action_type": "create_issue",
+                "rationale": "Need auth",
+                "issue_id": "ISSUE-001",
+                "title": "Add authentication",
+                "description": "desc",
+                "acceptance_criteria": ["AC1"],
+            },
+        ])
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True, "output": response,
+            "error": None, "failure_type": None,
+            "duration_seconds": 1.0, "retries": 0,
+        }
+        state = RunState(run_id="test", config_name="default")
+        state.plan_budget_seconds = 3600
+        config["max_consecutive_failures"] = 1
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner._apply_action = MagicMock(side_effect=RuntimeError("disk full"))
+        planner.run()
+        assert "failures" in (state.stop_reason or "").lower()
+
 
 class TestBuildPrompt:
     def test_includes_existing_issues(self, config, logger, tmp_path):

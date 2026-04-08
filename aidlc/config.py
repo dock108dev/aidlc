@@ -54,6 +54,13 @@ DEFAULTS = {
         "build/**",
     ],
     "implementation_allowed_paths": None,  # None = all paths allowed
+    # Strictness controls
+    "strict_mode": False,                  # fail fast on validation/safeguard bypasses
+    "strict_planning_validation": False,   # fail planning cycle on schema validation issues
+    "allow_skip_precheck": True,           # allow CLI --skip-precheck
+    "allow_dependency_bypass": False,      # allow force-unblock of unmet deps
+    "auto_break_dependency_cycles": False, # auto-remove circular deps to proceed
+    "allow_unstructured_success": False,   # accept impl success without structured JSON
 
     # Audit settings
     "audit_depth": "quick",                 # default depth when --audit is used

@@ -178,6 +178,15 @@ class CodeAuditor:
         self.exclude_patterns = config.get("audit_exclude_patterns", [])
         self.max_claude_calls = config.get("audit_max_claude_calls", 10)
         self.max_source_chars = config.get("audit_max_source_chars_per_module", 15000)
+        self.degraded_stats = {
+            "dependency_parse_errors": 0,
+            "source_read_errors": 0,
+            "doc_read_errors": 0,
+            "line_count_errors": 0,
+        }
+
+    def _mark_degraded(self, key: str) -> None:
+        self.degraded_stats[key] = self.degraded_stats.get(key, 0) + 1
 
     def run(self, depth: str = "quick") -> AuditResult:
         """Run the code audit. depth is 'quick' or 'full'."""
@@ -191,6 +200,7 @@ class CodeAuditor:
 
         self._generate_docs(result)
         result.conflicts = self._detect_conflicts(result)
+        result.degraded_stats = dict(self.degraded_stats)
 
         if result.conflicts:
             self._write_conflicts_file(result.conflicts)
@@ -202,6 +212,12 @@ class CodeAuditor:
             f"{len(result.frameworks)} frameworks, "
             f"{len(result.entry_points)} entry points"
         )
+        degraded_total = sum(result.degraded_stats.values())
+        if degraded_total:
+            self.logger.warning(
+                f"Audit completed with degraded reads: {degraded_total} "
+                f"({result.degraded_stats})"
+            )
         if result.conflicts:
             self.logger.warning(f"Found {len(result.conflicts)} conflict(s) with existing docs")
 
@@ -304,7 +320,7 @@ class CodeAuditor:
                         if pkg in FRAMEWORK_MAP:
                             frameworks.append(FRAMEWORK_MAP[pkg])
         except OSError:
-            pass
+            self._mark_degraded("dependency_parse_errors")
         return frameworks
 
     def _parse_requirements_deps(self, path: Path) -> list[str]:
@@ -321,7 +337,7 @@ class CodeAuditor:
                     if pkg in FRAMEWORK_MAP:
                         frameworks.append(FRAMEWORK_MAP[pkg])
         except OSError:
-            pass
+            self._mark_degraded("dependency_parse_errors")
         return frameworks
 
     def _parse_package_json_deps(self, path: Path) -> list[str]:
@@ -340,7 +356,7 @@ class CodeAuditor:
                 elif pkg.lower() in FRAMEWORK_MAP:
                     frameworks.append(FRAMEWORK_MAP[pkg.lower()])
         except (OSError, json.JSONDecodeError):
-            pass
+            self._mark_degraded("dependency_parse_errors")
         return frameworks
 
     def _parse_cargo_deps(self, path: Path) -> list[str]:
@@ -363,7 +379,7 @@ class CodeAuditor:
                         if pkg in FRAMEWORK_MAP:
                             frameworks.append(FRAMEWORK_MAP[pkg])
         except OSError:
-            pass
+            self._mark_degraded("dependency_parse_errors")
         return frameworks
 
     def _parse_gomod_deps(self, path: Path) -> list[str]:
@@ -376,7 +392,7 @@ class CodeAuditor:
                     if "/" in pattern and pattern in line:
                         frameworks.append(name)
         except OSError:
-            pass
+            self._mark_degraded("dependency_parse_errors")
         return frameworks
 
     def _find_entry_points(self) -> list[str]:
@@ -421,7 +437,7 @@ class CodeAuditor:
                             if "=" in line:
                                 entry_points.append(f"pyproject.toml:[project.scripts] {line.strip()}")
             except OSError:
-                pass
+                self._mark_degraded("dependency_parse_errors")
 
         # Check package.json for scripts
         pkg_json = self.project_root / "package.json"
@@ -435,7 +451,7 @@ class CodeAuditor:
                 if "start" in scripts:
                     entry_points.append(f"package.json:scripts.start → {scripts['start']}")
             except (OSError, json.JSONDecodeError):
-                pass
+                self._mark_degraded("dependency_parse_errors")
 
         return entry_points
 
@@ -465,7 +481,7 @@ class CodeAuditor:
                         try:
                             total_lines += sum(1 for _ in open(full, errors="replace"))
                         except OSError:
-                            pass
+                            self._mark_degraded("line_count_errors")
 
             if not source_files:
                 continue
@@ -533,7 +549,7 @@ class CodeAuditor:
                     try:
                         total_lines += sum(1 for _ in open(os.path.join(root, f), errors="replace"))
                     except OSError:
-                        pass
+                        self._mark_degraded("line_count_errors")
 
         return {
             "total_files": total_files,
@@ -563,6 +579,7 @@ class CodeAuditor:
                                 text=line.strip()[:200],
                             ))
                 except OSError:
+                    self._mark_degraded("source_read_errors")
                     continue
 
         # Also flag large files (>500 lines)
@@ -584,6 +601,7 @@ class CodeAuditor:
                             text=f"File has {line_count} lines",
                         ))
                 except OSError:
+                    self._mark_degraded("line_count_errors")
                     continue
 
         return items
@@ -613,7 +631,7 @@ class CodeAuditor:
                             r"(?:def test_|it\(|test\(|describe\(|@Test)", content
                         ))
                     except OSError:
-                        pass
+                        self._mark_degraded("source_read_errors")
 
         # Detect test framework
         if (self.project_root / "pytest.ini").exists() or \
@@ -636,7 +654,7 @@ class CodeAuditor:
                     if "[tool.pytest" in content:
                         test_framework = "pytest"
                 except OSError:
-                    pass
+                    self._mark_degraded("doc_read_errors")
 
         # Estimate coverage level
         if test_files == 0:
@@ -742,6 +760,7 @@ class CodeAuditor:
                     parts.append(f"\n--- {rel_path} ---\n{content}")
                     total_chars += len(content)
                 except OSError:
+                    self._mark_degraded("source_read_errors")
                     continue
 
         return "\n".join(parts)
@@ -888,6 +907,19 @@ class CodeAuditor:
                 lines.append(f"- `{ext}`: {count} files")
             lines.append("")
 
+        if result.degraded_stats:
+            degraded_total = sum(result.degraded_stats.values())
+            if degraded_total:
+                lines.append("## Degraded Audit Reads")
+                lines.append("")
+                lines.append(
+                    f"- The audit skipped or degraded {degraded_total} read/parse operation(s)."
+                )
+                for key, count in sorted(result.degraded_stats.items()):
+                    if count:
+                        lines.append(f"- `{key}`: {count}")
+                lines.append("")
+
         return "\n".join(lines)
 
     def _render_architecture_doc(self, result: AuditResult) -> str:
@@ -973,7 +1005,7 @@ class CodeAuditor:
                             severity="warning",
                         ))
             except OSError:
-                pass
+                self._mark_degraded("doc_read_errors")
 
         # Check for major modules not mentioned in any user doc
         if result.modules:
@@ -1002,7 +1034,7 @@ class CodeAuditor:
                 try:
                     parts.append(doc_path.read_text(errors="replace"))
                 except OSError:
-                    pass
+                    self._mark_degraded("doc_read_errors")
         return "\n".join(parts)
 
     def _write_conflicts_file(self, conflicts: list[AuditConflict]):

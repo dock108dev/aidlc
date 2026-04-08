@@ -52,6 +52,9 @@ class Implementer:
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
+        self.allow_dependency_bypass = config.get("allow_dependency_bypass", False)
+        self.auto_break_dependency_cycles = config.get("auto_break_dependency_cycles", False)
+        self.allow_unstructured_success = config.get("allow_unstructured_success", False)
 
     def run(self) -> None:
         """Run implementation loop until all issues are resolved."""
@@ -68,7 +71,15 @@ class Implementer:
                 self.logger.info(f"Auto-detected test command: {self.test_command}")
 
         # Sort issues by priority and dependency order
-        self._sort_issues()
+        if not self._sort_issues():
+            self.state.phase = RunPhase.IMPLEMENTING
+            self.state.stop_reason = (
+                "Dependency cycle detected. Resolve issue dependencies or enable "
+                "'auto_break_dependency_cycles' to continue."
+            )
+            self.logger.error(self.state.stop_reason)
+            save_state(self.state, self.run_dir)
+            return
 
         self.state.phase = RunPhase.IMPLEMENTING
         save_state(self.state, self.run_dir)
@@ -97,14 +108,22 @@ class Implementer:
                     if d.get("status") in ("pending", "blocked", "failed")
                 )
                 if blocked_count > 0:
-                    self.logger.warning(
-                        f"{blocked_count} issues stuck (blocked or max retries). "
-                        "Attempting to unblock by implementing blocked issues anyway."
-                    )
-                    # Force-unblock: try blocked issues
-                    pending = self._get_blocked_issues()
-                    if not pending:
-                        self.state.stop_reason = "All remaining issues are stuck"
+                    if self.allow_dependency_bypass:
+                        self.logger.warning(
+                            f"{blocked_count} issues stuck (blocked or max retries). "
+                            "Attempting to unblock by implementing blocked issues anyway."
+                        )
+                        # Force-unblock: try blocked issues
+                        pending = self._get_blocked_issues()
+                        if not pending:
+                            self.state.stop_reason = "All remaining issues are stuck"
+                            break
+                    else:
+                        self.state.stop_reason = (
+                            f"{blocked_count} issues blocked by unmet dependencies. "
+                            "Enable 'allow_dependency_bypass' to force progress."
+                        )
+                        self.logger.error(self.state.stop_reason)
                         break
                 else:
                     break
@@ -132,7 +151,13 @@ class Implementer:
                         "Pausing to re-sort and try different issues."
                     )
                     consecutive_failures = 0
-                    self._sort_issues()
+                    if not self._sort_issues():
+                        self.state.stop_reason = (
+                            "Dependency cycle detected while re-sorting. "
+                            "Resolve dependencies or enable auto cycle breaking."
+                        )
+                        self.logger.error(self.state.stop_reason)
+                        break
 
             save_state(self.state, self.run_dir)
 
@@ -201,18 +226,41 @@ class Implementer:
             except ValueError as e:
                 self.logger.warning(f"No structured JSON result for {issue.id}: {e}")
                 # Check if Claude actually changed files via git diff
-                changed_files = self._get_changed_files()
-                if changed_files:
+                changed_files, detection_ok = self._get_changed_files(with_status=True)
+                if changed_files and detection_ok:
                     self.logger.info(
                         f"No JSON result but {len(changed_files)} files changed — "
-                        f"accepting as unstructured implementation"
+                        f"evaluating unstructured implementation fallback"
+                    )
+                    allow_fallback = self.allow_unstructured_success or bool(self.test_command)
+                    impl_result = ImplementationResult(
+                        issue_id=issue.id,
+                        success=allow_fallback,
+                        summary=(
+                            "Implementation completed (no structured JSON, but files changed)"
+                            if allow_fallback
+                            else "Unstructured output with file changes is not accepted by policy"
+                        ),
+                        files_changed=changed_files,
+                        tests_passed=False,
+                        notes=(
+                            "Accepted fallback due to policy/test verification path."
+                            if allow_fallback
+                            else "Set allow_unstructured_success=true to permit this fallback."
+                        ),
+                    )
+                elif changed_files and not detection_ok:
+                    self.logger.error(
+                        f"FAIL: {issue.id} — file change detection unavailable; cannot safely "
+                        "accept unstructured output."
                     )
                     impl_result = ImplementationResult(
                         issue_id=issue.id,
-                        success=True,
-                        summary="Implementation completed (no structured JSON, but files changed)",
-                        files_changed=changed_files,
+                        success=False,
+                        summary="Unstructured result with unavailable change detection",
+                        files_changed=[],
                         tests_passed=False,
+                        notes="Change detection unavailable",
                     )
                 else:
                     self.logger.error(
@@ -243,10 +291,14 @@ class Implementer:
 
         if impl_result.success:
             # Validate that files were actually changed
-            actual_changes = self._get_changed_files()
+            actual_changes, detection_ok = self._get_changed_files(with_status=True)
             if not impl_result.files_changed and actual_changes:
                 impl_result.files_changed = actual_changes
-            if not actual_changes and not self.config.get("dry_run"):
+            if not detection_ok and not self.config.get("dry_run"):
+                self.logger.warning(
+                    f"{issue.id}: unable to verify file changes (git unavailable/timed out)."
+                )
+            elif not actual_changes and not self.config.get("dry_run"):
                 self.logger.warning(
                     f"{issue.id}: marked success but no files changed in working tree. "
                     f"Verify implementation is correct."
@@ -440,7 +492,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 self.logger.warning("Final test suite has failures.")
                 self.state.validation_results.append("Final test suite has failures")
 
-    def _sort_issues(self) -> None:
+    def _sort_issues(self) -> bool:
         """Sort issues by priority and dependency order (topological).
 
         Detects circular dependencies and logs explicit warnings.
@@ -465,7 +517,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 cycle_str = " -> ".join(cycle)
                 self.logger.error(
                     f"Circular dependency detected: {cycle_str}. "
-                    f"Breaking cycle by removing dep from {issue_id}."
+                    f"{'Breaking cycle automatically.' if self.auto_break_dependency_cycles else 'Manual resolution required.'}"
                 )
                 for cid in cycle[:-1]:
                     cycle_members.add(cid)
@@ -487,11 +539,17 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
         for d in priority_sorted:
             visit(d["id"], [])
 
-        # Remove circular deps from affected issues so they can be scheduled
+        # Handle circular deps from affected issues
         if cycle_members:
+            if not self.auto_break_dependency_cycles:
+                self.logger.error(
+                    f"{len(cycle_members)} issues involved in dependency cycles: "
+                    f"{', '.join(sorted(cycle_members))}. Refusing to auto-remove dependencies."
+                )
+                return False
             self.logger.warning(
                 f"{len(cycle_members)} issues involved in dependency cycles: "
-                f"{', '.join(sorted(cycle_members))}. Circular deps removed."
+                f"{', '.join(sorted(cycle_members))}. Circular deps removed due to config."
             )
             for iid in cycle_members:
                 if iid in id_to_issue:
@@ -507,6 +565,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
             if iid in id_to_issue:
                 new_issues.append(id_to_issue[iid])
         self.state.issues = new_issues
+        return True
 
     def _get_blocked_issues(self) -> list[Issue]:
         """Get issues that are blocked (deps not met) for force-unblock.
@@ -531,8 +590,9 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                     blocked.append(issue)
         return blocked[:1]  # Try one at a time
 
-    def _get_changed_files(self) -> list[str]:
+    def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
+        detection_ok = True
         try:
             proc = subprocess.run(
                 ["git", "diff", "--name-only", "HEAD"],
@@ -542,9 +602,11 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 timeout=30,
             )
             if proc.returncode == 0 and proc.stdout.strip():
-                return [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+                files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
+                return (files, True) if with_status else files
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            detection_ok = False
+            self.logger.warning(f"Unable to run git diff for change detection: {e}")
         # Also check untracked files
         try:
             proc = subprocess.run(
@@ -555,10 +617,12 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 timeout=30,
             )
             if proc.returncode == 0 and proc.stdout.strip():
-                return [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-        return []
+                files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
+                return (files, True) if with_status else files
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            detection_ok = False
+            self.logger.warning(f"Unable to run git ls-files for change detection: {e}")
+        return ([], detection_ok) if with_status else []
 
     def _detect_test_command(self) -> str | None:
         """Auto-detect the test command for this project."""
