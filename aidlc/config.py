@@ -54,6 +54,17 @@ DEFAULTS = {
         "build/**",
     ],
     "implementation_allowed_paths": None,  # None = all paths allowed
+
+    # Audit settings
+    "audit_depth": "quick",                 # default depth when --audit is used
+    "audit_max_claude_calls": 10,           # cap Claude calls during full audit
+    "audit_max_source_chars_per_module": 15000,  # source chars sent to Claude per module
+    "audit_source_extensions": [
+        ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb",
+    ],
+    "audit_exclude_patterns": [
+        "**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**",
+    ],
 }
 
 

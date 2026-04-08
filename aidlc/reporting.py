@@ -26,6 +26,22 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         f"**Total elapsed (wall)**: {wall_h:.1f}h",
         f"**Stop Reason**: {state.stop_reason or 'N/A'}",
         "",
+    ]
+
+    # Audit summary (if audit was run)
+    if state.audit_depth != "none":
+        lines.extend([
+            "## Audit Summary",
+            "",
+            f"| Metric | Value |",
+            f"|---|---|",
+            f"| Depth | {state.audit_depth} |",
+            f"| Completed | {state.audit_completed} |",
+            f"| Conflicts | {len(state.audit_conflicts)} |",
+            "",
+        ])
+
+    lines.extend([
         "## Planning Summary",
         "",
         f"| Metric | Count |",
@@ -45,7 +61,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         f"| Issues verified | {state.issues_verified} |",
         f"| Issues failed | {state.issues_failed} |",
         "",
-    ]
+    ])
 
     # Issue breakdown
     if state.issues:

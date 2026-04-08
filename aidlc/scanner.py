@@ -79,12 +79,15 @@ class ProjectScanner:
         structure = self._scan_structure()
         existing_issues = self._find_existing_issues()
 
+        audit_result = self._load_audit_result()
+
         return {
             "project_type": project_type,
             "doc_files": doc_files,
             "structure_summary": structure,
             "existing_issues": existing_issues,
             "total_docs": len(doc_files),
+            "audit_result": audit_result,
         }
 
     def _detect_project_type(self) -> str:
@@ -209,6 +212,18 @@ class ProjectScanner:
                         continue
         return issues
 
+    def _load_audit_result(self) -> dict | None:
+        """Load audit results from .aidlc/audit_result.json if present."""
+        import json
+        audit_path = self.project_root / ".aidlc" / "audit_result.json"
+        if audit_path.exists():
+            try:
+                with open(audit_path) as f:
+                    return json.load(f)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return None
+
     def build_context_prompt(self, scan_result: dict) -> str:
         """Build a project context string from scan results for use in prompts."""
         sections = []
@@ -237,6 +252,48 @@ class ProjectScanner:
             sections.append("")
             included += 1
             total_chars += doc["size"]
+
+        # Audit findings
+        audit = scan_result.get("audit_result")
+        if audit:
+            sections.append("\n## Code Audit Findings\n")
+            sections.append(f"**Audit depth**: {audit.get('depth', 'quick')}")
+            sections.append(f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}")
+            sections.append(f"**Entry points**: {', '.join(audit.get('entry_points', [])) or 'none'}")
+
+            modules = audit.get("modules", [])
+            if modules:
+                sections.append("\n**Modules:**")
+                for m in modules:
+                    name = m.get("name", "?")
+                    role = m.get("role", "unknown")
+                    files = m.get("file_count", 0)
+                    lines = m.get("line_count", 0)
+                    sections.append(f"- `{name}/` — {role} ({files} files, {lines:,} lines)")
+
+            stats = audit.get("source_stats", {})
+            if stats:
+                sections.append(f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines")
+
+            tc = audit.get("test_coverage")
+            if tc:
+                sections.append(f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)")
+
+            features = audit.get("features")
+            if features:
+                sections.append("\n**Features:**")
+                for feat in features:
+                    sections.append(f"- {feat}")
+
+            tech_debt = audit.get("tech_debt")
+            if tech_debt:
+                sections.append(f"\n**Tech debt markers**: {len(tech_debt)} found")
+                for td in tech_debt[:10]:
+                    sections.append(f"- `{td.get('file', '?')}:{td.get('line', 0)}` [{td.get('type', '?')}] {td.get('text', '')[:100]}")
+                if len(tech_debt) > 10:
+                    sections.append(f"- ... and {len(tech_debt) - 10} more")
+
+            sections.append("")
 
         # Existing issues
         if scan_result["existing_issues"]:

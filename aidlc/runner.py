@@ -105,6 +105,7 @@ def run_full(
     plan_only: bool = False,
     implement_only: bool = False,
     verbose: bool = False,
+    audit: str | None = None,
 ) -> None:
     """Run the full AIDLC lifecycle."""
 
@@ -139,6 +140,39 @@ def run_full(
     state.status = RunStatus.RUNNING
 
     try:
+        # AUDIT (optional) — analyze existing code before planning
+        if audit and not implement_only:
+            if state.phase in (RunPhase.INIT, RunPhase.AUDITING):
+                from .auditor import CodeAuditor
+
+                state.phase = RunPhase.AUDITING
+                state.audit_depth = audit
+                logger.info(f"Running {audit} code audit...")
+
+                auditor = CodeAuditor(
+                    project_root=Path(config["_project_root"]),
+                    config=config,
+                    cli=cli if audit == "full" else None,
+                    logger=logger,
+                )
+                audit_result = auditor.run(depth=audit)
+                state.audit_completed = True
+
+                if audit_result.conflicts:
+                    state.audit_conflicts = [c.to_dict() for c in audit_result.conflicts]
+                    state.status = RunStatus.PAUSED
+                    state.stop_reason = (
+                        f"Audit found {len(audit_result.conflicts)} conflict(s). "
+                        f"Review .aidlc/CONFLICTS.md and run 'aidlc run --resume'."
+                    )
+                    save_state(state, run_dir)
+                    logger.warning(state.stop_reason)
+                    lock.release()
+                    return
+
+                save_state(state, run_dir)
+                logger.info("Audit complete, proceeding to scan.")
+
         # SCAN — always scan (even on resume, to get fresh context)
         project_context = scan_project(state, config, logger)
         save_state(state, run_dir)

@@ -9,6 +9,28 @@ description = "AI Development Life Cycle — autonomous planning and implementat
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
+authors = [
+    {name = "highlyprofitable108"},
+]
+keywords = ["ai", "development", "lifecycle", "automation", "claude", "planning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Code Generators",
+]
+
+[project.urls]
+Homepage = "https://github.com/highlyprofitable108/aidlc"
+Repository = "https://github.com/highlyprofitable108/aidlc"
+Issues = "https://github.com/highlyprofitable108/aidlc/issues"
 
 [project.scripts]
 aidlc = "aidlc.__main__:main"
@@ -18,6 +40,12 @@ dev = ["pytest>=7.0", "pytest-cov>=4.0"]
 
 [tool.setuptools.packages.find]
 include = ["aidlc*"]
+
+[tool.setuptools.package-data]
+aidlc = [
+    "configs/*.json",
+    "project_template/**/*.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

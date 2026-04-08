@@ -15,6 +15,7 @@ class RunStatus(Enum):
 
 class RunPhase(Enum):
     INIT = "init"
+    AUDITING = "auditing"
     SCANNING = "scanning"
     PLANNING = "planning"
     PLAN_FINALIZATION = "plan_finalization"
@@ -127,6 +128,11 @@ class RunState:
     scanned_docs: list = field(default_factory=list)
     project_context: str = ""
 
+    # Audit
+    audit_depth: str = "none"  # none, quick, full
+    audit_conflicts: list = field(default_factory=list)
+    audit_completed: bool = False
+
     # Control
     checkpoint_count: int = 0
     stop_reason: Optional[str] = None
@@ -209,6 +215,9 @@ class RunState:
             "created_artifacts": self.created_artifacts,
             "scanned_docs": self.scanned_docs,
             "project_context": self.project_context,
+            "audit_depth": self.audit_depth,
+            "audit_conflicts": self.audit_conflicts,
+            "audit_completed": self.audit_completed,
             "checkpoint_count": self.checkpoint_count,
             "stop_reason": self.stop_reason,
             "notes": self.notes,
@@ -244,6 +253,9 @@ class RunState:
         state.created_artifacts = data.get("created_artifacts", [])
         state.scanned_docs = data.get("scanned_docs", [])
         state.project_context = data.get("project_context", "")
+        state.audit_depth = data.get("audit_depth", "none")
+        state.audit_conflicts = data.get("audit_conflicts", [])
+        state.audit_completed = data.get("audit_completed", False)
         state.checkpoint_count = data.get("checkpoint_count", 0)
         state.stop_reason = data.get("stop_reason")
         state.notes = data.get("notes", "")

@@ -32,6 +32,7 @@ class TestCmdInit:
     def test_creates_aidlc_dir(self, tmp_path):
         args = MagicMock()
         args.project = str(tmp_path)
+        args.with_docs = False
         cmd_init(args)
 
         aidlc_dir = tmp_path / ".aidlc"
@@ -47,6 +48,7 @@ class TestCmdInit:
     def test_creates_gitignore(self, tmp_path):
         args = MagicMock()
         args.project = str(tmp_path)
+        args.with_docs = False
         cmd_init(args)
 
         gitignore = tmp_path / ".gitignore"
@@ -60,6 +62,7 @@ class TestCmdInit:
 
         args = MagicMock()
         args.project = str(tmp_path)
+        args.with_docs = False
         cmd_init(args)
 
         content = gitignore.read_text()
@@ -70,6 +73,7 @@ class TestCmdInit:
         (tmp_path / ".aidlc").mkdir()
         args = MagicMock()
         args.project = str(tmp_path)
+        args.with_docs = False
         cmd_init(args)
 
         captured = capsys.readouterr()

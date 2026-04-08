@@ -1,26 +1,65 @@
 """CLI entry point for AIDLC.
 
 Usage:
-    aidlc run                              # full lifecycle
-    aidlc run --plan-budget 2h             # custom planning budget
-    aidlc run --plan-only                  # planning only
-    aidlc run --implement-only             # implementation only (uses existing issues)
-    aidlc run --resume                     # resume previous run
-    aidlc run --dry-run                    # simulate without Claude calls
-    aidlc run --project /path/to/repo      # target a specific repo
-
     aidlc init                             # set up .aidlc/ in current repo
+    aidlc init --with-docs                 # also copy planning doc templates
+
+    aidlc audit                            # quick scan of existing codebase
+    aidlc audit --full                     # deep audit with Claude analysis
+
+    aidlc run                              # full lifecycle (scan → plan → implement)
+    aidlc run --audit                      # audit existing code first, then plan
+    aidlc run --audit full                 # full audit, then plan
+    aidlc run --plan-budget 2h             # custom planning budget
+    aidlc run --plan-only                  # planning only, stop before implementation
+    aidlc run --implement-only             # skip planning, implement existing issues
+    aidlc run --resume                     # resume a paused/interrupted run
+    aidlc run --dry-run                    # simulate without Claude calls
+
     aidlc status                           # show status of latest run
 """
 
 import argparse
 import json
+import shutil
 import sys
+import textwrap
 from pathlib import Path
 
+from . import __version__
 from .config import load_config
 from .runner import run_full
 from .state_manager import find_latest_run, load_state
+
+# ANSI color helpers — degrade gracefully when piped
+_USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def _bold(text: str) -> str:
+    return f"\033[1m{text}\033[0m" if _USE_COLOR else text
+
+
+def _green(text: str) -> str:
+    return f"\033[32m{text}\033[0m" if _USE_COLOR else text
+
+
+def _yellow(text: str) -> str:
+    return f"\033[33m{text}\033[0m" if _USE_COLOR else text
+
+
+def _red(text: str) -> str:
+    return f"\033[31m{text}\033[0m" if _USE_COLOR else text
+
+
+def _dim(text: str) -> str:
+    return f"\033[2m{text}\033[0m" if _USE_COLOR else text
+
+
+def _cyan(text: str) -> str:
+    return f"\033[36m{text}\033[0m" if _USE_COLOR else text
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
 
 
 def parse_budget(budget_str: str) -> float:
@@ -34,7 +73,188 @@ def parse_budget(budget_str: str) -> float:
         return float(budget_str)
 
 
+def _get_template_dir() -> Path:
+    """Return path to the bundled project_template/ directory.
+
+    Checks inside the package first (works when installed from wheel),
+    then falls back to the repo-level directory (works in editable/dev mode).
+    """
+    # Inside the package (installed mode)
+    pkg_template = Path(__file__).parent / "project_template"
+    if pkg_template.exists():
+        return pkg_template
+    # Repo root (editable dev mode)
+    repo_template = Path(__file__).parent.parent / "project_template"
+    if repo_template.exists():
+        return repo_template
+    raise FileNotFoundError("project_template directory not found")
+
+
+def _print_banner():
+    print(_bold("AIDLC") + _dim(f" v{__version__}") + " — AI Development Life Cycle")
+    print()
+
+
+# ── Commands ─────────────────────────────────────────────────────────
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    """Initialize AIDLC in a project directory."""
+    project_root = Path(args.project or ".").resolve()
+    aidlc_dir = project_root / ".aidlc"
+
+    _print_banner()
+
+    if aidlc_dir.exists() and not args.with_docs:
+        print(f"{_yellow('!')} .aidlc/ already exists at {project_root}")
+        print(f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh.")
+        return
+
+    # Create .aidlc structure
+    if not aidlc_dir.exists():
+        aidlc_dir.mkdir()
+        (aidlc_dir / "issues").mkdir()
+        (aidlc_dir / "runs").mkdir()
+        (aidlc_dir / "reports").mkdir()
+
+        # Write default config
+        default_config = {
+            "plan_budget_hours": 4,
+            "checkpoint_interval_minutes": 15,
+            "claude_model": "opus",
+            "max_implementation_attempts": 3,
+            "run_tests_command": None,
+        }
+        with open(aidlc_dir / "config.json", "w") as f:
+            json.dump(default_config, f, indent=2)
+
+        # Add to .gitignore
+        gitignore = project_root / ".gitignore"
+        ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
+        if gitignore.exists():
+            content = gitignore.read_text()
+            if ".aidlc/" not in content:
+                with open(gitignore, "a") as f:
+                    f.write(ignore_entry)
+        else:
+            gitignore.write_text(ignore_entry.lstrip())
+
+        print(f"{_green('+')} Initialized .aidlc/ in {project_root}")
+        print(f"  {_dim('Config:')}  {aidlc_dir / 'config.json'}")
+        print(f"  {_dim('Issues:')}  {aidlc_dir / 'issues/'}")
+
+    # Copy template docs if requested
+    if args.with_docs:
+        template_dir = _get_template_dir()
+        if not template_dir.exists():
+            print(f"{_red('x')} Template directory not found at {template_dir}")
+            print("  This can happen if aidlc was installed from a wheel without package data.")
+            sys.exit(1)
+
+        copied = 0
+        skipped = 0
+        for src_file in sorted(template_dir.rglob("*")):
+            if not src_file.is_file():
+                continue
+            rel = src_file.relative_to(template_dir)
+            dest = project_root / rel
+            if dest.exists():
+                skipped += 1
+                print(f"  {_dim('skip')} {rel} (already exists)")
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dest)
+            copied += 1
+            print(f"  {_green('+')} {rel}")
+
+        print()
+        print(f"  {_green(str(copied))} template files copied, {skipped} skipped (already exist)")
+
+    print()
+    print(f"Next steps:")
+    if args.with_docs:
+        print(f"  1. Edit {_cyan('ROADMAP.md')} with your phased delivery plan")
+        print(f"  2. Edit {_cyan('ARCHITECTURE.md')} and {_cyan('DESIGN.md')} as needed")
+        print(f"  3. Run {_cyan('aidlc run')}")
+    else:
+        print(f"  1. Add your planning docs (ROADMAP.md, ARCHITECTURE.md, etc.)")
+        print(f"     Or run {_cyan('aidlc init --with-docs')} to copy templates")
+        print(f"  2. Run {_cyan('aidlc run')}")
+
+
+def cmd_audit(args: argparse.Namespace) -> None:
+    """Run a standalone code audit."""
+    from .auditor import CodeAuditor
+    from .logger import setup_logger
+    from .claude_cli import ClaudeCLI
+
+    project_root = Path(args.project or ".").resolve()
+    config = load_config(
+        config_path=getattr(args, "config", None),
+        project_root=str(project_root),
+    )
+    depth = "full" if args.full else "quick"
+
+    _print_banner()
+    print(f"Auditing {_cyan(str(project_root))} ({depth} scan)...")
+    print()
+
+    # Ensure .aidlc exists for output
+    (project_root / ".aidlc").mkdir(exist_ok=True)
+
+    logger = setup_logger("audit", project_root / ".aidlc", verbose=args.verbose)
+
+    cli = None
+    if depth == "full":
+        cli = ClaudeCLI(config, logger)
+        if not cli.check_available():
+            print(f"{_red('x')} Claude CLI not available.")
+            print(f"  Use quick scan (without --full) or install Claude CLI.")
+            sys.exit(1)
+
+    auditor = CodeAuditor(
+        project_root=project_root,
+        config=config,
+        cli=cli,
+        logger=logger,
+    )
+    result = auditor.run(depth=depth)
+
+    # Print summary
+    print(f"{_green('Audit complete')} ({depth} scan)")
+    print()
+    print(f"  {_bold('Project type:')}   {result.project_type}")
+    print(f"  {_bold('Frameworks:')}     {', '.join(result.frameworks) or _dim('none detected')}")
+    print(f"  {_bold('Modules:')}        {len(result.modules)}")
+    print(f"  {_bold('Entry points:')}   {len(result.entry_points)}")
+    print(f"  {_bold('Source files:')}   {result.source_stats.get('total_files', 0)}")
+    print(f"  {_bold('Total lines:')}    {result.source_stats.get('total_lines', 0):,}")
+
+    if result.test_coverage:
+        tc = result.test_coverage
+        est = tc.estimated_coverage if hasattr(tc, "estimated_coverage") else "unknown"
+        fw = f" ({tc.test_framework})" if hasattr(tc, "test_framework") and tc.test_framework else ""
+        print(f"  {_bold('Test coverage:')}  {est}{fw}")
+
+    if result.tech_debt:
+        print(f"  {_bold('Tech debt:')}      {len(result.tech_debt)} markers")
+
+    print()
+    print(f"  {_bold('Generated:')} {', '.join(result.generated_docs)}")
+
+    if result.conflicts:
+        print()
+        print(f"  {_yellow('!')} Found {len(result.conflicts)} conflict(s) with existing docs.")
+        print(f"    Review: {_cyan(str(project_root / '.aidlc' / 'CONFLICTS.md'))}")
+    else:
+        print(f"  {_green('No conflicts')} with existing docs.")
+
+    print()
+    print(f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first.")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run the full AIDLC lifecycle."""
     project_root = args.project or str(Path.cwd())
 
     config = load_config(
@@ -49,6 +269,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     if args.max_impl_cycles is not None:
         config["max_implementation_cycles"] = args.max_impl_cycles
 
+    audit = getattr(args, "audit", None)
+
     run_full(
         config=config,
         resume=args.resume,
@@ -56,59 +278,19 @@ def cmd_run(args: argparse.Namespace) -> None:
         plan_only=args.plan_only,
         implement_only=args.implement_only,
         verbose=args.verbose,
+        audit=audit,
     )
 
 
-def cmd_init(args: argparse.Namespace) -> None:
-    project_root = Path(args.project or ".").resolve()
-    aidlc_dir = project_root / ".aidlc"
-
-    if aidlc_dir.exists():
-        print(f".aidlc/ already exists at {project_root}")
-        print("Use 'aidlc run --resume' to resume, or delete .aidlc/ to start fresh.")
-        return
-
-    aidlc_dir.mkdir()
-    (aidlc_dir / "issues").mkdir()
-    (aidlc_dir / "runs").mkdir()
-    (aidlc_dir / "reports").mkdir()
-
-    # Write default config
-    default_config = {
-        "plan_budget_hours": 4,
-        "checkpoint_interval_minutes": 15,
-        "claude_model": "opus",
-        "max_implementation_attempts": 3,
-        "run_tests_command": None,
-    }
-    with open(aidlc_dir / "config.json", "w") as f:
-        json.dump(default_config, f, indent=2)
-
-    # Add to .gitignore
-    gitignore = project_root / ".gitignore"
-    ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if ".aidlc/" not in content:
-            with open(gitignore, "a") as f:
-                f.write(ignore_entry)
-    else:
-        gitignore.write_text(ignore_entry.lstrip())
-
-    print(f"Initialized AIDLC in {project_root}")
-    print(f"  Config: {aidlc_dir / 'config.json'}")
-    print(f"  Issues: {aidlc_dir / 'issues/'}")
-    print()
-    print("Edit .aidlc/config.json to customize, then run:")
-    print("  aidlc run")
-
-
 def cmd_status(args: argparse.Namespace) -> None:
+    """Show status of the latest run."""
     project_root = Path(args.project or ".").resolve()
     runs_dir = project_root / ".aidlc" / "runs"
 
+    _print_banner()
+
     if not runs_dir.exists():
-        print("No AIDLC runs found. Run 'aidlc init' first.")
+        print(f"No AIDLC runs found. Run {_cyan('aidlc init')} first.")
         return
 
     run_dir = find_latest_run(runs_dir)
@@ -121,69 +303,148 @@ def cmd_status(args: argparse.Namespace) -> None:
     plan_budget_h = state.plan_budget_seconds / 3600
     elapsed_h = state.elapsed_seconds / 3600
 
-    print(f"Run: {state.run_id}")
-    print(f"Status: {state.status.value}")
-    print(f"Phase: {state.phase.value}")
-    print(f"Planning: {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
-    print(f"Total elapsed: {elapsed_h:.1f}h")
-    print(f"Issues: {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed")
+    # Status color
+    status_str = state.status.value
+    if state.status.value == "complete":
+        status_str = _green(status_str)
+    elif state.status.value == "failed":
+        status_str = _red(status_str)
+    elif state.status.value == "paused":
+        status_str = _yellow(status_str)
+    elif state.status.value == "running":
+        status_str = _cyan(status_str)
+
+    print(f"  {_bold('Run:')}       {state.run_id}")
+    print(f"  {_bold('Status:')}    {status_str}")
+    print(f"  {_bold('Phase:')}     {state.phase.value}")
+    print(f"  {_bold('Planning:')}  {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
+    print(f"  {_bold('Elapsed:')}   {elapsed_h:.1f}h")
+    print(f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed")
+
+    if state.audit_depth != "none":
+        print(f"  {_bold('Audit:')}     {state.audit_depth} ({'complete' if state.audit_completed else 'incomplete'})")
+
     if state.stop_reason:
-        print(f"Stop reason: {state.stop_reason}")
+        print(f"  {_bold('Stopped:')}   {state.stop_reason}")
 
     # Show issue list
     if state.issues:
-        print(f"\nIssues:")
+        print()
+        print(f"  {_bold('Issues:')}")
         for d in state.issues:
-            status_icon = {
-                "pending": " ",
-                "in_progress": ">",
-                "implemented": "+",
-                "verified": "v",
-                "failed": "x",
-                "blocked": "!",
-                "skipped": "-",
-            }.get(d.get("status", "pending"), "?")
-            print(f"  [{status_icon}] {d['id']}: {d['title']} ({d.get('status', 'pending')})")
+            status = d.get("status", "pending")
+            icon_map = {
+                "pending": _dim(" "),
+                "in_progress": _cyan(">"),
+                "implemented": _green("+"),
+                "verified": _green("v"),
+                "failed": _red("x"),
+                "blocked": _yellow("!"),
+                "skipped": _dim("-"),
+            }
+            icon = icon_map.get(status, "?")
+            title = d.get("title", "untitled")
+            print(f"    [{icon}] {d['id']}: {title} {_dim(f'({status})')}")
+
+
+# ── Parser ───────────────────────────────────────────────────────────
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="AIDLC — AI Development Life Cycle",
         prog="aidlc",
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Command to run")
+        description="AIDLC — AI Development Life Cycle. Drop into any repo, plan with a time budget, implement until done.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            Quick start:
+              aidlc init --with-docs    Set up AIDLC + copy planning templates
+              aidlc audit               Scan existing codebase
+              aidlc run                 Plan and implement
 
-    # run
-    run_parser = subparsers.add_parser("run", help="Run AIDLC lifecycle")
+            For existing repos:
+              aidlc audit               Generate STATUS.md from your code
+              aidlc run --audit          Audit first, then plan and implement
+
+            More info: https://github.com/highlyprofitable108/aidlc
+        """),
+    )
+    parser.add_argument(
+        "--version", "-V", action="version",
+        version=f"aidlc {__version__}",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Command")
+
+    # ── init ──
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize AIDLC in a project",
+        description="Set up .aidlc/ directory with config and optionally copy planning doc templates.",
+    )
+    init_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    init_parser.add_argument(
+        "--with-docs", action="store_true",
+        help="Copy planning doc templates (ROADMAP.md, ARCHITECTURE.md, etc.) into the project",
+    )
+
+    # ── audit ──
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Audit existing codebase",
+        description="Analyze existing code and generate STATUS.md + ARCHITECTURE.md.",
+    )
+    audit_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    audit_parser.add_argument("--full", action="store_true", help="Full audit with Claude semantic analysis")
+    audit_parser.add_argument("--config", "-c", help="Config file path")
+    audit_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+
+    # ── run ──
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run AIDLC lifecycle",
+        description="Run the full scan -> plan -> implement -> report lifecycle.",
+    )
     run_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
     run_parser.add_argument("--config", "-c", help="Config file path")
     run_parser.add_argument("--plan-budget", help="Planning time budget (e.g., 4h, 30m)")
     run_parser.add_argument("--plan-only", action="store_true", help="Stop after planning")
     run_parser.add_argument("--implement-only", action="store_true", help="Skip planning, implement existing issues")
     run_parser.add_argument("--resume", action="store_true", help="Resume latest run")
-    run_parser.add_argument("--dry-run", action="store_true", help="No Claude CLI calls (cycles capped by max_planning_cycles/max_implementation_cycles, default 3)")
-    run_parser.add_argument("--max-plan-cycles", type=int, default=None, help="Max planning cycles (0=unlimited, default: 0, dry-run default: 3)")
-    run_parser.add_argument("--max-impl-cycles", type=int, default=None, help="Max implementation cycles (0=unlimited, default: 0, dry-run default: 3)")
+    run_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="No Claude CLI calls (cycles capped at 3)",
+    )
+    run_parser.add_argument("--max-plan-cycles", type=int, default=None, help="Max planning cycles (0=unlimited)")
+    run_parser.add_argument("--max-impl-cycles", type=int, default=None, help="Max implementation cycles (0=unlimited)")
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+    run_parser.add_argument(
+        "--audit", nargs="?", const="quick", choices=["quick", "full"],
+        help="Audit existing code before planning (default: quick)",
+    )
 
-    # init
-    init_parser = subparsers.add_parser("init", help="Initialize AIDLC in a project")
-    init_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-
-    # status
-    status_parser = subparsers.add_parser("status", help="Show latest run status")
+    # ── status ──
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show latest run status",
+        description="Display the status and issue breakdown of the most recent run.",
+    )
     status_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
 
+    # Parse and dispatch
     args = parser.parse_args()
 
-    if args.command == "run":
-        cmd_run(args)
-    elif args.command == "init":
+    if args.command == "init":
         cmd_init(args)
+    elif args.command == "audit":
+        cmd_audit(args)
+    elif args.command == "run":
+        cmd_run(args)
     elif args.command == "status":
         cmd_status(args)
     else:
         parser.print_help()
+        print()
+        print(f"Run {_cyan('aidlc init')} to get started.")
 
 
 if __name__ == "__main__":
