@@ -1,0 +1,7 @@
+{
+  "plan_budget_hours": 4,
+  "checkpoint_interval_minutes": 15,
+  "claude_model": "opus",
+  "max_implementation_attempts": 3,
+  "run_tests_command": null
+}

@@ -1,6 +1,7 @@
 """CLI entry point for AIDLC.
 
 Usage:
+    aidlc precheck                         # check readiness, report missing docs
     aidlc init                             # set up .aidlc/ in current repo
     aidlc init --with-docs                 # also copy planning doc templates
 
@@ -93,6 +94,97 @@ def _get_template_dir() -> Path:
 def _print_banner():
     print(_bold("AIDLC") + _dim(f" v{__version__}") + " — AI Development Life Cycle")
     print()
+
+
+# ── Precheck ─────────────────────────────────────────────────────────
+
+
+def _print_precheck(result, project_root: Path, verbose: bool = False) -> None:
+    """Print precheck results to console."""
+    from .precheck import REQUIRED_DOCS, RECOMMENDED_DOCS, OPTIONAL_DOCS
+
+    # Config auto-creation notice
+    if result.config_created:
+        print(f"  {_green('+')} Auto-created {_cyan('.aidlc/')} with default config")
+        print(f"    Config: {_dim(str(project_root / '.aidlc' / 'config.json'))}")
+        print(f"    Edit to set plan_budget_hours, run_tests_command, etc.")
+        print()
+
+    # Project detection
+    if result.has_source_code:
+        print(f"  {_bold('Project:')} {result.project_type} {_dim('(source code detected)')}")
+        if "STATUS.md" not in [*result.optional_found, *result.recommended_found, *result.required_found]:
+            print(f"    Tip: run {_cyan('aidlc audit')} to auto-generate STATUS.md + ARCHITECTURE.md")
+    else:
+        print(f"  {_bold('Project:')} {_dim('no source code detected (new project?)')}")
+    print()
+
+    # Required docs
+    print(f"  {_bold('Required')}")
+    for doc in REQUIRED_DOCS:
+        if doc in result.required_found:
+            print(f"    {_green('v')} {doc}")
+        else:
+            info = REQUIRED_DOCS[doc]
+            print(f"    {_red('x')} {doc} — {info['purpose']}")
+            for line in info["suggestion"].split("\n"):
+                print(f"      {_dim(line)}")
+    print()
+
+    # Recommended docs
+    print(f"  {_bold('Recommended')}")
+    for doc in RECOMMENDED_DOCS:
+        if doc in result.recommended_found:
+            print(f"    {_green('v')} {doc}")
+        else:
+            info = RECOMMENDED_DOCS[doc]
+            print(f"    {_yellow('-')} {doc} — {info['purpose']}")
+            if verbose:
+                for line in info["suggestion"].split("\n"):
+                    print(f"      {_dim(line)}")
+    print()
+
+    # Optional docs
+    print(f"  {_bold('Optional')}")
+    for doc in OPTIONAL_DOCS:
+        if doc in result.optional_found:
+            print(f"    {_green('v')} {doc}")
+        else:
+            info = OPTIONAL_DOCS[doc]
+            print(f"    {_dim('-')} {doc} — {info['purpose']}")
+    print()
+
+    # Summary
+    found = len(result.required_found) + len(result.recommended_found) + len(result.optional_found)
+    total = len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
+    score = result.score
+
+    if score == "not ready":
+        print(f"  {_bold('Readiness:')} {_red('NOT READY')} — missing required doc(s)")
+        print(f"    Create the required files above, then run {_cyan('aidlc precheck')} again.")
+    elif score == "excellent":
+        print(f"  {_bold('Readiness:')} {_green('EXCELLENT')} ({found}/{total} docs) — ready to run")
+    elif score == "good":
+        print(f"  {_bold('Readiness:')} {_green('GOOD')} ({found}/{total} docs) — ready to run")
+    else:
+        print(f"  {_bold('Readiness:')} {_yellow('MINIMAL')} ({found}/{total} docs) — can run, but more docs = better plans")
+
+
+def cmd_precheck(args: argparse.Namespace) -> None:
+    """Run pre-flight readiness check."""
+    from .precheck import run_precheck
+
+    project_root = Path(args.project or ".").resolve()
+
+    _print_banner()
+    print(f"Checking {_cyan(str(project_root))}...")
+    print()
+
+    result = run_precheck(project_root, auto_init=True)
+    _print_precheck(result, project_root, verbose=args.verbose)
+
+    if not result.ready:
+        sys.exit(1)
 
 
 # ── Commands ─────────────────────────────────────────────────────────
@@ -256,6 +348,29 @@ def cmd_audit(args: argparse.Namespace) -> None:
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
     project_root = args.project or str(Path.cwd())
+    project_path = Path(project_root).resolve()
+    skip_precheck = args.resume or args.implement_only or getattr(args, "skip_precheck", False)
+
+    # Run precheck before lifecycle (unless resuming or implementing only)
+    if not skip_precheck:
+        from .precheck import run_precheck
+
+        _print_banner()
+        print(f"Pre-flight check...")
+        print()
+
+        result = run_precheck(project_path, auto_init=True)
+        _print_precheck(result, project_path, verbose=args.verbose)
+
+        if not result.ready:
+            print()
+            print(f"  Fix the required items above, then run {_cyan('aidlc run')} again.")
+            print(f"  Or use {_cyan('aidlc run --skip-precheck')} to proceed anyway.")
+            sys.exit(1)
+
+        print()
+        print(f"  Starting lifecycle...")
+        print()
 
     config = load_config(
         config_path=args.config,
@@ -357,11 +472,12 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Quick start:
+              aidlc precheck            Check what docs are needed
               aidlc init --with-docs    Set up AIDLC + copy planning templates
-              aidlc audit               Scan existing codebase
               aidlc run                 Plan and implement
 
             For existing repos:
+              aidlc precheck            See what's missing
               aidlc audit               Generate STATUS.md from your code
               aidlc run --audit          Audit first, then plan and implement
 
@@ -374,6 +490,15 @@ def main() -> None:
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command")
+
+    # ── precheck ──
+    precheck_parser = subparsers.add_parser(
+        "precheck",
+        help="Check project readiness",
+        description="Verify docs and config are in place before running. Auto-creates .aidlc/ with defaults if missing.",
+    )
+    precheck_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    precheck_parser.add_argument("--verbose", "-v", action="store_true", help="Show suggestions for all missing docs")
 
     # ── init ──
     init_parser = subparsers.add_parser(
@@ -421,6 +546,10 @@ def main() -> None:
         "--audit", nargs="?", const="quick", choices=["quick", "full"],
         help="Audit existing code before planning (default: quick)",
     )
+    run_parser.add_argument(
+        "--skip-precheck", action="store_true",
+        help="Skip the pre-flight readiness check",
+    )
 
     # ── status ──
     status_parser = subparsers.add_parser(
@@ -433,7 +562,9 @@ def main() -> None:
     # Parse and dispatch
     args = parser.parse_args()
 
-    if args.command == "init":
+    if args.command == "precheck":
+        cmd_precheck(args)
+    elif args.command == "init":
         cmd_init(args)
     elif args.command == "audit":
         cmd_audit(args)
@@ -444,7 +575,7 @@ def main() -> None:
     else:
         parser.print_help()
         print()
-        print(f"Run {_cyan('aidlc init')} to get started.")
+        print(f"Run {_cyan('aidlc precheck')} to check readiness, or {_cyan('aidlc init')} to get started.")
 
 
 if __name__ == "__main__":

@@ -140,7 +140,7 @@ class TestMain:
 
     @patch("aidlc.__main__.run_full")
     def test_run_command(self, mock_run):
-        with patch("sys.argv", ["aidlc", "run", "--dry-run"]):
+        with patch("sys.argv", ["aidlc", "run", "--dry-run", "--skip-precheck"]):
             main()
         mock_run.assert_called_once()
         call_kwargs = mock_run.call_args[1]
