@@ -57,6 +57,15 @@ DEFAULTS = {
     "audit_exclude_patterns": [
         "**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**",
     ],
+
+    # Research settings
+    "research_max_scope_files": 10,         # max files to read per research action
+    "research_max_source_chars": 15000,     # max chars per scope file
+    "research_max_per_run": 10,             # cap research actions per run
+
+    # Doc-gap detection
+    "doc_gap_detection_enabled": True,
+    "doc_gap_max_items": 50,                # cap gaps passed to planner prompt
 }
 
 

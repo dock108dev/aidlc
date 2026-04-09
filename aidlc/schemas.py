@@ -17,6 +17,7 @@ PLANNING_ACTION_TYPES = {
     "update_issue",       # Refine an existing issue
     "create_doc",         # Create a design/planning document
     "update_doc",         # Update an existing document
+    "research",           # Investigate a topic before creating issues
 }
 
 
@@ -37,6 +38,11 @@ class PlanningAction:
     # For doc operations
     file_path: Optional[str] = None
     content: Optional[str] = None
+
+    # For research operations
+    research_topic: Optional[str] = None
+    research_question: Optional[str] = None
+    research_scope: list = field(default_factory=list)  # file paths to examine
 
     def validate(self, is_finalization: bool = False, known_issue_ids: set | None = None) -> list[str]:
         errors = []
@@ -76,6 +82,12 @@ class PlanningAction:
             if not self.content:
                 errors.append(f"{self.action_type} requires content")
 
+        if self.action_type == "research":
+            if not self.research_topic:
+                errors.append("research requires research_topic")
+            if not self.research_question:
+                errors.append("research requires research_question")
+
         return errors
 
     @classmethod
@@ -92,6 +104,9 @@ class PlanningAction:
             acceptance_criteria=data.get("acceptance_criteria", []),
             file_path=data.get("file_path"),
             content=data.get("content"),
+            research_topic=data.get("research_topic"),
+            research_question=data.get("research_question"),
+            research_scope=data.get("research_scope", []),
         )
 
 
@@ -201,7 +216,7 @@ You MUST output your planning actions as a single JSON block wrapped in ```json`
   "frontier_assessment": "Summary of what you assessed and why you chose these actions",
   "actions": [
     {
-      "action_type": "create_issue | update_issue | create_doc | update_doc",
+      "action_type": "create_issue | update_issue | create_doc | update_doc | research",
       "rationale": "Why this action is needed",
 
       // For create_issue:
@@ -223,7 +238,12 @@ You MUST output your planning actions as a single JSON block wrapped in ```json`
 
       // For create_doc / update_doc:
       "file_path": "docs/design/feature-x.md",
-      "content": "Full document content"
+      "content": "Full document content",
+
+      // For research (investigate before creating issues):
+      "research_topic": "scoring-algorithm",
+      "research_question": "What formula should we use for score calculation?",
+      "research_scope": ["src/scoring.py", "docs/requirements.md"]
     }
   ],
   "cycle_notes": "Observations about planning state or suggestions for next cycle"
@@ -237,7 +257,9 @@ Rules:
 - Produce 1-15 high-quality actions per cycle. Quality over quantity.
 - For create_doc, file_path must be relative to the project root
 - Every action must have a rationale explaining why it's needed
-
+- Use "research" when you need to investigate source code, derive formulas, explore
+  design options, or resolve knowledge gaps BEFORE creating issues. Research results
+  are written to docs/research/ and available in subsequent planning cycles.
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\

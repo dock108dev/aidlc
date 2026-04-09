@@ -177,10 +177,22 @@ def run_full(
         project_context = scan_project(state, config, logger)
         save_state(state, run_dir)
 
+        # DOC-GAP DETECTION — scan docs for TBD/placeholder markers
+        doc_gaps = []
+        if config.get("doc_gap_detection_enabled", True) and not implement_only:
+            from .doc_gap_detector import detect_doc_gaps
+            doc_gaps = detect_doc_gaps(Path(config["_project_root"]), config)
+            if doc_gaps:
+                critical = sum(1 for g in doc_gaps if g.severity == "critical")
+                logger.info(
+                    f"Found {len(doc_gaps)} doc gap(s) "
+                    f"({critical} critical, {len(doc_gaps) - critical} other)"
+                )
+
         # PLAN
         if not implement_only:
             if state.phase in (RunPhase.INIT, RunPhase.SCANNING, RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION):
-                planner = Planner(state, run_dir, config, cli, project_context, logger)
+                planner = Planner(state, run_dir, config, cli, project_context, logger, doc_gaps=doc_gaps)
                 planner.run()
                 save_state(state, run_dir)
                 logger.info(f"Planning complete: {state.issues_created} issues created")

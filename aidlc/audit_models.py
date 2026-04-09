@@ -92,6 +92,36 @@ class TestCoverageInfo:
 
 
 @dataclass
+@dataclass
+class DocGap:
+    """A knowledge gap or placeholder found in documentation."""
+    doc_path: str
+    line: int
+    pattern: str       # what matched (e.g. "TBD", "{placeholder}")
+    text: str          # the line text (truncated)
+    severity: str = "warning"  # critical, warning, info
+
+    def to_dict(self) -> dict:
+        return {
+            "doc_path": self.doc_path,
+            "line": self.line,
+            "pattern": self.pattern,
+            "text": self.text,
+            "severity": self.severity,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "DocGap":
+        return cls(
+            doc_path=data["doc_path"],
+            line=data.get("line", 0),
+            pattern=data.get("pattern", ""),
+            text=data.get("text", ""),
+            severity=data.get("severity", "warning"),
+        )
+
+
+@dataclass
 class AuditConflict:
     """A conflict between audit findings and user-provided documentation."""
     doc_path: str

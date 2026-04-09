@@ -7,6 +7,7 @@ Runs time-constrained planning sessions that:
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
+import re
 import time
 from pathlib import Path
 
@@ -32,12 +33,15 @@ class Planner:
         cli: ClaudeCLI,
         project_context: str,
         logger,
+        doc_gaps: list | None = None,
     ):
         self.state = state
         self.run_dir = run_dir
         self.config = config
         self.cli = cli
         self.project_context = project_context
+        self.doc_gaps = doc_gaps or []
+        self._research_count = 0
         self.logger = logger
         self.project_root = Path(config["_project_root"])
 
@@ -276,6 +280,18 @@ class Planner:
         sections.append("# Project Context\n")
         sections.append(self.project_context)
 
+        # Documentation gaps (from doc-gap detection)
+        if self.doc_gaps:
+            sections.append("\n## Documentation Gaps Detected\n")
+            sections.append(
+                "The following gaps were found in project documentation. "
+                "Use 'research' actions to investigate critical gaps before creating issues.\n"
+            )
+            for gap in self.doc_gaps:
+                marker = "[CRITICAL] " if gap.severity == "critical" else ""
+                sections.append(f"- {marker}`{gap.doc_path}:{gap.line}` — {gap.text[:120]}")
+            sections.append("")
+
         # Current issue universe
         if self.state.issues:
             sections.append("\n## Current Issue Universe\n")
@@ -327,6 +343,9 @@ implementation plan as a set of well-specified issues.
 - Define dependency chains — which issues must be completed before others
 - Create design docs for complex features that need architectural decisions
 - Ensure complete coverage — every piece of planned work should have an issue
+- Use "research" actions when you encounter knowledge gaps, need to derive formulas,
+  explore design alternatives, or need to analyze source code before creating issues.
+  Research results are written to docs/research/ and available in subsequent cycles.
 
 **What you should NOT do:**
 - Write implementation code (that comes in the implementation phase)
@@ -447,6 +466,113 @@ instead of declaring complete."""
                 "action": "create" if action.action_type == "create_doc" else "update",
             })
             self.logger.info(f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}")
+
+        elif action.action_type == "research":
+            self._execute_research(action)
+
+    def _execute_research(self, action: PlanningAction) -> None:
+        """Execute a research action — call Claude to investigate a topic."""
+        max_per_run = self.config.get("research_max_per_run", 10)
+        if self._research_count >= max_per_run:
+            self.logger.warning(
+                f"Research cap reached ({max_per_run}), skipping: {action.research_topic}"
+            )
+            return
+
+        self.logger.info(f"Researching: {action.research_topic}")
+
+        # Read scope files
+        max_files = self.config.get("research_max_scope_files", 10)
+        max_chars = self.config.get("research_max_source_chars", 15000)
+        scope_content = []
+        for scope_path in (action.research_scope or [])[:max_files]:
+            full_path = self.project_root / scope_path
+            if full_path.exists() and full_path.is_file():
+                try:
+                    content = full_path.read_text(errors="replace")
+                    if len(content) > max_chars:
+                        content = content[:max_chars] + "\n\n... (truncated)"
+                    scope_content.append(f"### {scope_path}\n```\n{content}\n```")
+                except OSError:
+                    self.logger.warning(f"Could not read scope file: {scope_path}")
+            else:
+                self.logger.warning(f"Scope file not found: {scope_path}")
+
+        # Build research prompt
+        prompt_parts = [
+            f"# Research: {action.research_topic}",
+            "",
+            "## Question",
+            action.research_question or action.rationale,
+            "",
+        ]
+        if scope_content:
+            prompt_parts.append("## Relevant Source Files\n")
+            prompt_parts.extend(scope_content)
+            prompt_parts.append("")
+
+        prompt_parts.extend([
+            "## Instructions",
+            "",
+            "Analyze the question and any source files above. Write a thorough research",
+            "document in markdown that:",
+            "- Answers the research question with specific, actionable recommendations",
+            "- References relevant code sections if scope files were provided",
+            "- Identifies trade-offs between alternatives",
+            "- Provides concrete implementation guidance",
+            "- Includes formulas, algorithms, or design patterns as applicable",
+            "",
+            "Output your response as a markdown document. No JSON wrapping needed.",
+        ])
+
+        prompt = "\n".join(prompt_parts)
+
+        # Call Claude
+        start_time = time.time()
+        result = self.cli.execute_prompt(prompt, self.project_root)
+        duration = time.time() - start_time
+        self.state.plan_elapsed_seconds += duration
+        self.state.elapsed_seconds += duration
+
+        if not result["success"]:
+            self.logger.error(f"Research failed for {action.research_topic}: {result.get('error')}")
+            return
+
+        output = result.get("output", "")
+        if not output:
+            self.logger.warning(f"Research returned empty output for {action.research_topic}")
+            return
+
+        # Write research output
+        sanitized = re.sub(r"[^a-z0-9_-]", "-", action.research_topic.lower())
+        sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
+        research_dir = self.project_root / "docs" / "research"
+        research_dir.mkdir(parents=True, exist_ok=True)
+        output_path = research_dir / f"{sanitized}.md"
+
+        # Add header
+        full_content = (
+            f"# Research: {action.research_topic}\n\n"
+            f"*Auto-generated by AIDLC research phase*\n\n"
+            f"**Question:** {action.research_question}\n\n"
+            f"---\n\n"
+            f"{output}"
+        )
+        output_path.write_text(full_content)
+
+        self.state.files_created += 1
+        self.state.created_artifacts.append({
+            "path": f"docs/research/{sanitized}.md",
+            "type": "research",
+            "action": "create",
+        })
+        self._research_count += 1
+        self.logger.info(f"Research complete: docs/research/{sanitized}.md")
+
+        # Save raw output
+        output_dir = self.run_dir / "claude_outputs"
+        output_dir.mkdir(exist_ok=True)
+        (output_dir / f"research_{sanitized}.md").write_text(output)
 
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""
