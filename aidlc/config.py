@@ -66,6 +66,11 @@ DEFAULTS = {
     # Doc-gap detection
     "doc_gap_detection_enabled": True,
     "doc_gap_max_items": 50,                # cap gaps passed to planner prompt
+
+    # Finalization
+    "finalize_enabled": True,               # master switch for finalization
+    "finalize_passes": None,                # None = all; or ["ssot", "docs"]
+    "finalize_timeout_seconds": 900,        # 15 min per pass
 }
 
 

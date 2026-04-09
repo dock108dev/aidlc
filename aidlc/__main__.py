@@ -384,6 +384,10 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     audit = getattr(args, "audit", None)
 
+    skip_finalize = getattr(args, "skip_finalize", False)
+    passes_str = getattr(args, "passes", None)
+    finalize_passes = passes_str.split(",") if passes_str else None
+
     run_full(
         config=config,
         resume=args.resume,
@@ -392,7 +396,69 @@ def cmd_run(args: argparse.Namespace) -> None:
         implement_only=args.implement_only,
         verbose=args.verbose,
         audit=audit,
+        skip_finalize=skip_finalize,
+        finalize_passes=finalize_passes,
     )
+
+
+def cmd_finalize(args: argparse.Namespace) -> None:
+    """Run finalization passes standalone."""
+    from .finalizer import Finalizer
+    from .logger import setup_logger
+    from .claude_cli import ClaudeCLI
+
+    project_root = Path(args.project or ".").resolve()
+    config = load_config(
+        config_path=getattr(args, "config", None),
+        project_root=str(project_root),
+    )
+
+    _print_banner()
+
+    # Find latest run
+    runs_dir = project_root / ".aidlc" / "runs"
+    if not runs_dir.exists():
+        print(f"{_red('x')} No AIDLC runs found. Run {_cyan('aidlc run')} first.")
+        sys.exit(1)
+
+    run_dir = find_latest_run(runs_dir)
+    if not run_dir:
+        print(f"{_red('x')} No runs found.")
+        sys.exit(1)
+
+    state = load_state(run_dir)
+    logger = setup_logger(state.run_id, run_dir, verbose=args.verbose)
+
+    cli = ClaudeCLI(config, logger)
+    if not cli.check_available() and not config.get("dry_run"):
+        print(f"{_red('x')} Claude CLI not available.")
+        sys.exit(1)
+
+    # Parse passes
+    passes_str = getattr(args, "passes", None)
+    passes = passes_str.split(",") if passes_str else None
+
+    # Build project context (quick scan)
+    from .scanner import ProjectScanner
+    scanner = ProjectScanner(project_root, config)
+    scan_result = scanner.scan()
+    project_context = scanner.build_context_prompt(scan_result)
+
+    print(f"Finalizing run {_cyan(state.run_id)}...")
+    print(f"  Passes: {', '.join(passes) if passes else 'all'}")
+    print()
+
+    finalizer = Finalizer(state, run_dir, config, cli, project_context, logger)
+    finalizer.run(passes=passes)
+
+    from .state_manager import save_state as _save
+    _save(state, run_dir)
+
+    print()
+    print(f"{_green('Finalization complete')}")
+    print(f"  Passes completed: {', '.join(state.finalize_passes_completed)}")
+    print(f"  Reports: {_cyan('docs/audits/')}")
+    print(f"  Futures: {_cyan('AIDLC_FUTURES.md')}")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -544,6 +610,29 @@ def main() -> None:
         "--audit", nargs="?", const="quick", choices=["quick", "full"],
         help="Audit existing code before planning (default: quick)",
     )
+    run_parser.add_argument(
+        "--skip-finalize", action="store_true",
+        help="Skip finalization passes after implementation",
+    )
+    run_parser.add_argument(
+        "--passes",
+        help="Comma-separated finalization passes to run (default: all). Options: ssot,security,abend,docs,cleanup",
+    )
+
+    # ── finalize ──
+    finalize_parser = subparsers.add_parser(
+        "finalize",
+        help="Run finalization passes",
+        description="Run post-implementation audit, cleanup, and documentation passes.",
+    )
+    finalize_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    finalize_parser.add_argument(
+        "--passes",
+        help="Comma-separated passes to run (default: all). Options: ssot,security,abend,docs,cleanup",
+    )
+    finalize_parser.add_argument("--config", "-c", help="Config file path")
+    finalize_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+
     # ── status ──
     status_parser = subparsers.add_parser(
         "status",
@@ -563,6 +652,8 @@ def main() -> None:
         cmd_audit(args)
     elif args.command == "run":
         cmd_run(args)
+    elif args.command == "finalize":
+        cmd_finalize(args)
     elif args.command == "status":
         cmd_status(args)
     else:

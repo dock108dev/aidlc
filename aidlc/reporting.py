@@ -85,6 +85,16 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
                 lines.append(f"- {a}")
         lines.append("")
 
+    # Finalization
+    if state.finalize_passes_completed:
+        lines.append("## Finalization Summary\n")
+        lines.append("| Pass | Status |")
+        lines.append("|------|--------|")
+        for p in state.finalize_passes_requested:
+            status = "complete" if p in state.finalize_passes_completed else "skipped"
+            lines.append(f"| {p} | {status} |")
+        lines.append("")
+
     if state.notes:
         lines.append(f"## Notes\n\n{state.notes}\n")
 

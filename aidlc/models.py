@@ -21,6 +21,7 @@ class RunPhase(Enum):
     PLAN_FINALIZATION = "plan_finalization"
     IMPLEMENTING = "implementing"
     VERIFYING = "verifying"
+    FINALIZING = "finalizing"
     REPORTING = "reporting"
     DONE = "done"
 
@@ -133,6 +134,10 @@ class RunState:
     audit_conflicts: list = field(default_factory=list)
     audit_completed: bool = False
 
+    # Finalization
+    finalize_passes_completed: list = field(default_factory=list)
+    finalize_passes_requested: list = field(default_factory=list)
+
     # Control
     checkpoint_count: int = 0
     stop_reason: Optional[str] = None
@@ -218,6 +223,8 @@ class RunState:
             "audit_depth": self.audit_depth,
             "audit_conflicts": self.audit_conflicts,
             "audit_completed": self.audit_completed,
+            "finalize_passes_completed": self.finalize_passes_completed,
+            "finalize_passes_requested": self.finalize_passes_requested,
             "checkpoint_count": self.checkpoint_count,
             "stop_reason": self.stop_reason,
             "notes": self.notes,
@@ -256,6 +263,8 @@ class RunState:
         state.audit_depth = data.get("audit_depth", "none")
         state.audit_conflicts = data.get("audit_conflicts", [])
         state.audit_completed = data.get("audit_completed", False)
+        state.finalize_passes_completed = data.get("finalize_passes_completed", [])
+        state.finalize_passes_requested = data.get("finalize_passes_requested", [])
         state.checkpoint_count = data.get("checkpoint_count", 0)
         state.stop_reason = data.get("stop_reason")
         state.notes = data.get("notes", "")

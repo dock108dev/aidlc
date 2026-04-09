@@ -106,6 +106,8 @@ def run_full(
     implement_only: bool = False,
     verbose: bool = False,
     audit: str | None = None,
+    skip_finalize: bool = False,
+    finalize_passes: list[str] | None = None,
 ) -> None:
     """Run the full AIDLC lifecycle."""
 
@@ -214,6 +216,21 @@ def run_full(
                 )
             else:
                 logger.warning("No issues to implement. Did planning produce any issues?")
+
+        # FINALIZE (optional) — audit, cleanup, docs consolidation
+        if (
+            not plan_only
+            and not skip_finalize
+            and config.get("finalize_enabled", True)
+            and state.issues
+        ):
+            from .finalizer import Finalizer
+
+            state.phase = RunPhase.FINALIZING
+            logger.info("Starting finalization passes...")
+            finalizer = Finalizer(state, run_dir, config, cli, project_context, logger)
+            finalizer.run(passes=finalize_passes)
+            save_state(state, run_dir)
 
         # REPORT
         state.phase = RunPhase.REPORTING
