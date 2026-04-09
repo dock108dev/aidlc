@@ -74,8 +74,13 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     return state, run_dir
 
 
-def scan_project(state: RunState, config: dict, logger) -> str:
-    """Scan the project and return context string."""
+def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, dict]:
+    """Scan the project and return (context_string, scan_result).
+
+    For large projects, this also generates a doc manifest and optional
+    project brief to ensure Claude sees the full scope even when individual
+    docs don't fit in the context budget.
+    """
     logger.info("Scanning project...")
     state.phase = RunPhase.SCANNING
 
@@ -85,17 +90,59 @@ def scan_project(state: RunState, config: dict, logger) -> str:
     state.docs_scanned = scan_result["total_docs"]
     state.scanned_docs = [d["path"] for d in scan_result["doc_files"]]
 
+    # Build base context
     context = scanner.build_context_prompt(scan_result)
-    state.project_context = context[:2000]  # Save summary to state (full context kept in memory)
+
+    # For large projects, add a doc manifest so Claude knows what exists
+    # even when docs don't fit in the context budget
+    doc_files = scan_result["doc_files"]
+    total_doc_chars = sum(d["size"] for d in doc_files)
+    max_context = config.get("max_context_chars", 80000)
+
+    if total_doc_chars > max_context:
+        from .context_prep import build_doc_manifest, build_project_brief
+
+        logger.info(
+            f"Large project detected: {total_doc_chars:,} chars of docs vs "
+            f"{max_context:,} context budget. Building doc manifest..."
+        )
+
+        # Add manifest of ALL docs (even ones that don't fit)
+        manifest = build_doc_manifest(doc_files)
+        context = context + "\n\n" + manifest
+
+        # Generate project brief via Claude if available
+        if cli and not config.get("dry_run"):
+            logger.info("Generating project brief from all documentation...")
+            brief = build_project_brief(
+                doc_files, cli, Path(config["_project_root"]), logger,
+                max_brief_chars=config.get("project_brief_max_chars", 20000),
+            )
+            if brief:
+                # Save brief to .aidlc/ for reuse on resume
+                brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
+                brief_path.write_text(brief)
+                context = f"## Project Brief\n\n{brief}\n\n{context}"
+                logger.info(f"Project brief generated ({len(brief):,} chars)")
+            else:
+                logger.warning("Could not generate project brief — continuing with raw docs")
+        else:
+            # Check for cached brief from previous run
+            brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
+            if brief_path.exists():
+                brief = brief_path.read_text()
+                context = f"## Project Brief\n\n{brief}\n\n{context}"
+                logger.info(f"Loaded cached project brief ({len(brief):,} chars)")
+
+    state.project_context = context[:2000]  # Save summary to state
 
     logger.info(f"Scanned {scan_result['total_docs']} docs, project type: {scan_result['project_type']}")
 
-    # Load any existing issues from previous runs
     existing = scan_result.get("existing_issues", [])
     if existing:
         logger.info(f"Found {len(existing)} existing issues from previous runs")
 
-    return context
+    return context, scan_result
 
 
 def run_full(
@@ -176,7 +223,7 @@ def run_full(
                 logger.info("Audit complete, proceeding to scan.")
 
         # SCAN — always scan (even on resume, to get fresh context)
-        project_context = scan_project(state, config, logger)
+        project_context, scan_result = scan_project(state, config, logger, cli=cli)
         save_state(state, run_dir)
 
         # DOC-GAP DETECTION — scan docs for TBD/placeholder markers
@@ -194,7 +241,11 @@ def run_full(
         # PLAN
         if not implement_only:
             if state.phase in (RunPhase.INIT, RunPhase.SCANNING, RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION):
-                planner = Planner(state, run_dir, config, cli, project_context, logger, doc_gaps=doc_gaps)
+                planner = Planner(
+                    state, run_dir, config, cli, project_context, logger,
+                    doc_gaps=doc_gaps,
+                    doc_files=scan_result.get("doc_files", []),
+                )
                 planner.run()
                 save_state(state, run_dir)
                 logger.info(f"Planning complete: {state.issues_created} issues created")

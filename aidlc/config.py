@@ -67,6 +67,10 @@ DEFAULTS = {
     "doc_gap_detection_enabled": True,
     "doc_gap_max_items": 50,                # cap gaps passed to planner prompt
 
+    # Context preparation
+    "project_brief_max_chars": 20000,       # max size of generated project brief
+    "phase_context_max_chars": 40000,       # max chars for phase-focused docs per cycle
+
     # Finalization
     "finalize_enabled": True,               # master switch for finalization
     "finalize_passes": None,                # None = all; or ["ssot", "docs"]

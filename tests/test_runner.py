@@ -72,7 +72,7 @@ class TestScanProject:
         (tmp_path / "README.md").write_text("# Test Project")
         logger = logging.getLogger("test_scan")
         state = RunState(run_id="t", config_name="c")
-        context = scan_project(state, config, logger)
+        context, scan_result = scan_project(state, config, logger)
         assert "Test Project" in context
         assert state.docs_scanned >= 1
 

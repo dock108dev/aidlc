@@ -34,6 +34,7 @@ class Planner:
         project_context: str,
         logger,
         doc_gaps: list | None = None,
+        doc_files: list | None = None,
     ):
         self.state = state
         self.run_dir = run_dir
@@ -41,7 +42,9 @@ class Planner:
         self.cli = cli
         self.project_context = project_context
         self.doc_gaps = doc_gaps or []
+        self.doc_files = doc_files or []
         self._research_count = 0
+        self._phase_docs = self._map_phase_docs()
         self.logger = logger
         self.project_root = Path(config["_project_root"])
 
@@ -98,13 +101,38 @@ class Planner:
             result = self._planning_cycle()
 
             if result is None:
-                # No actions at all — if we already offered completion, honor it
+                # No actions proposed. Only treat as "done" if:
+                # 1. We already offered completion and Claude accepted, OR
+                # 2. We've been winding down (multiple empty/update-only cycles)
                 if self._pending_completion_reason:
                     self.state.stop_reason = self._pending_completion_reason
-                else:
+                    self.logger.info("No more planning work identified (completion confirmed).")
+                    break
+                elif getattr(self, "_offer_completion", False):
                     self.state.stop_reason = "Planning frontier is clear"
-                self.logger.info("No more planning work identified.")
-                break
+                    self.logger.info("No more planning work identified.")
+                    break
+                else:
+                    # Early empty cycle — Claude may have stopped prematurely.
+                    # Track it as a zero-new-issue cycle for diminishing returns.
+                    self.logger.warning(
+                        "Empty planning cycle but completion not yet offered — "
+                        "continuing to ensure all ROADMAP phases are covered."
+                    )
+                    recent_cycles.append(0)
+                    # Check if we've had enough empty cycles to trigger winding down
+                    if (
+                        len(recent_cycles) >= diminishing_returns_threshold
+                        and self.state.issues_created > 0
+                        and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
+                    ):
+                        if not self._offer_completion:
+                            self._offer_completion = True
+                            self.logger.info("Offering completion option after repeated empty cycles.")
+                        else:
+                            self.state.stop_reason = "Planning frontier is clear"
+                            self.logger.info("Planning complete after repeated empty cycles.")
+                            break
             elif result is False:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
@@ -232,12 +260,16 @@ class Planner:
             )
             return False
 
-        # Check if Claude declared planning complete — note it for the run loop
-        # but don't exit here. The run() loop decides when to actually stop.
-        if planning_output.planning_complete:
+        # Only accept planning_complete if we've actually offered it
+        # (Claude sometimes adds this field unprompted — ignore it until invited)
+        if planning_output.planning_complete and getattr(self, "_offer_completion", False):
             reason = planning_output.completion_reason or "Claude declared planning complete"
             self._pending_completion_reason = f"Planning complete — {reason}"
-            self.logger.info(f"Claude signaled planning_complete: {reason}")
+            self.logger.info(f"Claude signaled planning_complete (accepted): {reason}")
+        elif planning_output.planning_complete:
+            self.logger.info(
+                "Claude signaled planning_complete but completion not yet offered — ignoring"
+            )
 
         if not planning_output.actions:
             self.logger.info("No actions proposed — frontier may be clear")
@@ -281,6 +313,24 @@ class Planner:
         # Project context from scanner
         sections.append("# Project Context\n")
         sections.append(self.project_context)
+
+        # Phase-focused context: include full docs relevant to next uncovered phase
+        next_phase = self._get_current_phase_name()
+        if next_phase and self._phase_docs.get(next_phase):
+            from .context_prep import build_phase_context
+            phase_ctx = build_phase_context(
+                self.doc_files,
+                self._phase_docs[next_phase],
+                max_chars=self.config.get("phase_context_max_chars", 40000),
+            )
+            if phase_ctx:
+                sections.append(f"\n## Focus: {next_phase}\n")
+                sections.append(
+                    "The following detailed docs are relevant to this phase "
+                    "and should inform your issue creation:\n"
+                )
+                sections.append(phase_ctx)
+                sections.append("")
 
         # Documentation gaps (from doc-gap detection)
         if self.doc_gaps:
@@ -338,13 +388,17 @@ class Planner:
 You are an autonomous planning agent analyzing this project. Your job is to create a comprehensive
 implementation plan as a set of well-specified issues.
 
+**CRITICAL: Cover ALL phases in the ROADMAP, not just the first one.**
+If the ROADMAP has Phases 1 through 4, you must create issues for ALL of them.
+Do not stop after Phase 1. Each phase should have its own set of issues.
+Work through the roadmap systematically — one phase per cycle if needed.
+
 **What you should do:**
-- Create issues for features, enhancements, bug fixes, refactoring, or infrastructure work
+- Create issues for EVERY item in EVERY phase of the ROADMAP
 - Each issue must have clear acceptance criteria that are specific and testable
 - Set appropriate priority levels (high = blocking/critical, medium = important, low = nice-to-have)
 - Define dependency chains — which issues must be completed before others
 - Create design docs for complex features that need architectural decisions
-- Ensure complete coverage — every piece of planned work should have an issue
 - Use "research" actions when you encounter knowledge gaps, need to derive formulas,
   explore design alternatives, or need to analyze source code before creating issues.
   Research results are written to docs/research/ and available in subsequent cycles.
@@ -354,6 +408,7 @@ implementation plan as a set of well-specified issues.
 - Create duplicate issues
 - Create vague issues without testable acceptance criteria
 - Ignore existing documentation — build on what's already planned
+- Stop after covering only one phase when there are more phases in the ROADMAP
 
 **Priority order:**
 1. Core infrastructure and foundational issues (high priority, no deps)
@@ -362,12 +417,7 @@ implementation plan as a set of well-specified issues.
 4. Polish, optimization, and documentation
 
 Produce 1-15 high-quality actions per cycle. Quality over quantity.
-
-**When to declare planning complete:**
-- Set "planning_complete": true when all work from the docs has been captured as issues
-- The time budget is a MAXIMUM, not a target — finishing early with a complete plan is ideal
-- Do NOT keep cycling just to make minor refinements to existing issues
-- If you find yourself only updating existing issues with no new work to create, planning is done"""
+Focus each cycle on a different phase or area until all ROADMAP work is captured."""
 
     def _finalization_instructions(self) -> str:
         return """## Instructions — PLANNING FINALIZATION
@@ -391,6 +441,45 @@ Produce only refinement and gap-filling actions.
 **When to declare planning complete:**
 - Set "planning_complete": true once all issues are well-specified and no gaps remain
 - This is the finalization phase — wrapping up is the goal, not finding more work"""
+
+    def _map_phase_docs(self) -> dict[str, list[str]]:
+        """Map ROADMAP phases to relevant doc paths for phase-focused context."""
+        if not self.doc_files:
+            return {}
+        # Find the ROADMAP content
+        roadmap_content = ""
+        for doc in self.doc_files:
+            if doc["path"].lower() in ("roadmap.md",):
+                roadmap_content = doc["content"]
+                break
+        if not roadmap_content:
+            return {}
+
+        from .context_prep import identify_phase_docs
+        return identify_phase_docs(self.doc_files, roadmap_content)
+
+    def _get_current_phase_name(self) -> str | None:
+        """Determine which ROADMAP phase the planner should focus on next.
+
+        Looks at which phases already have issues and suggests the next one.
+        """
+        if not self._phase_docs:
+            return None
+
+        phase_names = list(self._phase_docs.keys())
+
+        # Check which phases have issues created
+        issue_titles = " ".join(d.get("title", "") for d in self.state.issues).lower()
+
+        for phase_name in phase_names:
+            # If no issues mention this phase's keywords, it needs planning
+            phase_lower = phase_name.lower()
+            # Simple heuristic: if the phase name keywords appear in issue titles, it's covered
+            phase_words = [w for w in phase_lower.split() if len(w) > 3]
+            if phase_words and not any(w in issue_titles for w in phase_words):
+                return phase_name
+
+        return None
 
     def _completion_offer_instructions(self) -> str:
         return """## PLANNING WIND-DOWN NOTICE

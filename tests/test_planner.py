@@ -184,13 +184,13 @@ class TestPlanner:
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
 
-    def test_planning_complete_signal(self, state, config, logger, tmp_path):
-        """Claude declares planning_complete: true -> planner exits early."""
+    def test_planning_complete_ignored_when_not_offered(self, state, config, logger, tmp_path):
+        """Claude's planning_complete is ignored until the system offers it."""
         cli = MagicMock()
         complete_response = json.dumps({
             "frontier_assessment": "All work captured",
             "planning_complete": True,
-            "completion_reason": "All features from ROADMAP.md have been captured as issues",
+            "completion_reason": "All features captured",
             "actions": [],
             "cycle_notes": "Done",
         })
@@ -202,14 +202,24 @@ class TestPlanner:
             "duration_seconds": 1.0,
             "retries": 0,
         }
-        config["max_planning_cycles"] = 100
+        # With diminishing_returns_threshold=3, empty cycles will eventually trigger
+        # the winding down detection after 3 cycles, then offer, then accept
+        config["max_planning_cycles"] = 10
         config["dry_run"] = False
+        config["diminishing_returns_threshold"] = 3
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
+        # Pre-seed an issue so issues_created > 0
+        from aidlc.models import Issue
+        issue = Issue(id="ISSUE-001", title="Existing", description="X", acceptance_criteria=["AC"])
+        state.update_issue(issue)
+        state.issues_created = 1
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
-        assert state.planning_cycles == 1
+        # Should NOT exit on cycle 1 — completion not offered yet
+        assert state.planning_cycles > 1
+        assert "complete" in (state.stop_reason or "").lower() or "clear" in (state.stop_reason or "").lower()
         assert "complete" in (state.stop_reason or "").lower()
 
     def test_planning_complete_deferred_until_winding_down(self, state, config, logger, tmp_path):
