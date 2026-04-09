@@ -212,45 +212,71 @@ class TestPlanner:
         assert state.planning_cycles == 1
         assert "complete" in (state.stop_reason or "").lower()
 
-    def test_planning_complete_with_final_actions(self, state, config, logger, tmp_path):
-        """Claude can declare complete while still submitting final refinements."""
+    def test_planning_complete_deferred_until_winding_down(self, state, config, logger, tmp_path):
+        """Claude's planning_complete is deferred — only honored after winding down confirmed."""
         cli = MagicMock()
-        complete_response = json.dumps({
-            "frontier_assessment": "Final cleanup",
-            "planning_complete": True,
-            "completion_reason": "Plan is comprehensive",
+        # Cycle 1: creates an issue (not winding down yet)
+        create_response = json.dumps({
+            "frontier_assessment": "Creating work",
             "actions": [{
                 "action_type": "create_issue",
-                "rationale": "Last issue",
+                "rationale": "Need this",
                 "issue_id": "ISSUE-001",
-                "title": "Final cleanup task",
-                "description": "Clean up",
-                "priority": "low",
-                "acceptance_criteria": ["Code is clean"],
+                "title": "Real work",
+                "description": "Do stuff",
+                "priority": "high",
+                "acceptance_criteria": ["Done"],
             }],
             "cycle_notes": "",
         })
-        cli.execute_prompt.return_value = {
-            "success": True,
-            "output": f"```json\n{complete_response}\n```",
-            "error": None,
-            "failure_type": None,
-            "duration_seconds": 1.0,
-            "retries": 0,
-        }
+        # Cycles 2-4: only updates (winding down)
+        update_response = json.dumps({
+            "frontier_assessment": "Minor update",
+            "actions": [{
+                "action_type": "update_issue",
+                "rationale": "Polish",
+                "issue_id": "ISSUE-001",
+                "description": "Updated",
+            }],
+            "cycle_notes": "",
+        })
+        # Cycle 5: Claude declares complete after being offered the option
+        complete_response = json.dumps({
+            "frontier_assessment": "All done",
+            "planning_complete": True,
+            "completion_reason": "Plan is comprehensive",
+            "actions": [],
+            "cycle_notes": "",
+        })
+        cli.execute_prompt.side_effect = [
+            {"success": True, "output": f"```json\n{create_response}\n```",
+             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+            {"success": True, "output": f"```json\n{update_response}\n```",
+             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+            {"success": True, "output": f"```json\n{update_response}\n```",
+             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+            {"success": True, "output": f"```json\n{update_response}\n```",
+             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+            {"success": True, "output": f"```json\n{complete_response}\n```",
+             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+        ]
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
+        config["diminishing_returns_threshold"] = 3
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
+        issues_dir = Path(config["_issues_dir"])
+        issues_dir.mkdir(parents=True, exist_ok=True)
+
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
-        assert state.planning_cycles == 1
-        assert state.issues_created == 1  # Final action was applied
-        assert "complete" in (state.stop_reason or "").lower()
+        # Should run: 1 create + 3 updates (triggers offer) + 1 complete = 5 cycles
+        # But cycle 5 returns empty actions + planning_complete -> frontier clear
+        assert "complete" in (state.stop_reason or "").lower() or "clear" in (state.stop_reason or "").lower()
 
     def test_diminishing_returns_exits_early(self, state, config, logger, tmp_path):
-        """3 consecutive cycles with only updates (no new issues) -> exit."""
+        """Update-only cycles trigger offer, then force exit if Claude doesn't declare done."""
         cli = MagicMock()
         # Return a response with only update_issue actions (no new issues)
         update_response = json.dumps({
@@ -293,5 +319,6 @@ class TestPlanner:
 
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
-        assert state.planning_cycles == 3  # Exits after 3 update-only cycles
-        assert "diminishing" in (state.stop_reason or "").lower() or "no new issues" in (state.stop_reason or "").lower()
+        # 3 cycles to detect winding down + offer, then 2 more before force exit = 5
+        assert state.planning_cycles == 5
+        assert "no new issues" in (state.stop_reason or "").lower()

@@ -119,7 +119,7 @@ class TestPlanningCycleWithRealOutput:
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
 
-    def test_strict_mode_fails_on_validation_errors(self, config, logger, tmp_path):
+    def test_validation_errors_fail_cycle(self, config, logger, tmp_path):
         response = make_planning_response(actions=[
             {
                 "action_type": "create_issue",
@@ -137,7 +137,6 @@ class TestPlanningCycleWithRealOutput:
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
-        config["strict_mode"] = True
         config["max_consecutive_failures"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()

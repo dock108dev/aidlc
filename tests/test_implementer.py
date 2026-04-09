@@ -149,19 +149,6 @@ class TestSortIssues:
         assert result is False
         assert len(state.issues) == 2
 
-    def test_circular_dependency_autobreak_when_enabled(self, config, cli, logger, tmp_path):
-        config["auto_break_dependency_cycles"] = True
-        state = RunState(run_id="t", config_name="c")
-        state.issues = [
-            {"id": "ISSUE-001", "title": "A", "priority": "high", "dependencies": ["ISSUE-002"], "status": "pending"},
-            {"id": "ISSUE-002", "title": "B", "priority": "high", "dependencies": ["ISSUE-001"], "status": "pending"},
-        ]
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        impl = Implementer(state, run_dir, config, cli, "context", logger)
-        result = impl._sort_issues()
-        assert result is True
-
 
 class TestDetectTestCommand:
     def test_python_pytest(self, config, cli, logger, tmp_path):

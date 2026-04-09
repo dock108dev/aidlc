@@ -199,8 +199,6 @@ You MUST output your planning actions as a single JSON block wrapped in ```json`
 ```
 {
   "frontier_assessment": "Summary of what you assessed and why you chose these actions",
-  "planning_complete": false,
-  "completion_reason": "",
   "actions": [
     {
       "action_type": "create_issue | update_issue | create_doc | update_doc",
@@ -240,13 +238,6 @@ Rules:
 - For create_doc, file_path must be relative to the project root
 - Every action must have a rationale explaining why it's needed
 
-IMPORTANT — Declaring planning complete:
-- Set "planning_complete": true when all planned work has been captured as issues
-- Include a "completion_reason" explaining why planning is done
-- You may still include final refinement actions alongside planning_complete: true
-- Do NOT keep cycling just to make minor tweaks — if the plan is comprehensive and
-  all issues have clear acceptance criteria, declare planning complete
-- The time budget is a MAXIMUM, not a target — finishing early with a good plan is ideal
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\

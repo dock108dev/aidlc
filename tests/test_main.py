@@ -140,23 +140,15 @@ class TestMain:
 
     @patch("aidlc.__main__.run_full")
     def test_run_command(self, mock_run):
-        with patch("sys.argv", ["aidlc", "run", "--dry-run", "--skip-precheck"]):
+        with patch("sys.argv", ["aidlc", "run", "--dry-run", "--resume"]):
             main()
         mock_run.assert_called_once()
         call_kwargs = mock_run.call_args[1]
         assert call_kwargs["dry_run"] is True
 
-    @patch("aidlc.__main__.load_config")
-    def test_strict_mode_blocks_skip_precheck(self, mock_load_config):
-        mock_load_config.return_value = {
-            "_project_root": ".",
-            "_aidlc_dir": "./.aidlc",
-            "_runs_dir": "./.aidlc/runs",
-            "_reports_dir": "./.aidlc/reports",
-            "_issues_dir": "./.aidlc/issues",
-            "strict_mode": True,
-            "allow_skip_precheck": False,
-        }
+    def test_skip_precheck_flag_removed(self):
         with patch("sys.argv", ["aidlc", "run", "--skip-precheck"]):
-            with pytest.raises(SystemExit):
-                main()
+            with patch("sys.stderr"):
+                with pytest.raises(SystemExit) as exc:
+                    main()
+                assert exc.value.code == 2

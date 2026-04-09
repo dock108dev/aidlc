@@ -7,11 +7,10 @@ Runs time-constrained planning sessions that:
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
-import json
 import time
 from pathlib import Path
 
-from .models import RunState, RunPhase, Issue, IssueStatus
+from .models import RunState, RunPhase, Issue
 from .schemas import (
     PlanningOutput, PlanningAction, parse_planning_output,
     PLANNING_SCHEMA_DESCRIPTION,
@@ -41,10 +40,6 @@ class Planner:
         self.project_context = project_context
         self.logger = logger
         self.project_root = Path(config["_project_root"])
-        self.strict_mode = bool(
-            config.get("strict_mode", False)
-            or config.get("strict_planning_validation", False)
-        )
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
@@ -55,10 +50,12 @@ class Planner:
         finalization_pct = self.config.get("finalization_budget_percent", 10)
         finalization_threshold = 1.0 - (finalization_pct / 100.0)
 
-        # Diminishing returns tracking
-        recent_new_issues = []  # Track new issue counts per cycle (last N cycles)
+        # Diminishing returns tracking — tracks (new_issues, total_actions) per cycle
+        recent_cycles = []  # list of (new_issue_count, total_action_count)
         diminishing_returns_window = self.config.get("diminishing_returns_window", 5)
         diminishing_returns_threshold = self.config.get("diminishing_returns_threshold", 3)
+        self._pending_completion_reason = None
+        self._offer_completion = False  # When True, prompt tells Claude it can declare done
 
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
@@ -97,43 +94,61 @@ class Planner:
             result = self._planning_cycle()
 
             if result is None:
-                self.state.stop_reason = "Planning frontier is clear"
+                # No actions at all — if we already offered completion, honor it
+                if self._pending_completion_reason:
+                    self.state.stop_reason = self._pending_completion_reason
+                else:
+                    self.state.stop_reason = "Planning frontier is clear"
                 self.logger.info("No more planning work identified.")
                 break
-            elif result == "complete":
-                # Claude explicitly declared planning complete
-                break
-            elif result:
-                consecutive_failures = 0
-
-                # Track new issues created this cycle for diminishing returns
-                new_this_cycle = self.state.issues_created - issues_before
-                recent_new_issues.append(new_this_cycle)
-                if len(recent_new_issues) > diminishing_returns_window:
-                    recent_new_issues.pop(0)
-
-                # Diminishing returns check: if the last N cycles produced
-                # zero new issues (only updates), planning is winding down
-                if (
-                    len(recent_new_issues) >= diminishing_returns_threshold
-                    and all(n == 0 for n in recent_new_issues[-diminishing_returns_threshold:])
-                    and self.state.issues_created > 0
-                ):
-                    self.state.stop_reason = (
-                        f"Planning complete — {diminishing_returns_threshold} consecutive "
-                        f"cycles with no new issues (only refinements)"
-                    )
-                    self.logger.info(
-                        f"Diminishing returns detected: {diminishing_returns_threshold} cycles "
-                        f"with no new issues. Planning is complete."
-                    )
-                    break
-            else:
+            elif result is False:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
                     self.state.stop_reason = f"{max_consecutive_failures} consecutive planning failures"
                     self.logger.error("Too many consecutive failures. Stopping planning.")
                     break
+                continue
+            else:
+                # Cycle succeeded
+                consecutive_failures = 0
+                new_this_cycle = self.state.issues_created - issues_before
+
+                # Track cycle stats
+                recent_cycles.append(new_this_cycle)
+                if len(recent_cycles) > diminishing_returns_window:
+                    recent_cycles.pop(0)
+
+                # Check for winding down: last N cycles all had 0 new issues
+                if (
+                    len(recent_cycles) >= diminishing_returns_threshold
+                    and self.state.issues_created > 0
+                    and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
+                ):
+                    if not self._offer_completion:
+                        # First detection: tell Claude it can declare done next cycle
+                        self._offer_completion = True
+                        self.logger.info(
+                            f"Winding down detected: {diminishing_returns_threshold} cycles "
+                            f"with no new issues. Offering completion option to Claude."
+                        )
+                    elif self._pending_completion_reason:
+                        # Claude accepted the offer — honor it
+                        self.state.stop_reason = self._pending_completion_reason
+                        self.logger.info(f"Planning complete (confirmed): {self._pending_completion_reason}")
+                        break
+                    else:
+                        # Claude didn't declare complete but is still just updating
+                        # Give it one more cycle, then force exit
+                        tail_len = sum(1 for n in recent_cycles if n == 0)
+                        if tail_len >= diminishing_returns_threshold + 2:
+                            self.state.stop_reason = (
+                                f"Planning complete — {tail_len} consecutive cycles "
+                                f"with no new issues"
+                            )
+                            self.logger.info(
+                                f"Forced planning exit: {tail_len} update-only cycles."
+                            )
+                            break
 
             save_state(self.state, self.run_dir)
 
@@ -148,11 +163,12 @@ class Planner:
 
         save_state(self.state, self.run_dir)
 
-    def _planning_cycle(self) -> bool | None | str:
+    def _planning_cycle(self) -> bool | None:
         """Execute one planning cycle.
 
-        Returns True (success), False (failure), None (frontier clear),
-        or "complete" (Claude declared planning done).
+        Returns True (success), False (failure), or None (frontier clear).
+        If Claude signals planning_complete, it's stored in
+        self._pending_completion_reason for the run() loop to evaluate.
         """
         self.state.planning_cycles += 1
         cycle_num = self.state.planning_cycles
@@ -207,33 +223,17 @@ class Planner:
         if validation_errors:
             for err in validation_errors:
                 self.logger.warning(f"Validation: {err}")
-            if self.strict_mode:
-                self.logger.error(
-                    f"Strict mode: failing cycle {cycle_num} due to "
-                    f"{len(validation_errors)} validation error(s)"
-                )
-                return False
+            self.logger.error(
+                f"Cycle {cycle_num} failed due to {len(validation_errors)} validation error(s)"
+            )
+            return False
 
-        # Check if Claude declared planning complete
+        # Check if Claude declared planning complete — note it for the run loop
+        # but don't exit here. The run() loop decides when to actually stop.
         if planning_output.planning_complete:
             reason = planning_output.completion_reason or "Claude declared planning complete"
-            self.state.stop_reason = f"Planning complete — {reason}"
-            self.logger.info(f"Planning declared complete: {reason}")
-
-            # Still apply any final actions that came with the completion signal
-            if planning_output.actions:
-                self.logger.info(f"Applying {len(planning_output.actions)} final actions...")
-                for action in planning_output.actions:
-                    errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
-                    if not errors:
-                        try:
-                            self._apply_action(action)
-                            if action.issue_id:
-                                known_ids.add(action.issue_id)
-                        except Exception as e:
-                            self.logger.warning(f"Failed to apply final action: {e}")
-
-            return "complete"
+            self._pending_completion_reason = f"Planning complete — {reason}"
+            self.logger.info(f"Claude signaled planning_complete: {reason}")
 
         if not planning_output.actions:
             self.logger.info("No actions proposed — frontier may be clear")
@@ -243,17 +243,14 @@ class Planner:
 
         # Apply actions
         applied = 0
-        action_errors = []
         for action in planning_output.actions:
             errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
             if errors:
                 self.logger.warning(f"Skipping invalid action: {errors}")
-                if self.strict_mode:
-                    self.logger.error(
-                        f"Strict mode: failing cycle {cycle_num} due to invalid action"
-                    )
-                    return False
-                continue
+                self.logger.error(
+                    f"Cycle {cycle_num} failed due to invalid action"
+                )
+                return False
 
             try:
                 self._apply_action(action)
@@ -263,18 +260,10 @@ class Planner:
                     known_ids.add(action.issue_id)
             except Exception as e:
                 self.logger.error(f"Failed to apply action: {e}")
-                action_errors.append(str(e))
-                if self.strict_mode:
-                    self.logger.error(
-                        f"Strict mode: failing cycle {cycle_num} after action apply error"
-                    )
-                    return False
-
-        if action_errors and applied == 0:
-            self.logger.error(
-                f"Cycle {cycle_num} failed: all actions errored and none were applied"
-            )
-            return False
+                self.logger.error(
+                    f"Cycle {cycle_num} failed after action apply error"
+                )
+                return False
 
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
@@ -318,6 +307,10 @@ class Planner:
 
         # Output schema
         sections.append(PLANNING_SCHEMA_DESCRIPTION)
+
+        # If winding down, offer Claude the option to declare planning complete
+        if getattr(self, "_offer_completion", False):
+            sections.append(self._completion_offer_instructions())
 
         return "\n\n".join(sections)
 
@@ -377,6 +370,22 @@ Produce only refinement and gap-filling actions.
 **When to declare planning complete:**
 - Set "planning_complete": true once all issues are well-specified and no gaps remain
 - This is the finalization phase — wrapping up is the goal, not finding more work"""
+
+    def _completion_offer_instructions(self) -> str:
+        return """## PLANNING WIND-DOWN NOTICE
+
+The last several planning cycles have only produced minor updates to existing issues
+with no new issues created. If you believe the plan is comprehensive and covers all
+work described in the project documentation, you should declare planning complete.
+
+To declare complete, add these fields to your JSON output:
+  "planning_complete": true,
+  "completion_reason": "Brief explanation of why the plan is complete"
+
+You may include final refinement actions alongside the completion declaration.
+
+If there is still meaningful work NOT captured in any issue, continue creating issues
+instead of declaring complete."""
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

@@ -353,22 +353,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         config_path=args.config,
         project_root=project_root,
     )
-
-    skip_precheck_requested = getattr(args, "skip_precheck", False)
-    strict_mode = bool(config.get("strict_mode", False))
-    allow_skip_precheck = bool(config.get("allow_skip_precheck", True))
-    if skip_precheck_requested and (strict_mode or not allow_skip_precheck):
-        print(f"{_red('x')} --skip-precheck is disabled by configuration.")
-        print(
-            f"  strict_mode={strict_mode}, allow_skip_precheck={allow_skip_precheck}. "
-            "Remove --skip-precheck or relax config."
-        )
-        sys.exit(2)
-
-    skip_precheck = args.resume or args.implement_only or skip_precheck_requested
-    if skip_precheck_requested and not (args.resume or args.implement_only):
-        print(f"  {_yellow('!')} Running with precheck bypassed (--skip-precheck).")
-        print()
+    skip_precheck = args.resume or args.implement_only
 
     # Run precheck before lifecycle (unless resuming or implementing only)
     if not skip_precheck:
@@ -384,7 +369,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         if not result.ready:
             print()
             print(f"  Fix the required items above, then run {_cyan('aidlc run')} again.")
-            print(f"  Or use {_cyan('aidlc run --skip-precheck')} to proceed anyway.")
             sys.exit(1)
 
         print()
@@ -560,11 +544,6 @@ def main() -> None:
         "--audit", nargs="?", const="quick", choices=["quick", "full"],
         help="Audit existing code before planning (default: quick)",
     )
-    run_parser.add_argument(
-        "--skip-precheck", action="store_true",
-        help="Skip the pre-flight readiness check",
-    )
-
     # ── status ──
     status_parser = subparsers.add_parser(
         "status",

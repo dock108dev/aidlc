@@ -6,6 +6,5 @@
   "max_implementation_cycles": 3,
   "claude_timeout_seconds": 60,
   "max_consecutive_failures": 2,
-  "max_implementation_attempts": 1,
-  "strict_mode": false
+  "max_implementation_attempts": 1
 }

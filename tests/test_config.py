@@ -70,12 +70,21 @@ class TestLoadConfig:
             "run_tests_command", "test_timeout_seconds",
             "max_doc_chars", "max_context_chars", "max_implementation_context_chars",
             "doc_scan_patterns", "doc_scan_exclude", "implementation_allowed_paths",
-            "strict_mode", "strict_planning_validation", "allow_skip_precheck",
-            "allow_dependency_bypass", "auto_break_dependency_cycles",
-            "allow_unstructured_success",
         ]
         for key in expected_keys:
             assert key in DEFAULTS, f"Missing key in DEFAULTS: {key}"
+
+    def test_removed_legacy_keys_absent(self):
+        removed = {
+            "strict_mode",
+            "strict_planning_validation",
+            "allow_skip_precheck",
+            "allow_dependency_bypass",
+            "auto_break_dependency_cycles",
+            "allow_unstructured_success",
+        }
+        for key in removed:
+            assert key not in DEFAULTS, f"Legacy key should remain removed: {key}"
 
     def test_cwd_used_when_no_project_root(self):
         config = load_config()

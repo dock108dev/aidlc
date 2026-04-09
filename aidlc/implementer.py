@@ -52,9 +52,6 @@ class Implementer:
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
-        self.allow_dependency_bypass = config.get("allow_dependency_bypass", False)
-        self.auto_break_dependency_cycles = config.get("auto_break_dependency_cycles", False)
-        self.allow_unstructured_success = config.get("allow_unstructured_success", False)
 
     def run(self) -> None:
         """Run implementation loop until all issues are resolved."""
@@ -74,8 +71,7 @@ class Implementer:
         if not self._sort_issues():
             self.state.phase = RunPhase.IMPLEMENTING
             self.state.stop_reason = (
-                "Dependency cycle detected. Resolve issue dependencies or enable "
-                "'auto_break_dependency_cycles' to continue."
+                "Dependency cycle detected. Resolve issue dependencies to continue."
             )
             self.logger.error(self.state.stop_reason)
             save_state(self.state, self.run_dir)
@@ -108,23 +104,12 @@ class Implementer:
                     if d.get("status") in ("pending", "blocked", "failed")
                 )
                 if blocked_count > 0:
-                    if self.allow_dependency_bypass:
-                        self.logger.warning(
-                            f"{blocked_count} issues stuck (blocked or max retries). "
-                            "Attempting to unblock by implementing blocked issues anyway."
-                        )
-                        # Force-unblock: try blocked issues
-                        pending = self._get_blocked_issues()
-                        if not pending:
-                            self.state.stop_reason = "All remaining issues are stuck"
-                            break
-                    else:
-                        self.state.stop_reason = (
-                            f"{blocked_count} issues blocked by unmet dependencies. "
-                            "Enable 'allow_dependency_bypass' to force progress."
-                        )
-                        self.logger.error(self.state.stop_reason)
-                        break
+                    self.state.stop_reason = (
+                        f"{blocked_count} issues blocked by unmet dependencies. "
+                        "Resolve dependencies to continue."
+                    )
+                    self.logger.error(self.state.stop_reason)
+                    break
                 else:
                     break
 
@@ -154,7 +139,7 @@ class Implementer:
                     if not self._sort_issues():
                         self.state.stop_reason = (
                             "Dependency cycle detected while re-sorting. "
-                            "Resolve dependencies or enable auto cycle breaking."
+                            "Resolve dependencies to continue."
                         )
                         self.logger.error(self.state.stop_reason)
                         break
@@ -230,24 +215,15 @@ class Implementer:
                 if changed_files and detection_ok:
                     self.logger.info(
                         f"No JSON result but {len(changed_files)} files changed — "
-                        f"evaluating unstructured implementation fallback"
+                        "rejecting unstructured implementation path"
                     )
-                    allow_fallback = self.allow_unstructured_success or bool(self.test_command)
                     impl_result = ImplementationResult(
                         issue_id=issue.id,
-                        success=allow_fallback,
-                        summary=(
-                            "Implementation completed (no structured JSON, but files changed)"
-                            if allow_fallback
-                            else "Unstructured output with file changes is not accepted by policy"
-                        ),
+                        success=False,
+                        summary="Unstructured output with file changes is not accepted",
                         files_changed=changed_files,
                         tests_passed=False,
-                        notes=(
-                            "Accepted fallback due to policy/test verification path."
-                            if allow_fallback
-                            else "Set allow_unstructured_success=true to permit this fallback."
-                        ),
+                        notes="Structured JSON output is required",
                     )
                 elif changed_files and not detection_ok:
                     self.logger.error(
@@ -517,7 +493,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 cycle_str = " -> ".join(cycle)
                 self.logger.error(
                     f"Circular dependency detected: {cycle_str}. "
-                    f"{'Breaking cycle automatically.' if self.auto_break_dependency_cycles else 'Manual resolution required.'}"
+                    "Manual resolution required."
                 )
                 for cid in cycle[:-1]:
                     cycle_members.add(cid)
@@ -541,23 +517,11 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
 
         # Handle circular deps from affected issues
         if cycle_members:
-            if not self.auto_break_dependency_cycles:
-                self.logger.error(
-                    f"{len(cycle_members)} issues involved in dependency cycles: "
-                    f"{', '.join(sorted(cycle_members))}. Refusing to auto-remove dependencies."
-                )
-                return False
-            self.logger.warning(
+            self.logger.error(
                 f"{len(cycle_members)} issues involved in dependency cycles: "
-                f"{', '.join(sorted(cycle_members))}. Circular deps removed due to config."
+                f"{', '.join(sorted(cycle_members))}. Refusing to auto-remove dependencies."
             )
-            for iid in cycle_members:
-                if iid in id_to_issue:
-                    issue_data = id_to_issue[iid]
-                    issue_data["dependencies"] = [
-                        dep for dep in issue_data.get("dependencies", [])
-                        if dep not in cycle_members
-                    ]
+            return False
 
         # Rebuild issues list in sorted order
         new_issues = []
@@ -566,29 +530,6 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 new_issues.append(id_to_issue[iid])
         self.state.issues = new_issues
         return True
-
-    def _get_blocked_issues(self) -> list[Issue]:
-        """Get issues that are blocked (deps not met) for force-unblock.
-
-        This is a last resort — only called when all pending issues are stuck.
-        Logs explicit warnings about which deps are being bypassed.
-        """
-        blocked = []
-        done_ids = {
-            d["id"] for d in self.state.issues
-            if d.get("status") in ("implemented", "verified")
-        }
-        for d in self.state.issues:
-            if d.get("status") in ("pending", "blocked"):
-                issue = Issue.from_dict(d)
-                if issue.attempt_count < issue.max_attempts:
-                    unmet = [dep for dep in issue.dependencies if dep not in done_ids]
-                    if unmet:
-                        self.logger.warning(
-                            f"Force-unblocking {issue.id}: bypassing unmet deps {unmet}"
-                        )
-                    blocked.append(issue)
-        return blocked[:1]  # Try one at a time
 
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""

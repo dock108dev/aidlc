@@ -1,0 +1,130 @@
+"""Constants used by code audit engines."""
+
+import re
+
+# Map directory names to likely roles
+ROLE_MAP = {
+    "api": "api",
+    "routes": "api",
+    "endpoints": "api",
+    "handlers": "api",
+    "views": "api",
+    "controllers": "api",
+    "models": "models",
+    "schemas": "models",
+    "entities": "models",
+    "services": "services",
+    "core": "services",
+    "lib": "services",
+    "utils": "services",
+    "helpers": "services",
+    "common": "services",
+    "shared": "services",
+    "tests": "tests",
+    "test": "tests",
+    "spec": "tests",
+    "__tests__": "tests",
+    "config": "config",
+    "configs": "config",
+    "settings": "config",
+    "cli": "cli",
+    "cmd": "cli",
+    "commands": "cli",
+    "scripts": "cli",
+    "migrations": "config",
+    "db": "models",
+    "database": "models",
+    "middleware": "services",
+    "auth": "services",
+    "static": "config",
+    "templates": "config",
+    "public": "config",
+    "assets": "config",
+}
+
+# Map known packages to framework descriptions
+FRAMEWORK_MAP = {
+    # Python
+    "fastapi": "FastAPI web framework",
+    "flask": "Flask web framework",
+    "django": "Django web framework",
+    "starlette": "Starlette ASGI framework",
+    "tornado": "Tornado async framework",
+    "aiohttp": "aiohttp async HTTP",
+    "sqlalchemy": "SQLAlchemy ORM",
+    "alembic": "Alembic migrations",
+    "pydantic": "Pydantic data validation",
+    "celery": "Celery task queue",
+    "redis": "Redis client",
+    "pymongo": "MongoDB client",
+    "psycopg2": "PostgreSQL client",
+    "boto3": "AWS SDK",
+    "requests": "HTTP client",
+    "httpx": "Async HTTP client",
+    "pytest": "pytest testing",
+    "numpy": "NumPy numerical computing",
+    "pandas": "pandas data analysis",
+    "scikit-learn": "scikit-learn ML",
+    "tensorflow": "TensorFlow ML",
+    "torch": "PyTorch ML",
+    "click": "Click CLI framework",
+    "typer": "Typer CLI framework",
+    # JavaScript/TypeScript
+    "react": "React frontend",
+    "next": "Next.js framework",
+    "vue": "Vue.js frontend",
+    "angular": "Angular frontend",
+    "express": "Express.js server",
+    "fastify": "Fastify server",
+    "nestjs": "NestJS framework",
+    "prisma": "Prisma ORM",
+    "sequelize": "Sequelize ORM",
+    "typeorm": "TypeORM",
+    "mongoose": "Mongoose MongoDB ODM",
+    "jest": "Jest testing",
+    "mocha": "Mocha testing",
+    "vitest": "Vitest testing",
+    "tailwindcss": "Tailwind CSS",
+    "webpack": "Webpack bundler",
+    "vite": "Vite build tool",
+    "eslint": "ESLint linter",
+    # Rust
+    "actix-web": "Actix-web framework",
+    "axum": "Axum web framework",
+    "tokio": "Tokio async runtime",
+    "serde": "Serde serialization",
+    "diesel": "Diesel ORM",
+    "sqlx": "SQLx async database",
+    # Go (module paths)
+    "gin-gonic/gin": "Gin web framework",
+    "gorilla/mux": "Gorilla Mux router",
+    "gorm.io/gorm": "GORM ORM",
+}
+
+# Source file extensions to scan
+DEFAULT_SOURCE_EXTENSIONS = {
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs",
+    ".java", ".rb", ".swift", ".kt", ".scala", ".c",
+    ".cpp", ".h", ".hpp", ".cs", ".php",
+}
+
+# Directories to always exclude from scanning
+EXCLUDE_DIRS = {
+    "node_modules", ".git", "venv", ".venv", "__pycache__",
+    ".aidlc", "dist", "build", ".next", ".nuxt", "target",
+    "vendor", ".tox", ".mypy_cache", ".pytest_cache",
+    "coverage", ".coverage", "htmlcov", "egg-info",
+}
+
+# Entry point file patterns
+ENTRY_POINT_NAMES = {
+    "main.py", "app.py", "__main__.py", "manage.py", "wsgi.py", "asgi.py",
+    "index.js", "index.ts", "app.js", "app.ts", "server.js", "server.ts",
+    "main.go", "main.rs", "Main.java", "Program.cs",
+}
+
+# Patterns that indicate tech debt
+TECH_DEBT_PATTERNS = re.compile(
+    r"\b(TODO|FIXME|HACK|XXX|DEPRECATED|NOQA|WORKAROUND)\b",
+    re.IGNORECASE,
+)
