@@ -247,14 +247,13 @@ class Planner:
 
         # Apply actions
         applied = 0
+        action_errors = []
         for action in planning_output.actions:
             errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
             if errors:
                 self.logger.warning(f"Skipping invalid action: {errors}")
-                self.logger.error(
-                    f"Cycle {cycle_num} failed due to invalid action"
-                )
-                return False
+                action_errors.append(errors)
+                continue
 
             try:
                 self._apply_action(action)
@@ -264,10 +263,13 @@ class Planner:
                     known_ids.add(action.issue_id)
             except Exception as e:
                 self.logger.error(f"Failed to apply action: {e}")
-                self.logger.error(
-                    f"Cycle {cycle_num} failed after action apply error"
-                )
-                return False
+                action_errors.append(str(e))
+
+        if action_errors and applied == 0:
+            self.logger.error(
+                f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored"
+            )
+            return False
 
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
