@@ -202,6 +202,7 @@ class Planner:
         If Claude signals planning_complete, it's stored in
         self._pending_completion_reason for the run() loop to evaluate.
         """
+        self._cycle_research_count = 0
         self.state.planning_cycles += 1
         cycle_num = self.state.planning_cycles
         is_finalization = self.state.phase == RunPhase.PLAN_FINALIZATION
@@ -246,8 +247,17 @@ class Planner:
                 self.logger.error(f"Failed to parse cycle {cycle_num}: {e}")
                 return False
 
-        # Validate
+        # Validate — pre-register new issue IDs from this batch so
+        # within-batch dependencies are allowed (e.g., ISSUE-018 depends on
+        # ISSUE-016, both created in the same cycle)
         known_ids = {d["id"] for d in self.state.issues}
+        batch_new_ids = {
+            a.issue_id for a in planning_output.actions
+            if a.action_type == "create_issue" and a.issue_id
+        }
+        known_ids_with_batch = known_ids | batch_new_ids
+
+        # Batch-level validation uses original known_ids (catches true duplicates)
         validation_errors = planning_output.validate(
             is_finalization=is_finalization,
             known_issue_ids=known_ids,
@@ -255,10 +265,7 @@ class Planner:
         if validation_errors:
             for err in validation_errors:
                 self.logger.warning(f"Validation: {err}")
-            self.logger.error(
-                f"Cycle {cycle_num} failed due to {len(validation_errors)} validation error(s)"
-            )
-            return False
+            # Don't fail the whole cycle — skip bad actions individually below
 
         # Only accept planning_complete if we've actually offered it
         # (Claude sometimes adds this field unprompted — ignore it until invited)
@@ -281,7 +288,11 @@ class Planner:
         applied = 0
         action_errors = []
         for action in planning_output.actions:
-            errors = action.validate(is_finalization=is_finalization, known_issue_ids=known_ids)
+            errors = action.validate(
+                is_finalization=is_finalization,
+                known_issue_ids=known_ids,
+                batch_issue_ids=batch_new_ids,
+            )
             if errors:
                 self.logger.warning(f"Skipping invalid action: {errors}")
                 action_errors.append(errors)
@@ -393,15 +404,63 @@ If the ROADMAP has Phases 1 through 4, you must create issues for ALL of them.
 Do not stop after Phase 1. Each phase should have its own set of issues.
 Work through the roadmap systematically — one phase per cycle if needed.
 
+**CRITICAL: Issues must be granular and single-responsibility.**
+Each issue should be ONE implementable unit of work, not a bundle of features.
+BAD:  "Implement sports card store" (too broad — this is 5-10 issues)
+GOOD: "Create shelf display component for sports cards"
+GOOD: "Implement card rarity system and pricing tiers"
+GOOD: "Add card condition grading mechanics"
+
+Break down every ROADMAP item into its component parts. A single bullet in
+the ROADMAP like "Customer AI with browse and purchase behavior" should become
+multiple issues: pathfinding, browse behavior, purchase decision, dialog/haggling,
+satisfaction tracking, etc.
+
+If a feature has unique variants (e.g., multiple level types, entity classes, or content
+categories), each variant's unique mechanics get their own issues. N variants × M unique
+mechanics each = N×M issues, not N issues with mega-descriptions.
+
 **What you should do:**
 - Create issues for EVERY item in EVERY phase of the ROADMAP
+- Break each ROADMAP item into granular, single-responsibility issues
 - Each issue must have clear acceptance criteria that are specific and testable
 - Set appropriate priority levels (high = blocking/critical, medium = important, low = nice-to-have)
 - Define dependency chains — which issues must be completed before others
 - Create design docs for complex features that need architectural decisions
-- Use "research" actions when you encounter knowledge gaps, need to derive formulas,
-  explore design alternatives, or need to analyze source code before creating issues.
-  Research results are written to docs/research/ and available in subsequent cycles.
+
+**CRITICAL: Use "research" actions for creative and design work BEFORE creating issues.**
+Research actions trigger a deep-dive Claude session that writes detailed design docs to
+docs/research/. These docs feed into subsequent planning cycles. You MUST use research
+when the project needs content, formulas, or creative design that doesn't exist yet in the
+docs. Read the project docs carefully to understand what content needs to be designed.
+
+Use research for:
+- **Content creation**: Designing item catalogs, entity definitions, character profiles,
+  level/map layouts, inventories, dialogue trees — anything where specific instances
+  of content need to be created, not just a system to hold them
+- **Formula/algorithm design**: Pricing models, scoring formulas, difficulty curves,
+  spawn rates, economy balance, probability distributions, progression tables
+- **System design**: Detailed mechanic breakdowns — states, transitions, edge cases,
+  data structures, config schemas
+- **Creative design**: Original fictional names, themed content, flavor text, visual
+  direction for specific areas
+
+Example: If the ROADMAP says "design N themed levels", DO NOT just create an issue
+"Design N levels". Instead, use a RESEARCH action to actually design each level with
+its layout, difficulty, mechanics, and theme. Then create implementation issues
+that reference the research doc.
+
+Example: If the project needs a catalog of items/entities, RESEARCH the actual content —
+names, descriptions, stats, categories, pricing. Then create issues that implement
+from the concrete spec in the research doc.
+
+**IMPORTANT — Copyright and originality:**
+All content created through research MUST be original. When the project references or
+parodies real-world brands, products, media, or intellectual property:
+- Create ORIGINAL parody/spoof names and content — never use real brand names
+- Ensure all fictional names, characters, and products are clearly original creations
+- Follow fair use parody principles — transform and satirize, don't copy
+- If the project docs reference real things as inspiration, design original alternatives
 
 **What you should NOT do:**
 - Write implementation code (that comes in the implementation phase)
@@ -409,6 +468,7 @@ Work through the roadmap systematically — one phase per cycle if needed.
 - Create vague issues without testable acceptance criteria
 - Ignore existing documentation — build on what's already planned
 - Stop after covering only one phase when there are more phases in the ROADMAP
+- Bundle multiple features or mechanics into a single issue
 
 **Priority order:**
 1. Core infrastructure and foundational issues (high priority, no deps)
@@ -563,10 +623,11 @@ instead of declaring complete."""
 
     def _execute_research(self, action: PlanningAction) -> None:
         """Execute a research action — call Claude to investigate a topic."""
-        max_per_run = self.config.get("research_max_per_run", 10)
-        if self._research_count >= max_per_run:
-            self.logger.warning(
-                f"Research cap reached ({max_per_run}), skipping: {action.research_topic}"
+        max_per_cycle = self.config.get("research_max_per_cycle", 2)
+        if self._cycle_research_count >= max_per_cycle:
+            self.logger.info(
+                f"Research cycle cap reached ({max_per_cycle}), deferring: {action.research_topic} "
+                f"(will be available next cycle)"
             )
             return
 
@@ -605,9 +666,34 @@ instead of declaring complete."""
         prompt_parts.extend([
             "## Instructions",
             "",
-            "Analyze the question and any source files above. Write a thorough research",
-            "document in markdown that:",
-            "- Answers the research question with specific, actionable recommendations",
+            "Write a thorough, CONCRETE research document. This document will be used",
+            "directly by an implementation agent, so it must contain specific, usable content.",
+            "",
+            "If this is content design (items, levels, characters, cards, etc.):",
+            "- Create the ACTUAL content, not just guidelines",
+            "- List every item/level/card with specific names, stats, descriptions, and properties",
+            "- Include data that could be directly converted into JSON/config files",
+            "- Be creative and thorough — design ALL the content, not a sample",
+            "",
+            "If this is system design (mechanics, formulas, algorithms):",
+            "- Provide actual formulas with variables defined",
+            "- Include worked examples with real numbers",
+            "- Define edge cases and boundary conditions",
+            "- Specify data structures and state transitions",
+            "",
+            "If this is creative design (names, themes, flavor text):",
+            "- Generate ALL the names/themes/text needed, not just examples",
+            "- Be specific and consistent with the project's tone",
+            "",
+            "IMPORTANT — Copyright and originality:",
+            "- All content MUST be original. Never use real brand names, product names,",
+            "  character names, or copyrighted material.",
+            "- If the project parodies or spoofs real-world things, create ORIGINAL",
+            "  parody names and content that are clearly transformative.",
+            "- Fictional brands, characters, and products must be your own creations.",
+            "",
+            "The document should contain:",
+            "- Answers the research question with specific, actionable content",
             "- References relevant code sections if scope files were provided",
             "- Identifies trade-offs between alternatives",
             "- Provides concrete implementation guidance",
@@ -618,10 +704,16 @@ instead of declaring complete."""
 
         prompt = "\n".join(prompt_parts)
 
-        # Call Claude
+        # Call Claude with extended timeout for research (default 15 min)
+        research_timeout = self.config.get("research_timeout_seconds", 900)
+        old_timeout = self.cli.timeout
+        self.cli.timeout = research_timeout
+
         start_time = time.time()
         result = self.cli.execute_prompt(prompt, self.project_root)
         duration = time.time() - start_time
+
+        self.cli.timeout = old_timeout
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
 
@@ -658,6 +750,7 @@ instead of declaring complete."""
             "action": "create",
         })
         self._research_count += 1
+        self._cycle_research_count += 1
         self.logger.info(f"Research complete: docs/research/{sanitized}.md")
 
         # Save raw output

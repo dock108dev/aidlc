@@ -44,7 +44,18 @@ class PlanningAction:
     research_question: Optional[str] = None
     research_scope: list = field(default_factory=list)  # file paths to examine
 
-    def validate(self, is_finalization: bool = False, known_issue_ids: set | None = None) -> list[str]:
+    def validate(
+        self,
+        is_finalization: bool = False,
+        known_issue_ids: set | None = None,
+        batch_issue_ids: set | None = None,
+    ) -> list[str]:
+        """Validate this action.
+
+        Args:
+            known_issue_ids: IDs of issues already in state (for duplicate/update checks)
+            batch_issue_ids: IDs being created in the same batch (for dependency resolution)
+        """
         errors = []
         if self.action_type not in PLANNING_ACTION_TYPES:
             errors.append(f"Unknown action_type: {self.action_type}")
@@ -53,6 +64,9 @@ class PlanningAction:
 
         if is_finalization and self.action_type == "create_issue":
             errors.append("create_issue prohibited during finalization")
+
+        # For dependency checks, include both state IDs and batch IDs
+        all_valid_ids = (known_issue_ids or set()) | (batch_issue_ids or set())
 
         if self.action_type == "create_issue":
             if not self.issue_id:
@@ -63,17 +77,19 @@ class PlanningAction:
                 errors.append("create_issue requires description")
             if not self.acceptance_criteria:
                 errors.append("create_issue requires acceptance_criteria")
+            # Duplicate check — only against state, not batch
             if known_issue_ids and self.issue_id in known_issue_ids:
                 errors.append(f"issue {self.issue_id} already exists")
-            if known_issue_ids and self.dependencies:
+            # Dependency check — against state + batch (within-batch deps are valid)
+            if all_valid_ids and self.dependencies:
                 for dep in self.dependencies:
-                    if dep not in known_issue_ids:
+                    if dep not in all_valid_ids:
                         errors.append(f"dependency '{dep}' is not a known issue")
 
         if self.action_type == "update_issue":
             if not self.issue_id:
                 errors.append("update_issue requires issue_id")
-            if known_issue_ids and self.issue_id and self.issue_id not in known_issue_ids:
+            if all_valid_ids and self.issue_id and self.issue_id not in all_valid_ids:
                 errors.append(f"cannot update unknown issue: {self.issue_id}")
 
         if self.action_type in ("create_doc", "update_doc"):
@@ -132,6 +148,7 @@ class PlanningOutput:
     def validate(self, is_finalization: bool = False, known_issue_ids: set | None = None) -> list[str]:
         errors = []
         new_ids = [a.issue_id for a in self.actions if a.action_type == "create_issue" and a.issue_id]
+        batch_ids = set(new_ids)
         seen = set()
         for iid in new_ids:
             if iid in seen:
@@ -143,7 +160,11 @@ class PlanningOutput:
                     errors.append(f"Issue {iid} already exists")
 
         for i, action in enumerate(self.actions):
-            for err in action.validate(is_finalization=is_finalization, known_issue_ids=known_issue_ids):
+            for err in action.validate(
+                is_finalization=is_finalization,
+                known_issue_ids=known_issue_ids,
+                batch_issue_ids=batch_ids,
+            ):
                 errors.append(f"Action [{i}] ({action.action_type}): {err}")
         return errors
 

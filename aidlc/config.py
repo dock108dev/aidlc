@@ -61,7 +61,8 @@ DEFAULTS = {
     # Research settings
     "research_max_scope_files": 10,         # max files to read per research action
     "research_max_source_chars": 15000,     # max chars per scope file
-    "research_max_per_run": 10,             # cap research actions per run
+    "research_max_per_cycle": 2,            # max research actions per planning cycle
+    "research_timeout_seconds": 900,        # 15 min timeout per research call
 
     # Doc-gap detection
     "doc_gap_detection_enabled": True,
