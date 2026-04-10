@@ -209,7 +209,9 @@ def cmd_init(args: argparse.Namespace) -> None:
         (aidlc_dir / "runs").mkdir()
         (aidlc_dir / "reports").mkdir()
 
-        # Write default config
+        # Write config with auto-detected values
+        from .config_detect import detect_config, describe_detected
+
         default_config = {
             "plan_budget_hours": 4,
             "checkpoint_interval_minutes": 15,
@@ -217,8 +219,23 @@ def cmd_init(args: argparse.Namespace) -> None:
             "max_implementation_attempts": 3,
             "run_tests_command": None,
         }
+
+        # Auto-detect project-specific settings
+        detected = detect_config(project_root)
+        for key, value in detected.items():
+            if not key.startswith("_") and value is not None:
+                default_config[key] = value
+
         with open(aidlc_dir / "config.json", "w") as f:
             json.dump(default_config, f, indent=2)
+
+        # Show what was detected
+        desc = describe_detected(detected)
+        if desc:
+            print()
+            print(f"  {_bold('Auto-detected:')}")
+            for line in desc:
+                print(f"    {_green('+')} {line}")
 
         # Add to .gitignore
         gitignore = project_root / ".gitignore"
@@ -345,6 +362,59 @@ def cmd_audit(args: argparse.Namespace) -> None:
     print(f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first.")
 
 
+def cmd_improve(args: argparse.Namespace) -> None:
+    """Run a targeted improvement cycle."""
+    from .improve import ImprovementCycle
+    from .logger import setup_logger
+    from .claude_cli import ClaudeCLI
+    from .scanner import ProjectScanner
+
+    project_root = Path(args.project or ".").resolve()
+    config = load_config(
+        config_path=getattr(args, "config", None),
+        project_root=str(project_root),
+    )
+
+    _print_banner()
+
+    # Get the user's concern
+    concern = args.concern
+    if not concern:
+        print(f"  What would you like to improve?")
+        examples = 'Examples: "economy feels flat", "customers look robotic", "needs better UI"'
+        print(f"  {_dim(examples)}")
+        try:
+            concern = input("  > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not concern:
+            print(f"  {_yellow('!')} No concern provided.")
+            return
+
+    (project_root / ".aidlc").mkdir(exist_ok=True)
+    logger = setup_logger("improve", project_root / ".aidlc", verbose=args.verbose)
+    cli = ClaudeCLI(config, logger)
+
+    if not cli.check_available() and not config.get("dry_run"):
+        print(f"{_red('x')} Claude CLI not available.")
+        sys.exit(1)
+
+    # Build project context
+    scanner = ProjectScanner(project_root, config)
+    scan_result = scanner.scan()
+    project_context = scanner.build_context_prompt(scan_result)
+
+    cycle = ImprovementCycle(project_root, config, cli, logger, project_context)
+    result = cycle.run(
+        user_concern=concern,
+        auto_implement=not getattr(args, "plan_only", False),
+    )
+
+    if result.get("status") == "complete":
+        print(f"\n  {result['implemented']} improvement(s) applied.")
+    print()
+
+
 def cmd_plan(args: argparse.Namespace) -> None:
     """Run an interactive planning session."""
     from .plan_session import PlanSession
@@ -451,8 +521,17 @@ def cmd_run(args: argparse.Namespace) -> None:
     audit = getattr(args, "audit", None)
 
     skip_finalize = getattr(args, "skip_finalize", False)
+    skip_validation = getattr(args, "skip_validation", False)
     passes_str = getattr(args, "passes", None)
     finalize_passes = passes_str.split(",") if passes_str else None
+
+    if config.get("runtime_profile") == "production":
+        if skip_validation:
+            print(f"{_red('x')} --skip-validation is disabled in runtime_profile=production.")
+            sys.exit(1)
+        if skip_finalize:
+            print(f"{_red('x')} --skip-finalize is disabled in runtime_profile=production.")
+            sys.exit(1)
 
     run_full(
         config=config,
@@ -463,6 +542,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         verbose=args.verbose,
         audit=audit,
         skip_finalize=skip_finalize,
+        skip_validation=skip_validation,
         finalize_passes=finalize_passes,
     )
 
@@ -642,6 +722,20 @@ def main() -> None:
         help="Copy planning doc templates (ROADMAP.md, ARCHITECTURE.md, etc.) into the project",
     )
 
+    # ── improve ──
+    improve_parser = subparsers.add_parser(
+        "improve",
+        help="Targeted improvement cycle",
+        description="Audit a specific area, research improvements, plan and implement fixes.",
+    )
+    improve_parser.add_argument("concern", nargs="?", default=None,
+                                help="What to improve (e.g., 'economy feels flat', 'needs better UI')")
+    improve_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    improve_parser.add_argument("--config", "-c", help="Config file path")
+    improve_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+    improve_parser.add_argument("--plan-only", action="store_true",
+                                help="Create improvement issues but don't implement")
+
     # ── plan ──
     plan_parser = subparsers.add_parser(
         "plan",
@@ -690,6 +784,10 @@ def main() -> None:
         help="Audit existing code before planning (default: quick)",
     )
     run_parser.add_argument(
+        "--skip-validation", action="store_true",
+        help="Skip the validation test-and-fix loop after implementation",
+    )
+    run_parser.add_argument(
         "--skip-finalize", action="store_true",
         help="Skip finalization passes after implementation",
     )
@@ -731,6 +829,8 @@ def main() -> None:
         cmd_precheck(args)
     elif args.command == "init":
         cmd_init(args)
+    elif args.command == "improve":
+        cmd_improve(args)
     elif args.command == "plan":
         cmd_plan(args)
     elif args.command == "audit":

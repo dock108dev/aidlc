@@ -29,7 +29,6 @@ class ClaudeCLI:
         self.retry_base_delay = config.get("retry_base_delay_seconds", 30)
         self.retry_max_delay = config.get("retry_max_delay_seconds", 300)
         self.retry_backoff_factor = config.get("retry_backoff_factor", 2.0)
-        self.timeout = config.get("claude_timeout_seconds", 600)
         self.dry_run = config.get("dry_run", False)
 
     def execute_prompt(
@@ -37,6 +36,7 @@ class ClaudeCLI:
         prompt: str,
         working_dir: Path,
         allow_edits: bool = False,
+        model_override: str | None = None,
     ) -> dict:
         """Execute a prompt via Claude CLI.
 
@@ -45,6 +45,7 @@ class ClaudeCLI:
             working_dir: Directory to run claude from
             allow_edits: If True, uses --dangerously-skip-permissions so Claude
                          can edit files directly during implementation
+            model_override: Use a specific model for this call (e.g., "sonnet", "opus")
 
         Returns:
             dict with: success, output, error, failure_type, duration_seconds, retries
@@ -60,9 +61,13 @@ class ClaudeCLI:
                 "retries": 0,
             }
 
-        cmd = [self.cli_command, "--print"]
+        model = model_override or self.model
+        cmd = [self.cli_command, "--print", "--model", model]
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
+
+        warn_interval = self.config.get("claude_long_run_warn_seconds", 300)
+        hard_timeout = self.config.get("claude_hard_timeout_seconds", 0)
 
         retries = 0
         last_failure_type = None
@@ -72,50 +77,79 @@ class ClaudeCLI:
             start = time.time()
             try:
                 self.logger.debug(f"Claude CLI attempt {attempt + 1}/{self.max_retries + 1}")
-                proc = subprocess.run(
+
+                # Run without timeout — let Claude finish. Warn periodically.
+                proc = subprocess.Popen(
                     cmd,
-                    input=prompt,
-                    capture_output=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                     cwd=str(working_dir),
-                    timeout=self.timeout,
                 )
-                duration = time.time() - start
+                # Feed prompt and close stdin
+                proc.stdin.write(prompt)
+                proc.stdin.close()
 
-                if proc.returncode == 0:
+                # Wait with periodic warnings instead of hard timeout
+                timed_out = False
+                while proc.poll() is None:
+                    elapsed = time.time() - start
+                    if hard_timeout and elapsed >= hard_timeout:
+                        timed_out = True
+                        self.logger.warning(
+                            f"Claude CLI exceeded hard timeout ({hard_timeout}s). "
+                            "Terminating process."
+                        )
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait(timeout=5)
+                        break
+                    try:
+                        proc.wait(timeout=warn_interval)
+                    except subprocess.TimeoutExpired:
+                        self.logger.warning(
+                            f"Claude CLI still running ({elapsed:.0f}s elapsed)..."
+                        )
+
+                duration = time.time() - start
+                stdout = proc.stdout.read()
+                stderr = proc.stderr.read()
+                returncode = proc.returncode if proc.returncode is not None else 124
+                if timed_out and returncode == 0:
+                    returncode = 124
+
+                if returncode == 0:
                     return {
                         "success": True,
-                        "output": proc.stdout,
+                        "output": stdout,
                         "error": None,
                         "failure_type": None,
                         "duration_seconds": duration,
                         "retries": retries,
                     }
                 else:
-                    stderr_text = proc.stderr or ""
-                    failure_type = self._classify_failure(proc.returncode, stderr_text)
+                    stderr_text = stderr or ""
+                    if timed_out:
+                        failure_type = "timeout"
+                        if not stderr_text:
+                            stderr_text = "Claude CLI timed out"
+                    else:
+                        failure_type = self._classify_failure(returncode, stderr_text)
                     last_failure_type = failure_type
                     last_error = stderr_text[:500]
                     last_duration = duration
                     self.logger.warning(
-                        f"Claude CLI returned {proc.returncode} ({failure_type}): {stderr_text[:200]}"
+                        f"Claude CLI returned {returncode} ({failure_type}): {stderr_text[:200]}"
                     )
                     retries += 1
                     if attempt < self.max_retries:
                         delay = self._retry_delay(attempt)
                         self.logger.info(f"Retrying in {delay:.0f}s (attempt {attempt + 1})...")
                         time.sleep(delay)
-
-            except subprocess.TimeoutExpired:
-                duration = time.time() - start
-                self.logger.error(f"Claude CLI timed out after {duration:.0f}s")
-                last_failure_type = "transient"
-                last_error = f"Timed out after {duration:.0f}s"
-                last_duration = duration
-                retries += 1
-                if attempt < self.max_retries:
-                    delay = self._retry_delay(attempt)
-                    time.sleep(delay)
 
             except FileNotFoundError:
                 raise ClaudeCLIError(
@@ -126,10 +160,8 @@ class ClaudeCLI:
         return {
             "success": False,
             "output": None,
-            "error": (
-                f"Failed after {retries} retries"
-                + (f": {last_error}" if last_error else "")
-            ),
+            "error": f"Failed after {retries} retries"
+            f"{': ' + last_error if last_error else ''}",
             "failure_type": last_failure_type or "transient",
             "duration_seconds": last_duration,
             "retries": retries,

@@ -46,6 +46,15 @@ PROJECT_INDICATORS = {
     "CMakeLists.txt": "c/c++",
     "docker-compose.yml": "docker",
     "Dockerfile": "docker",
+    "project.godot": "godot/gdscript",
+    "ProjectSettings/ProjectVersion.txt": "unity/c#",
+    "*.xcodeproj": "swift/ios",
+    "pubspec.yaml": "dart/flutter",
+    "mix.exs": "elixir",
+    "composer.json": "php",
+    "build.zig": "zig",
+    "deno.json": "deno/typescript",
+    "Makefile.toml": "rust",
 }
 
 

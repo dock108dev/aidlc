@@ -1,6 +1,7 @@
 """Tests for aidlc.claude_cli module."""
 
 import logging
+import itertools
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -22,9 +23,37 @@ def base_config():
         "retry_base_delay_seconds": 0.01,  # Fast for tests
         "retry_max_delay_seconds": 0.05,
         "retry_backoff_factor": 2.0,
-        "claude_timeout_seconds": 10,
+        "claude_long_run_warn_seconds": 300,
         "dry_run": False,
     }
+
+
+def _mock_popen_success(stdout="output text", stderr=""):
+    """Create a mock Popen that succeeds immediately."""
+    proc = MagicMock()
+    proc.poll.return_value = 0  # Process finished
+    proc.wait.return_value = 0
+    proc.returncode = 0
+    proc.stdin = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdout.read.return_value = stdout
+    proc.stderr = MagicMock()
+    proc.stderr.read.return_value = stderr
+    return proc
+
+
+def _mock_popen_failure(returncode=1, stderr="error"):
+    """Create a mock Popen that fails."""
+    proc = MagicMock()
+    proc.poll.return_value = returncode
+    proc.wait.return_value = returncode
+    proc.returncode = returncode
+    proc.stdin = MagicMock()
+    proc.stdout = MagicMock()
+    proc.stdout.read.return_value = ""
+    proc.stderr = MagicMock()
+    proc.stderr.read.return_value = stderr
+    return proc
 
 
 class TestClaudeCLIInit:
@@ -36,7 +65,6 @@ class TestClaudeCLIInit:
         assert cli.retry_base_delay == 30
         assert cli.retry_max_delay == 300
         assert cli.retry_backoff_factor == 2.0
-        assert cli.timeout == 600
 
     def test_custom_config(self, base_config, logger):
         cli = ClaudeCLI(base_config, logger)
@@ -51,9 +79,7 @@ class TestRetryDelay:
         d0 = cli._retry_delay(0)
         d1 = cli._retry_delay(1)
         d2 = cli._retry_delay(2)
-        # Each delay should grow (approximately, jitter adds noise)
-        # Base is 0.01, factor 2.0: 0.01, 0.02, 0.04 + jitter
-        assert d0 < d1 or d0 < 0.02  # Allow for jitter
+        assert d0 < d1 or d0 < 0.02
         assert d1 < d2 or d1 < 0.04
 
     def test_max_delay_cap(self, logger):
@@ -64,7 +90,6 @@ class TestRetryDelay:
         }
         cli = ClaudeCLI(config, logger)
         delay = cli._retry_delay(5)
-        # Should be capped at max_delay + 25% jitter
         assert delay <= 150 * 1.25 + 1
 
 
@@ -85,70 +110,85 @@ class TestDryRun:
 
 
 class TestExecutePrompt:
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_success(self, mock_run, base_config, logger, tmp_path):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="output text",
-            stderr="",
-        )
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_success(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("output text")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
         assert result["success"] is True
         assert result["output"] == "output text"
         assert result["failure_type"] is None
 
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_allow_edits_flag(self, mock_run, base_config, logger, tmp_path):
-        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_allow_edits_flag(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("ok")
         cli = ClaudeCLI(base_config, logger)
         cli.execute_prompt("prompt", tmp_path, allow_edits=True)
-        call_args = mock_run.call_args
+        call_args = mock_popen.call_args
         cmd = call_args[0][0]
         assert "--dangerously-skip-permissions" in cmd
 
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_failure_retries(self, mock_run, base_config, logger, tmp_path):
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="API error: rate limit",
-        )
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_failure_retries(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_failure(1, "API error: rate limit")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
         assert result["success"] is False
         assert result["retries"] == 3  # initial + 2 retries
-        assert mock_run.call_count == 3
+        assert mock_popen.call_count == 3
         assert result["failure_type"] == "transient"
 
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_preserves_non_transient_failure_type(self, mock_run, base_config, logger, tmp_path):
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="syntax error in prompt",
-        )
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_preserves_non_transient_failure_type(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_failure(1, "syntax error in prompt")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
         assert result["success"] is False
         assert result["failure_type"] == "issue"
         assert "syntax error" in result["error"]
 
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_timeout_retries(self, mock_run, base_config, logger, tmp_path):
-        import subprocess
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=10)
-        cli = ClaudeCLI(base_config, logger)
-        result = cli.execute_prompt("prompt", tmp_path)
-        assert result["success"] is False
-        assert mock_run.call_count == 3
-
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_file_not_found_raises(self, mock_run, base_config, logger, tmp_path):
-        mock_run.side_effect = FileNotFoundError()
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_file_not_found_raises(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.side_effect = FileNotFoundError()
         cli = ClaudeCLI(base_config, logger)
         with pytest.raises(ClaudeCLIError, match="not found"):
             cli.execute_prompt("prompt", tmp_path)
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_model_override(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("ok")
+        cli = ClaudeCLI(base_config, logger)
+        cli.execute_prompt("prompt", tmp_path, model_override="sonnet")
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
+        assert "--model" in cmd
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "sonnet"
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_hard_timeout_terminates_process(self, mock_popen, mock_time, base_config, logger, tmp_path):
+        proc = MagicMock()
+        proc.poll.side_effect = [None, 124]
+        proc.wait.side_effect = [0]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.read.return_value = ""
+        proc.stderr = MagicMock()
+        proc.stderr.read.return_value = ""
+        mock_popen.return_value = proc
+
+        base_config["claude_hard_timeout_seconds"] = 1
+        base_config["retry_max_attempts"] = 0
+        clock = itertools.count(start=0.0, step=1.2)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["success"] is False
+        assert result["failure_type"] == "timeout"
+        assert proc.terminate.called
 
 
 class TestClassifyFailure:
@@ -158,30 +198,12 @@ class TestClassifyFailure:
     def test_transient_503(self):
         assert ClaudeCLI._classify_failure(1, "error 503 service unavailable") == "transient"
 
-    def test_transient_signal(self):
-        assert ClaudeCLI._classify_failure(137, "") == "transient"  # SIGKILL
+    def test_transient_connection_error(self):
+        assert ClaudeCLI._classify_failure(1, "connection refused") == "transient"
+
+    def test_non_transient_issue(self):
+        assert ClaudeCLI._classify_failure(1, "syntax error") == "issue"
+
+    def test_signal_death_is_transient(self):
+        assert ClaudeCLI._classify_failure(137, "") == "transient"
         assert ClaudeCLI._classify_failure(-9, "") == "transient"
-
-    def test_issue_type(self):
-        assert ClaudeCLI._classify_failure(1, "syntax error in prompt") == "issue"
-
-
-class TestCheckAvailable:
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_available(self, mock_run, base_config, logger):
-        mock_run.return_value = MagicMock(returncode=0)
-        cli = ClaudeCLI(base_config, logger)
-        assert cli.check_available() is True
-
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_not_available(self, mock_run, base_config, logger):
-        mock_run.side_effect = FileNotFoundError()
-        cli = ClaudeCLI(base_config, logger)
-        assert cli.check_available() is False
-
-    @patch("aidlc.claude_cli.subprocess.run")
-    def test_timeout(self, mock_run, base_config, logger):
-        import subprocess
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=10)
-        cli = ClaudeCLI(base_config, logger)
-        assert cli.check_available() is False

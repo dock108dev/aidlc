@@ -53,8 +53,12 @@ class Implementer:
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
 
-    def run(self) -> None:
-        """Run implementation loop until all issues are resolved."""
+    def run(self) -> bool:
+        """Run implementation loop until all issues are resolved.
+
+        Returns:
+            bool: True when final verification passes, False otherwise.
+        """
         checkpoint_interval = self.config.get("checkpoint_interval_minutes", 15) * 60
         last_checkpoint_time = time.time()
         max_consecutive_failures = self.config.get("max_consecutive_failures", 3)
@@ -67,6 +71,10 @@ class Implementer:
             if self.test_command:
                 self.logger.info(f"Auto-detected test command: {self.test_command}")
 
+        # Ensure test dependencies are installed
+        if self.test_command and not self.config.get("dry_run"):
+            self._ensure_test_deps()
+
         # Sort issues by priority and dependency order
         if not self._sort_issues():
             self.state.phase = RunPhase.IMPLEMENTING
@@ -75,7 +83,7 @@ class Implementer:
             )
             self.logger.error(self.state.stop_reason)
             save_state(self.state, self.run_dir)
-            return
+            return False
 
         self.state.phase = RunPhase.IMPLEMENTING
         save_state(self.state, self.run_dir)
@@ -157,9 +165,10 @@ class Implementer:
 
         # Final verification pass
         self.logger.info("Running final verification pass...")
-        self._verification_pass()
+        verification_ok = self._verification_pass()
 
         save_state(self.state, self.run_dir)
+        return verification_ok
 
     def _implement_issue(self, issue: Issue) -> bool:
         """Implement a single issue. Returns True on success."""
@@ -271,15 +280,30 @@ class Implementer:
             if not impl_result.files_changed and actual_changes:
                 impl_result.files_changed = actual_changes
             if not detection_ok and not self.config.get("dry_run"):
-                self.logger.warning(
-                    f"{issue.id}: unable to verify file changes (git unavailable/timed out)."
-                )
+                if self.config.get("strict_change_detection"):
+                    self.logger.error(
+                        f"{issue.id}: strict change detection enabled and git verification failed."
+                    )
+                    impl_result.success = False
+                    impl_result.notes = "Strict change detection failed (git unavailable/timed out)"
+                else:
+                    self.logger.warning(
+                        f"{issue.id}: unable to verify file changes (git unavailable/timed out)."
+                    )
             elif not actual_changes and not self.config.get("dry_run"):
-                self.logger.warning(
-                    f"{issue.id}: marked success but no files changed in working tree. "
-                    f"Verify implementation is correct."
-                )
+                if self.config.get("strict_change_detection"):
+                    self.logger.error(
+                        f"{issue.id}: strict change detection enabled and no files changed."
+                    )
+                    impl_result.success = False
+                    impl_result.notes = "Strict change detection failed (no files changed)"
+                else:
+                    self.logger.warning(
+                        f"{issue.id}: marked success but no files changed in working tree. "
+                        f"Verify implementation is correct."
+                    )
 
+        if impl_result.success:
             issue.status = IssueStatus.IMPLEMENTED
             issue.files_changed = impl_result.files_changed
             issue.implementation_notes += f"\nAttempt {issue.attempt_count}: {impl_result.summary}"
@@ -429,6 +453,76 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
             return self._run_tests()
         return False
 
+    def _ensure_test_deps(self):
+        """Check if test dependencies are installed and install if missing."""
+        install_commands = {
+            "pytest": "pip install pytest",
+            "jest": "npm install --save-dev jest",
+            "vitest": "npm install --save-dev vitest",
+            "playwright": "npx playwright install",
+            "cypress": "npx cypress install",
+            "rspec": "bundle install",
+            "cargo test": None,  # Comes with Rust toolchain
+            "go test": None,  # Comes with Go
+        }
+
+        # Check package managers / dependency files
+        dep_install = {
+            "package.json": "npm install",
+            "package-lock.json": "npm ci",
+            "yarn.lock": "yarn install",
+            "pnpm-lock.yaml": "pnpm install",
+            "requirements.txt": "pip install -r requirements.txt",
+            "Gemfile": "bundle install",
+            "Cargo.toml": None,
+            "go.mod": "go mod download",
+        }
+
+        # Install project deps if lock file exists but node_modules/venv doesn't
+        for dep_file, cmd in dep_install.items():
+            if cmd and (self.project_root / dep_file).exists():
+                # Check if deps are already installed
+                if dep_file in ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
+                    if (self.project_root / "node_modules").exists():
+                        continue
+                elif dep_file == "requirements.txt":
+                    # Don't auto-install Python deps globally — too risky
+                    continue
+                elif dep_file == "Gemfile":
+                    continue  # Bundle install can be slow
+
+                self.logger.info(f"Installing project dependencies: {cmd}")
+                try:
+                    subprocess.run(
+                        cmd, shell=True, cwd=str(self.project_root),
+                        capture_output=True, timeout=120,
+                    )
+                except (subprocess.TimeoutExpired, OSError) as e:
+                    self.logger.warning(f"Dependency install failed: {e}")
+                break  # Only install once
+
+        # Check if the test tool itself needs installation
+        for tool_name, install_cmd in install_commands.items():
+            if install_cmd and tool_name in (self.test_command or ""):
+                # Quick check if the tool is available
+                check_cmd = f"which {tool_name.split()[0]} || npx {tool_name.split()[0]} --version"
+                try:
+                    result = subprocess.run(
+                        check_cmd, shell=True, capture_output=True,
+                        cwd=str(self.project_root), timeout=10,
+                    )
+                    if result.returncode != 0:
+                        self.logger.info(f"Installing test tool: {install_cmd}")
+                        subprocess.run(
+                            install_cmd, shell=True, cwd=str(self.project_root),
+                            capture_output=True, timeout=120,
+                        )
+                except (subprocess.TimeoutExpired, OSError):
+                    self.logger.warning(
+                        f"Unable to verify/install test tool '{tool_name}' automatically."
+                    )
+                break
+
     def _run_tests(self, capture_output: bool = False) -> bool | str:
         """Run the project's test suite.
 
@@ -463,8 +557,12 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
                 return f"Failed to run tests: {e}"
             return False
 
-    def _verification_pass(self) -> None:
-        """Final pass to verify all implemented issues."""
+    def _verification_pass(self) -> bool:
+        """Final pass to verify all implemented issues.
+
+        Returns:
+            bool: True when final verification is successful.
+        """
         self.state.phase = RunPhase.VERIFYING
 
         for d in self.state.issues:
@@ -482,8 +580,12 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
             if tests_pass:
                 self.logger.info("All tests pass.")
             else:
-                self.logger.warning("Final test suite has failures.")
+                self.logger.error("Final test suite has failures.")
                 self.state.validation_results.append("Final test suite has failures")
+                if self.config.get("fail_on_final_test_failure"):
+                    self.state.stop_reason = "Final verification failed: test suite has failures"
+                    return False
+        return True
 
     def _sort_issues(self) -> bool:
         """Sort issues by priority and dependency order (topological).

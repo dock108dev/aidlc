@@ -5,6 +5,7 @@ import pytest
 from pathlib import Path
 
 from aidlc.config import load_config, get_run_dir, get_reports_dir, get_issues_dir, DEFAULTS
+from aidlc.config_detect import update_config_file
 
 
 class TestLoadConfig:
@@ -61,8 +62,9 @@ class TestLoadConfig:
     def test_defaults_include_new_keys(self):
         """Verify all expected config keys exist in DEFAULTS."""
         expected_keys = [
-            "plan_budget_hours", "checkpoint_interval_minutes", "dry_run",
-            "claude_cli_command", "claude_model", "claude_timeout_seconds",
+            "runtime_profile", "plan_budget_hours", "checkpoint_interval_minutes", "dry_run",
+            "claude_cli_command", "claude_model", "claude_long_run_warn_seconds",
+            "claude_hard_timeout_seconds",
             "retry_max_attempts", "retry_base_delay_seconds", "retry_max_delay_seconds",
             "retry_backoff_factor", "max_consecutive_failures",
             "finalization_budget_percent", "max_implementation_attempts",
@@ -70,6 +72,9 @@ class TestLoadConfig:
             "run_tests_command", "test_timeout_seconds",
             "max_doc_chars", "max_context_chars", "max_implementation_context_chars",
             "doc_scan_patterns", "doc_scan_exclude", "implementation_allowed_paths",
+            "strict_validation", "validation_allow_no_tests", "fail_on_validation_incomplete",
+            "fail_on_final_test_failure", "strict_change_detection",
+            "planning_action_failure_ratio_threshold",
         ]
         for key in expected_keys:
             assert key in DEFAULTS, f"Missing key in DEFAULTS: {key}"
@@ -90,6 +95,30 @@ class TestLoadConfig:
         config = load_config()
         assert config["_project_root"] == str(Path.cwd().resolve())
 
+    def test_production_profile_applies_strict_defaults(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        (aidlc_dir / "config.json").write_text(json.dumps({"runtime_profile": "production"}))
+        config = load_config(project_root=str(tmp_path))
+        assert config["strict_validation"] is True
+        assert config["validation_allow_no_tests"] is False
+        assert config["fail_on_validation_incomplete"] is True
+        assert config["fail_on_final_test_failure"] is True
+        assert config["strict_change_detection"] is True
+        assert config["claude_hard_timeout_seconds"] == 3600
+
+    def test_production_profile_respects_explicit_override(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        (aidlc_dir / "config.json").write_text(json.dumps({
+            "runtime_profile": "production",
+            "strict_validation": False,
+            "claude_hard_timeout_seconds": 120,
+        }))
+        config = load_config(project_root=str(tmp_path))
+        assert config["strict_validation"] is False
+        assert config["claude_hard_timeout_seconds"] == 120
+
 
 class TestHelperFunctions:
     """Tests for get_run_dir, get_reports_dir, get_issues_dir."""
@@ -109,3 +138,17 @@ class TestHelperFunctions:
         config = {"_issues_dir": str(tmp_path / "issues")}
         issues_dir = get_issues_dir(config)
         assert issues_dir.exists()
+
+
+class TestConfigDetectMerge:
+    def test_update_config_file_rejects_corrupt_json(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        config_path = aidlc_dir / "config.json"
+        config_path.write_text('{"plan_budget_hours": 4,,}')
+
+        with pytest.raises(ValueError, match="not valid JSON"):
+            update_config_file(tmp_path, {"run_tests_command": "pytest"})
+
+        backups = list(aidlc_dir.glob("config.corrupt-*.json.bak"))
+        assert backups, "Expected corrupt backup file to be created"

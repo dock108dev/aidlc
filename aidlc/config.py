@@ -9,19 +9,25 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 
 # Default configuration values
 DEFAULTS = {
+    "runtime_profile": "standard",          # standard | production
     "plan_budget_hours": 4,
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
     "claude_cli_command": "claude",
-    "claude_model": "opus",
-    "claude_timeout_seconds": 600,
+    "claude_model": "opus",                  # default model (used for implementation)
+    "claude_model_planning": "sonnet",       # model for planning cycles
+    "claude_model_research": "sonnet",       # model for research actions
+    "claude_model_implementation": "opus",   # model for implementation
+    "claude_model_finalization": "sonnet",    # model for finalization passes
+    "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
+    "claude_hard_timeout_seconds": 0,       # 0 = disabled (no hard kill)
     "retry_max_attempts": 2,
     "retry_base_delay_seconds": 30,
     "retry_max_delay_seconds": 300,
     "retry_backoff_factor": 2.0,
     "max_consecutive_failures": 3,
     "diminishing_returns_window": 5,       # track last N cycles for diminishing returns
-    "diminishing_returns_threshold": 3,    # exit after N consecutive cycles with no new issues
+    "diminishing_returns_threshold": 2,    # exit after N consecutive cycles with no new issues
     "finalization_budget_percent": 10,
     "max_implementation_attempts": 3,
     "max_planning_cycles": 0,       # 0 = unlimited (dry-run defaults to 3)
@@ -70,18 +76,34 @@ DEFAULTS = {
 
     # Context preparation
     "project_brief_max_chars": 20000,       # max size of generated project brief
-    "phase_context_max_chars": 40000,       # max chars for phase-focused docs per cycle
+    "phase_context_max_chars": 20000,       # max chars for phase-focused docs per cycle
+    "max_planning_prompt_chars": 60000,     # total prompt budget per planning cycle
+
+    # Validation loop
+    "validation_enabled": True,
+    "strict_validation": False,             # if True, validation failures pause run
+    "validation_allow_no_tests": True,      # if False, missing tests fail validation
+    "fail_on_validation_incomplete": False,  # if True, incomplete validation pauses run
+    "validation_max_cycles": 3,             # max test-fix iterations
+    "validation_batch_size": 10,            # max fix issues per cycle
+    "test_profile_mode": "progressive",     # unit → integration → e2e (stop on first fail)
+    "e2e_test_command": None,               # override E2E test command
+    "build_validation_command": None,       # override build command
 
     # Finalization
     "finalize_enabled": True,               # master switch for finalization
+    "fail_on_final_test_failure": False,    # if True, failed final suite pauses run
+    "strict_change_detection": False,       # if True, impl success requires verifiable changes
     "finalize_passes": None,                # None = all; or ["ssot", "docs"]
     "finalize_timeout_seconds": 900,        # 15 min per pass
+    "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
 }
 
 
 def load_config(config_path: str | None = None, project_root: str | None = None) -> dict:
     """Load and validate config. Merges defaults with user config."""
     config = dict(DEFAULTS)
+    user_keys: set[str] = set()
 
     # Try loading config file
     if config_path:
@@ -101,6 +123,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
             with open(path) as f:
                 user_config = json.load(f)
             config.update(user_config)
+            user_keys.update(user_config.keys())
         else:
             raise FileNotFoundError(f"Config not found: {path}")
     else:
@@ -111,6 +134,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
                 with open(project_config) as f:
                     user_config = json.load(f)
                 config.update(user_config)
+                user_keys.update(user_config.keys())
 
     # Resolve project root
     if project_root:
@@ -124,6 +148,20 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
     config["_runs_dir"] = str(aidlc_dir / "runs")
     config["_reports_dir"] = str(aidlc_dir / "reports")
     config["_issues_dir"] = str(aidlc_dir / "issues")
+
+    # Production profile defaults tighten guardrails unless user explicitly overrides.
+    if config.get("runtime_profile") == "production":
+        production_defaults = {
+            "strict_validation": True,
+            "validation_allow_no_tests": False,
+            "fail_on_validation_incomplete": True,
+            "fail_on_final_test_failure": True,
+            "strict_change_detection": True,
+            "claude_hard_timeout_seconds": 3600,
+        }
+        for key, value in production_defaults.items():
+            if key not in user_keys:
+                config[key] = value
 
     return config
 

@@ -6,6 +6,7 @@ knowledge gaps that may need research actions.
 """
 
 import fnmatch
+import logging
 import re
 from pathlib import Path
 
@@ -62,11 +63,13 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
 
     # Scan each doc for gaps
     gaps = []
+    skipped_docs = 0
     for rel_path in sorted(doc_paths):
         full_path = project_root / rel_path
         try:
             content = full_path.read_text(errors="replace")
         except OSError:
+            skipped_docs += 1
             continue
 
         for line_num, line in enumerate(content.splitlines(), 1):
@@ -114,6 +117,11 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
     # Sort: critical first, then warning, then info
     severity_order = {"critical": 0, "warning": 1, "info": 2}
     gaps.sort(key=lambda g: (severity_order.get(g.severity, 9), g.doc_path, g.line))
+
+    if skipped_docs:
+        logging.getLogger("aidlc").warning(
+            f"Doc gap detection skipped {skipped_docs} unreadable document(s)."
+        )
 
     return gaps[:max_items]
 

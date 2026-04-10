@@ -197,7 +197,7 @@ class TestBuildPrompt:
         prompt = planner._build_prompt(is_finalization=False)
         assert "ISSUE-001" in prompt
         assert "Existing" in prompt
-        assert "project context" in prompt
+        assert "Planning Task" in prompt
 
     def test_finalization_prompt(self, config, logger, tmp_path):
         state = RunState(run_id="test", config_name="default")

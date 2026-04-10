@@ -8,12 +8,13 @@ The canonical defaults are defined in `aidlc/config.py`.
 
 | Key | Default | Used for |
 |---|---:|---|
+| `runtime_profile` | `"standard"` | runtime strictness preset (`standard` or `production`) |
 | `plan_budget_hours` | `4` | planning budget in hours |
 | `checkpoint_interval_minutes` | `15` | checkpoint/report cadence |
 | `dry_run` | `false` | simulate model calls |
 | `claude_cli_command` | `"claude"` | CLI executable |
 | `claude_model` | `"opus"` | model label passed through configuration |
-| `claude_timeout_seconds` | `600` | per model call timeout |
+| `claude_hard_timeout_seconds` | `0` | hard cap for Claude subprocess (`0` disables cap) |
 | `retry_max_attempts` | `2` | model call retry count |
 | `retry_base_delay_seconds` | `30` | retry backoff base |
 | `retry_max_delay_seconds` | `300` | retry backoff cap |
@@ -38,8 +39,21 @@ The canonical defaults are defined in `aidlc/config.py`.
 | `audit_max_source_chars_per_module` | `15000` | module source cap for full audit |
 | `audit_source_extensions` | language set | source extension allowlist |
 | `audit_exclude_patterns` | built-in patterns | audit exclusions |
+| `strict_validation` | `false` | pause run when validation is incomplete |
+| `validation_allow_no_tests` | `true` | allow no-tests-detected to be treated as stable |
+| `fail_on_validation_incomplete` | `false` | fail/pause run when validation loop ends unstable |
+| `fail_on_final_test_failure` | `false` | fail/pause run when final verification test suite fails |
+| `strict_change_detection` | `false` | require verifiable file changes for impl success |
+| `planning_action_failure_ratio_threshold` | `0.6` | fail cycle if action failure ratio reaches threshold |
 
 ## Notes
 
 - Unknown keys are loaded but only effective if read by runtime modules.
 - `max_*_cycles` defaults are unlimited in normal runs and effectively bounded in dry-run paths.
+- In `runtime_profile: "production"`, stricter defaults are auto-applied unless explicitly overridden:
+  - `strict_validation=true`
+  - `validation_allow_no_tests=false`
+  - `fail_on_validation_incomplete=true`
+  - `fail_on_final_test_failure=true`
+  - `strict_change_detection=true`
+  - `claude_hard_timeout_seconds=3600`

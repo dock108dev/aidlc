@@ -219,9 +219,12 @@ class Planner:
         prompt = self._build_prompt(is_finalization)
         self.logger.debug(f"Prompt size: {len(prompt)} chars")
 
-        # Execute Claude
+        # Execute Claude with file access (can read project files + write issues/docs)
+        planning_model = self.config.get("claude_model_planning")
         start_time = time.time()
-        result = self.cli.execute_prompt(prompt, self.project_root)
+        result = self.cli.execute_prompt(
+            prompt, self.project_root, allow_edits=True, model_override=planning_model,
+        )
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
@@ -259,7 +262,6 @@ class Planner:
             a.issue_id for a in planning_output.actions
             if a.action_type == "create_issue" and a.issue_id
         }
-        known_ids_with_batch = known_ids | batch_new_ids
 
         # Batch-level validation uses original known_ids (catches true duplicates)
         validation_errors = planning_output.validate(
@@ -303,6 +305,7 @@ class Planner:
         # Apply actions
         applied = 0
         action_errors = []
+        total_actions = len(planning_output.actions)
         for action in planning_output.actions:
             errors = action.validate(
                 is_finalization=is_finalization,
@@ -330,90 +333,146 @@ class Planner:
             )
             return False
 
+        if action_errors and total_actions:
+            failure_ratio = len(action_errors) / total_actions
+            ratio_threshold = self.config.get("planning_action_failure_ratio_threshold", 0.6)
+            if failure_ratio >= ratio_threshold:
+                self.logger.error(
+                    f"Cycle {cycle_num} failed: action failure ratio {failure_ratio:.0%} "
+                    f"exceeds threshold {ratio_threshold:.0%} "
+                    f"({len(action_errors)}/{total_actions} actions failed)"
+                )
+                return False
+            self.logger.warning(
+                f"Cycle {cycle_num} partial success: {len(action_errors)}/{total_actions} "
+                "actions failed but below failure threshold"
+            )
+
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
 
-    def _build_prompt(self, is_finalization: bool) -> str:
-        """Build the planning prompt with full project context."""
-        sections = []
+    def _write_planning_index(self):
+        """Write an index file that Claude can reference instead of pasting everything.
 
-        # Project context from scanner
-        sections.append("# Project Context\n")
-        sections.append(self.project_context)
+        Creates .aidlc/planning_index.md with pointers to all relevant files.
+        This is written once per cycle and referenced from the prompt.
+        """
+        index_path = self.run_dir.parent.parent / "planning_index.md"
+        lines = ["# AIDLC Planning Index", ""]
 
-        # Resume context — what was happening in the last cycle
-        if self._last_cycle_notes:
-            sections.append("\n## Previous Cycle Context\n")
-            sections.append(
-                "This is where planning left off. Continue from here — "
-                "do NOT restart from scratch or re-cover phases that already have issues.\n"
-            )
-            sections.append(self._last_cycle_notes)
-            sections.append("")
+        # Project docs
+        lines.append("## Key Project Docs (read these for full detail)")
+        for name in ["ROADMAP.md", "ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md", "STATUS.md"]:
+            if (self.project_root / name).exists():
+                lines.append(f"- {name}")
+        lines.append("")
 
-        # Completed research — show Claude what research already exists so it doesn't re-request
+        # Research docs
         research_dir = self.project_root / "docs" / "research"
         if research_dir.exists():
             research_files = sorted(research_dir.glob("*.md"))
             if research_files:
-                sections.append("\n## Completed Research\n")
-                sections.append("These research documents have already been generated. "
-                                "Do NOT request research for topics that are already covered below. "
-                                "Reference these docs in your issue descriptions instead.\n")
+                lines.append("## Completed Research (do NOT re-request)")
                 for rf in research_files:
-                    rel = f"docs/research/{rf.name}"
-                    # Include a preview of the content so Claude can reference it
-                    try:
-                        content = rf.read_text(errors="replace")
-                        # Show first 500 chars as preview
-                        preview = content[:500].replace("\n", " ").strip()
-                        sections.append(f"- `{rel}` — {preview}...")
-                    except OSError:
-                        sections.append(f"- `{rel}`")
-                sections.append("")
+                    lines.append(f"- docs/research/{rf.name}")
+                lines.append("")
 
-        # Phase-focused context: include full docs relevant to next uncovered phase
-        next_phase = self._get_current_phase_name()
-        if next_phase and self._phase_docs.get(next_phase):
-            from .context_prep import build_phase_context
-            phase_ctx = build_phase_context(
-                self.doc_files,
-                self._phase_docs[next_phase],
-                max_chars=self.config.get("phase_context_max_chars", 40000),
-            )
-            if phase_ctx:
-                sections.append(f"\n## Focus: {next_phase}\n")
-                sections.append(
-                    "The following detailed docs are relevant to this phase "
-                    "and should inform your issue creation:\n"
-                )
-                sections.append(phase_ctx)
-                sections.append("")
+        # Issue files
+        issues_dir = Path(self.config["_issues_dir"])
+        if issues_dir.exists():
+            issue_files = sorted(issues_dir.glob("*.md"))
+            if issue_files:
+                lines.append(f"## Existing Issues ({len(issue_files)} files in .aidlc/issues/)")
+                lines.append("Read individual issue files for full specs:")
+                for f in issue_files:
+                    lines.append(f"- .aidlc/issues/{f.name}")
+                lines.append("")
 
-        # Documentation gaps (from doc-gap detection)
-        if self.doc_gaps:
-            sections.append("\n## Documentation Gaps Detected\n")
-            sections.append(
-                "The following gaps were found in project documentation. "
-                "Use 'research' actions to investigate critical gaps before creating issues.\n"
-            )
-            for gap in self.doc_gaps:
-                marker = "[CRITICAL] " if gap.severity == "critical" else ""
-                sections.append(f"- {marker}`{gap.doc_path}:{gap.line}` — {gap.text[:120]}")
-            sections.append("")
+        # Other project docs
+        if self.doc_files:
+            other_docs = [d["path"] for d in self.doc_files
+                          if d["path"].lower() not in ("roadmap.md", "architecture.md", "design.md", "claude.md", "status.md", "readme.md")]
+            if other_docs:
+                lines.append("## Other Project Docs")
+                for path in other_docs[:30]:
+                    lines.append(f"- {path}")
+                if len(other_docs) > 30:
+                    lines.append(f"- ... and {len(other_docs) - 30} more")
+                lines.append("")
 
-        # Current issue universe
+        index_path.write_text("\n".join(lines))
+        return index_path
+
+    def _build_prompt(self, is_finalization: bool) -> str:
+        """Build a lean planning prompt that uses file references instead of pasting content.
+
+        Strategy: send a compact prompt (~10-15k chars) that includes:
+        - Project brief (the condensed summary)
+        - Issue titles (one-liners, for dedup)
+        - Instructions telling Claude to READ files for detail
+        - The planning index pointing to all relevant files on disk
+
+        Claude has file access and can read anything it needs.
+        """
+        # Write the planning index to disk
+        self._write_planning_index()
+
+        sections = []
+
+        # Project identity — minimal inline context, Claude reads files for detail
+        sections.append("# Planning Task\n")
+        sections.append(
+            "You are planning implementation work for this project. "
+            "You have FULL FILE ACCESS — read any project file you need.\n\n"
+            "**Start by reading these files:**\n"
+            "1. **ROADMAP.md** — what to build, in what order\n"
+            "2. **ARCHITECTURE.md** — system structure\n"
+            "3. **.aidlc/planning_index.md** — index of all docs, research, and existing issues\n"
+            "4. **DESIGN.md** — patterns and conventions\n\n"
+            "Read them NOW before creating any issues."
+        )
+
+        # Resume context
+        if self._last_cycle_notes:
+            sections.append("\n## Previous Cycle\n")
+            sections.append(self._last_cycle_notes[:500])
+
+        # Issue universe — TITLES ONLY for dedup awareness
         if self.state.issues:
-            sections.append("\n## Current Issue Universe\n")
+            sections.append(f"\n## Existing Issues ({len(self.state.issues)} total)\n")
+            sections.append("One-line index. Read .aidlc/issues/{ID}.md for full specs.\n")
             for d in self.state.issues:
-                issue = Issue.from_dict(d)
-                deps = f" (deps: {', '.join(issue.dependencies)})" if issue.dependencies else ""
-                sections.append(
-                    f"- **{issue.id}**: {issue.title} [{issue.priority}]{deps}"
-                )
-                if issue.acceptance_criteria:
-                    for ac in issue.acceptance_criteria:
-                        sections.append(f"  - AC: {ac}")
+                sections.append(f"- {d['id']}: {d.get('title', '')} [{d.get('priority', 'medium')}]")
+
+        # Doc gaps — critical only
+        if self.doc_gaps:
+            critical_gaps = [g for g in self.doc_gaps if g.severity == "critical"]
+            if critical_gaps:
+                sections.append("\n## Critical Doc Gaps\n")
+                for gap in critical_gaps[:5]:
+                    sections.append(f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}")
+
+        # Run state
+        plan_h = self.state.plan_elapsed_seconds / 3600
+        budget_h = self.state.plan_budget_seconds / 3600
+        sections.append(f"\n## Run State\n")
+        sections.append(f"- Cycle: {self.state.planning_cycles}")
+        sections.append(f"- Elapsed: {plan_h:.1f}h / {budget_h:.0f}h")
+        sections.append(f"- Issues: {self.state.issues_created}")
+
+        # File access instructions
+        sections.append("\n## Available Files\n")
+        sections.append(
+            "You have full read access to the project. Use it:\n"
+            "- **ROADMAP.md** — phased delivery plan (READ THIS for what to build)\n"
+            "- **ARCHITECTURE.md** — system structure\n"
+            "- **DESIGN.md** — patterns and conventions\n"
+            "- **.aidlc/planning_index.md** — full index of all docs, research, and issues\n"
+            "- **.aidlc/issues/*.md** — full specs of existing issues\n"
+            "- **docs/research/*.md** — completed research (do NOT re-request)\n\n"
+            "Read specific files when you need detail. Do NOT ask for content to be "
+            "pasted — just read the files directly."
+        )
 
         # Run state
         plan_h = self.state.plan_elapsed_seconds / 3600
@@ -438,7 +497,9 @@ class Planner:
         if getattr(self, "_offer_completion", False):
             sections.append(self._completion_offer_instructions())
 
-        return "\n\n".join(sections)
+        prompt = "\n\n".join(sections)
+        self.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt)//4:,} tokens)")
+        return prompt
 
     def _planning_instructions(self) -> str:
         return """## Instructions — Planning Mode
@@ -789,16 +850,13 @@ instead of declaring complete."""
 
         prompt = "\n".join(prompt_parts)
 
-        # Call Claude with extended timeout for research (default 15 min)
-        research_timeout = self.config.get("research_timeout_seconds", 900)
-        old_timeout = self.cli.timeout
-        self.cli.timeout = research_timeout
-
+        # Call Claude for research (no hard timeout — warns if long)
+        research_model = self.config.get("claude_model_research")
         start_time = time.time()
-        result = self.cli.execute_prompt(prompt, self.project_root)
+        result = self.cli.execute_prompt(
+            prompt, self.project_root, model_override=research_model,
+        )
         duration = time.time() - start_time
-
-        self.cli.timeout = old_timeout
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
 

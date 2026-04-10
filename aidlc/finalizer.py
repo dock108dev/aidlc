@@ -85,6 +85,9 @@ class Finalizer:
             self._run_pass(pass_name)
             save_state(self.state, self.run_dir)
 
+        # Update config with any newly detected values (codebase may have changed)
+        self._refresh_config()
+
         # Write AIDLC futures note
         self._write_futures_note()
 
@@ -106,19 +109,16 @@ class Finalizer:
             diff_summary=diff_summary or "(no diff available — working on main branch)",
         )
 
-        # Execute Claude with edit permissions
-        timeout = self.config.get("finalize_timeout_seconds", 900)
-        old_timeout = self.cli.timeout
-        self.cli.timeout = timeout
-
+        # Execute Claude with edit permissions (no hard timeout — warns if long)
         start = time.time()
+        finalize_model = self.config.get("claude_model_finalization")
         result = self.cli.execute_prompt(
             prompt=prompt,
             working_dir=self.project_root,
             allow_edits=True,
+            model_override=finalize_model,
         )
         duration = time.time() - start
-        self.cli.timeout = old_timeout
 
         self.state.elapsed_seconds += duration
 
@@ -136,6 +136,17 @@ class Finalizer:
             self.logger.error(
                 f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)"
             )
+
+    def _refresh_config(self):
+        """Re-detect project config after finalization (codebase may have changed)."""
+        try:
+            from .config_detect import detect_config, update_config_file
+            detected = detect_config(self.project_root)
+            if any(v for k, v in detected.items() if not k.startswith("_")):
+                self.logger.info("Refreshing config with post-finalization detection...")
+                update_config_file(self.project_root, detected, self.logger)
+        except Exception as e:
+            self.logger.warning(f"Config refresh failed: {e}")
 
     def _get_diff_summary(self) -> str:
         """Get git diff summary between main and HEAD."""

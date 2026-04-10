@@ -85,6 +85,21 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
                 lines.append(f"- {a}")
         lines.append("")
 
+    # Validation
+    if state.validation_cycles > 0:
+        lines.append("## Validation Summary\n")
+        lines.append(f"| Metric | Value |")
+        lines.append(f"|---|---|")
+        lines.append(f"| Validation cycles | {state.validation_cycles} |")
+        lines.append(f"| Fix issues created | {state.validation_issues_created} |")
+        for result in state.validation_test_results:
+            cycle = result.get("cycle", "?")
+            passed = result.get("passed", False)
+            failures = result.get("failure_count", 0)
+            status = "PASSED" if passed else f"FAILED ({failures} failures)"
+            lines.append(f"| Cycle {cycle} | {status} |")
+        lines.append("")
+
     # Finalization
     if state.finalize_passes_completed:
         lines.append("## Finalization Summary\n")

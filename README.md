@@ -37,6 +37,25 @@ python -m pytest
 - Planning fails a cycle on schema validation errors or action application errors.
 - Implementation requires structured JSON results from the model; unstructured success fallback is removed.
 - Dependency cycles and unmet dependencies are treated as stop conditions (not bypassed).
+- Claude calls use retry + backoff for transient failures and can enforce a hard timeout via config.
+- Validation/finalization strictness is profile-driven (`runtime_profile: "standard" | "production"`).
+
+## Production Safety Profile
+
+Use `runtime_profile: "production"` in `.aidlc/config.json` to enable stricter defaults:
+
+- `strict_validation: true`
+- `validation_allow_no_tests: false`
+- `fail_on_validation_incomplete: true`
+- `fail_on_final_test_failure: true`
+- `strict_change_detection: true`
+- `claude_hard_timeout_seconds: 3600`
+
+When running in production profile:
+
+- `aidlc run --skip-validation` is rejected.
+- `aidlc run --skip-finalize` is rejected.
+- final verification/test failures pause the run instead of completing successfully.
 
 ## Run Artifacts
 

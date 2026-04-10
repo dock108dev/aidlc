@@ -93,43 +93,13 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     # Build base context
     context = scanner.build_context_prompt(scan_result)
 
-    # For large projects, add a doc manifest so Claude knows what exists
-    # even when docs don't fit in the context budget
+    # Claude has file access (allow_edits=True) so it can read docs directly.
+    # No need to paste everything into the prompt or generate summaries.
+    # Just note total doc size for logging.
     doc_files = scan_result["doc_files"]
     total_doc_chars = sum(d["size"] for d in doc_files)
-    max_context = config.get("max_context_chars", 80000)
-
-    if total_doc_chars > max_context:
-        from .context_prep import build_doc_manifest, build_project_brief
-
-        logger.info(
-            f"Large project detected: {total_doc_chars:,} chars of docs vs "
-            f"{max_context:,} context budget. Building doc manifest..."
-        )
-
-        # Add manifest of ALL docs (even ones that don't fit)
-        manifest = build_doc_manifest(doc_files)
-        context = context + "\n\n" + manifest
-
-        # Check for cached brief first (from previous run or earlier in this run)
-        brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
-        if brief_path.exists():
-            brief = brief_path.read_text()
-            context = f"## Project Brief\n\n{brief}\n\n{context}"
-            logger.info(f"Loaded cached project brief ({len(brief):,} chars)")
-        elif cli and not config.get("dry_run"):
-            # No cache — generate fresh
-            logger.info("Generating project brief from all documentation...")
-            brief = build_project_brief(
-                doc_files, cli, Path(config["_project_root"]), logger,
-                max_brief_chars=config.get("project_brief_max_chars", 20000),
-            )
-            if brief:
-                brief_path.write_text(brief)
-                context = f"## Project Brief\n\n{brief}\n\n{context}"
-                logger.info(f"Project brief generated ({len(brief):,} chars)")
-            else:
-                logger.warning("Could not generate project brief — continuing with raw docs")
+    if total_doc_chars > 80000:
+        logger.info(f"Large project: {total_doc_chars:,} chars across {len(doc_files)} docs (Claude will read files directly)")
 
     state.project_context = context[:2000]  # Save summary to state
 
@@ -151,6 +121,7 @@ def run_full(
     verbose: bool = False,
     audit: str | None = None,
     skip_finalize: bool = False,
+    skip_validation: bool = False,
     finalize_passes: list[str] | None = None,
 ) -> None:
     """Run the full AIDLC lifecycle."""
@@ -254,7 +225,7 @@ def run_full(
             # IMPLEMENT
             if state.issues:
                 implementer = Implementer(state, run_dir, config, cli, project_context, logger)
-                implementer.run()
+                verification_ok = implementer.run()
                 save_state(state, run_dir)
                 logger.info(
                     f"Implementation complete: "
@@ -262,8 +233,44 @@ def run_full(
                     f"{state.issues_verified} verified, "
                     f"{state.issues_failed} failed"
                 )
+                if not verification_ok:
+                    state.status = RunStatus.PAUSED
+                    if not state.stop_reason:
+                        state.stop_reason = "Implementation stopped: final verification failed"
+                    logger.error(state.stop_reason)
+                    save_state(state, run_dir)
+                    return
             else:
                 logger.warning("No issues to implement. Did planning produce any issues?")
+
+        # VALIDATE (optional) — test, parse failures, fix, re-test loop
+        if (
+            not plan_only
+            and not skip_validation
+            and config.get("validation_enabled", True)
+            and state.issues
+        ):
+            from .validator import Validator
+
+            logger.info("Starting validation loop...")
+            validator = Validator(state, run_dir, config, cli, project_context, logger)
+            is_stable = validator.run()
+            save_state(state, run_dir)
+            if is_stable:
+                logger.info("Validation passed — project is stable")
+            else:
+                logger.warning(
+                    f"Validation incomplete: {state.validation_cycles} cycles, "
+                    f"{state.validation_issues_created} fix issues created"
+                )
+                if config.get("strict_validation") or config.get("fail_on_validation_incomplete"):
+                    state.status = RunStatus.PAUSED
+                    state.stop_reason = (
+                        "Validation incomplete under strict validation settings"
+                    )
+                    logger.error(state.stop_reason)
+                    save_state(state, run_dir)
+                    return
 
         # FINALIZE (optional) — audit, cleanup, docs consolidation
         if (
