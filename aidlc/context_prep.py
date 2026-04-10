@@ -8,12 +8,10 @@ Solves the problem of 80k context budget vs 230k+ of project docs by:
 2. Project brief — Claude reads ALL docs in batches and produces a condensed
    ~15k char project brief capturing essential scope, mechanics, and requirements.
 
-3. Phase-focused context — each planning cycle gets full docs relevant to the
-   ROADMAP phase being planned, not the same truncated blob every time.
+3. Repository-wide context synthesis — planning uses the full repository signal
+   rather than assuming a single roadmap file is authoritative.
 """
 
-import json
-import re
 from pathlib import Path
 
 
@@ -96,67 +94,6 @@ def build_project_brief(
     return brief
 
 
-def identify_phase_docs(
-    doc_files: list[dict],
-    roadmap_content: str,
-    current_phase: str | None = None,
-) -> dict[str, list[str]]:
-    """Map ROADMAP phases to relevant doc paths.
-
-    Parses the ROADMAP to identify phases, then matches doc paths to phases
-    based on keyword overlap (store names, system names, etc.).
-
-    Returns: dict mapping phase name -> list of relevant doc paths
-    """
-    phases = _parse_roadmap_phases(roadmap_content)
-    phase_docs = {}
-
-    for phase_name, phase_items in phases.items():
-        # Extract keywords from phase items
-        keywords = _extract_keywords(phase_items)
-        relevant = []
-        for doc in doc_files:
-            path_lower = doc["path"].lower()
-            content_lower = doc["content"][:500].lower()  # Check first 500 chars
-            for kw in keywords:
-                if kw in path_lower or kw in content_lower:
-                    relevant.append(doc["path"])
-                    break
-        phase_docs[phase_name] = relevant
-
-    return phase_docs
-
-
-def build_phase_context(
-    doc_files: list[dict],
-    phase_doc_paths: list[str],
-    max_chars: int = 40000,
-) -> str:
-    """Build focused context for a specific ROADMAP phase.
-
-    Includes full content of docs relevant to this phase, up to max_chars.
-    """
-    sections = []
-    total = 0
-
-    # Build a lookup
-    doc_by_path = {d["path"]: d for d in doc_files}
-
-    for path in phase_doc_paths:
-        doc = doc_by_path.get(path)
-        if not doc:
-            continue
-        if total + doc["size"] > max_chars:
-            sections.append(f"\n... (remaining phase docs truncated)")
-            break
-        sections.append(f"### {path}\n")
-        sections.append(doc["content"])
-        sections.append("")
-        total += doc["size"]
-
-    return "\n".join(sections) if sections else ""
-
-
 # --- Internal helpers ---
 
 
@@ -175,59 +112,6 @@ def _extract_summary(content: str, max_len: int) -> str:
             return line[:max_len - 3] + "..."
         return line
     return "(empty or header-only document)"
-
-
-def _parse_roadmap_phases(roadmap: str) -> dict[str, list[str]]:
-    """Parse ROADMAP.md into phase name -> list of items."""
-    phases = {}
-    current_phase = None
-    current_items = []
-
-    for line in roadmap.split("\n"):
-        # Detect phase headers (## Phase N — Name)
-        phase_match = re.match(r"^##\s+(?:Phase\s+\d+\s*[-—]\s*)?(.+)", line, re.IGNORECASE)
-        if phase_match and not line.strip().startswith("###"):
-            if current_phase:
-                phases[current_phase] = current_items
-            current_phase = phase_match.group(1).strip()
-            current_items = []
-        elif current_phase and line.strip().startswith("- "):
-            current_items.append(line.strip()[2:])
-
-    if current_phase:
-        phases[current_phase] = current_items
-
-    return phases
-
-
-def _extract_keywords(items: list[str]) -> set[str]:
-    """Extract searchable keywords from phase items."""
-    keywords = set()
-    # Common game/system terms to look for in doc paths
-    keyword_patterns = [
-        r"store", r"customer", r"inventory", r"economy", r"pricing",
-        r"save", r"load", r"audio", r"music", r"sound", r"ui",
-        r"build", r"upgrade", r"staff", r"hire", r"event",
-        r"tutorial", r"campaign", r"progression", r"milestone",
-        r"card", r"rental", r"video", r"retro", r"game",
-        r"electronics", r"monster", r"creature", r"pocket",
-        r"sport", r"memorabilia", r"haggl", r"reputation",
-        r"navigation", r"pathfind", r"interaction", r"player",
-        r"trend", r"seasonal", r"mall", r"food.court",
-        r"performance", r"accessibility", r"polish", r"animation",
-        r"controller", r"camera", r"data.?loader", r"time",
-    ]
-
-    for item in items:
-        item_lower = item.lower()
-        for pattern in keyword_patterns:
-            if re.search(pattern, item_lower):
-                # Use the matched portion as keyword
-                match = re.search(pattern, item_lower)
-                if match:
-                    keywords.add(match.group())
-
-    return keywords
 
 
 def _generate_brief_single(

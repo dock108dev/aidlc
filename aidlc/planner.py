@@ -45,9 +45,10 @@ class Planner:
         self.doc_files = doc_files or []
         self._research_count = 0
         self._last_cycle_notes = self._load_last_cycle_notes()
-        self._phase_docs = self._map_phase_docs()
         self.logger = logger
         self.project_root = Path(config["_project_root"])
+        self.planning_doc_min_chars = config.get("planning_doc_min_chars", 800)
+        self._planning_foundation = self._assess_planning_foundation()
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
@@ -101,6 +102,7 @@ class Planner:
             save_cycle_snapshot(self.state, self.run_dir, self.state.planning_cycles + 1)
 
             # Run one planning cycle
+            self._planning_foundation = self._assess_planning_foundation()
             issues_before = self.state.issues_created
             result = self._planning_cycle()
 
@@ -121,13 +123,14 @@ class Planner:
                     # Track it as a zero-new-issue cycle for diminishing returns.
                     self.logger.warning(
                         "Empty planning cycle but completion not yet offered — "
-                        "continuing to ensure all ROADMAP phases are covered."
+                        "continuing to ensure repository scope is fully captured."
                     )
                     recent_cycles.append(0)
                     # Check if we've had enough empty cycles to trigger winding down
                     if (
                         len(recent_cycles) >= diminishing_returns_threshold
                         and self.state.issues_created > 0
+                        and self._planning_foundation.get("ready", False)
                         and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                     ):
                         if not self._offer_completion:
@@ -158,6 +161,7 @@ class Planner:
                 if (
                     len(recent_cycles) >= diminishing_returns_threshold
                     and self.state.issues_created > 0
+                    and self._planning_foundation.get("ready", False)
                     and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                 ):
                     if not self._offer_completion:
@@ -285,18 +289,35 @@ class Planner:
             f"Notes: {planning_output.cycle_notes}"
         )
 
-        # Only accept planning_complete if we've actually offered it
+        # Only accept planning_complete if we've offered it and planning docs are sufficient.
         # (Claude sometimes adds this field unprompted — ignore it until invited)
-        if planning_output.planning_complete and getattr(self, "_offer_completion", False):
+        foundation_ready = self._planning_foundation.get("ready", False)
+        if (
+            planning_output.planning_complete
+            and getattr(self, "_offer_completion", False)
+            and foundation_ready
+        ):
             reason = planning_output.completion_reason or "Claude declared planning complete"
             self._pending_completion_reason = f"Planning complete — {reason}"
             self.logger.info(f"Claude signaled planning_complete (accepted): {reason}")
         elif planning_output.planning_complete:
-            self.logger.info(
-                "Claude signaled planning_complete but completion not yet offered — ignoring"
-            )
+            if not foundation_ready:
+                self.logger.warning(
+                    "Claude signaled planning_complete but planning docs are still incomplete "
+                    "(missing/thin foundation docs) — ignoring"
+                )
+            else:
+                self.logger.info(
+                    "Claude signaled planning_complete but completion not yet offered — ignoring"
+                )
 
         if not planning_output.actions:
+            if not foundation_ready:
+                self.logger.warning(
+                    "No actions proposed but planning foundation is incomplete — "
+                    "expecting create_doc/update_doc actions first."
+                )
+                return False
             self.logger.info("No actions proposed — frontier may be clear")
             return None
 
@@ -362,7 +383,7 @@ class Planner:
 
         # Project docs
         lines.append("## Key Project Docs (read these for full detail)")
-        for name in ["ROADMAP.md", "ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md", "STATUS.md"]:
+        for name in ["README.md", "ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md", "STATUS.md", "ROADMAP.md"]:
             if (self.project_root / name).exists():
                 lines.append(f"- {name}")
         lines.append("")
@@ -391,7 +412,7 @@ class Planner:
         # Other project docs
         if self.doc_files:
             other_docs = [d["path"] for d in self.doc_files
-                          if d["path"].lower() not in ("roadmap.md", "architecture.md", "design.md", "claude.md", "status.md", "readme.md")]
+                          if d["path"].lower() not in ("architecture.md", "design.md", "claude.md", "status.md", "readme.md", "roadmap.md")]
             if other_docs:
                 lines.append("## Other Project Docs")
                 for path in other_docs[:30]:
@@ -425,10 +446,11 @@ class Planner:
             "You are planning implementation work for this project. "
             "You have FULL FILE ACCESS — read any project file you need.\n\n"
             "**Start by reading these files:**\n"
-            "1. **ROADMAP.md** — what to build, in what order\n"
+            "1. **README.md** (if present) — product intent and usage expectations\n"
             "2. **ARCHITECTURE.md** — system structure\n"
-            "3. **.aidlc/planning_index.md** — index of all docs, research, and existing issues\n"
-            "4. **DESIGN.md** — patterns and conventions\n\n"
+            "3. **DESIGN.md** — patterns and conventions\n"
+            "4. **.aidlc/planning_index.md** — index of all docs, research, and existing issues\n"
+            "5. **ROADMAP.md** (optional) — milestone hints only, not authoritative\n\n"
             "Read them NOW before creating any issues."
         )
 
@@ -452,6 +474,10 @@ class Planner:
                 for gap in critical_gaps[:5]:
                     sections.append(f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}")
 
+        # Planning foundation quality
+        sections.append("\n## Planning Foundation Status\n")
+        sections.append(self._render_planning_foundation())
+
         # Run state
         plan_h = self.state.plan_elapsed_seconds / 3600
         budget_h = self.state.plan_budget_seconds / 3600
@@ -464,9 +490,10 @@ class Planner:
         sections.append("\n## Available Files\n")
         sections.append(
             "You have full read access to the project. Use it:\n"
-            "- **ROADMAP.md** — phased delivery plan (READ THIS for what to build)\n"
+            "- **README.md** — product intent, constraints, and usage context\n"
             "- **ARCHITECTURE.md** — system structure\n"
             "- **DESIGN.md** — patterns and conventions\n"
+            "- **ROADMAP.md** (optional) — milestone guidance if maintained\n"
             "- **.aidlc/planning_index.md** — full index of all docs, research, and issues\n"
             "- **.aidlc/issues/*.md** — full specs of existing issues\n"
             "- **docs/research/*.md** — completed research (do NOT re-request)\n\n"
@@ -507,10 +534,15 @@ class Planner:
 You are an autonomous planning agent analyzing this project. Your job is to create a comprehensive
 implementation plan as a set of well-specified issues.
 
-**CRITICAL: Cover ALL phases in the ROADMAP, not just the first one.**
-If the ROADMAP has Phases 1 through 4, you must create issues for ALL of them.
-Do not stop after Phase 1. Each phase should have its own set of issues.
-Work through the roadmap systematically — one phase per cycle if needed.
+**Source of truth is the repository, not a single planning file.**
+Treat ROADMAP.md as optional input, not a guaranteed complete spec. Use code, audit output,
+README, ARCHITECTURE/DESIGN docs, and other docs to infer missing scope and constraints.
+
+**If planning docs are missing or too thin, bootstrap them first.**
+When the foundation status indicates missing/thin docs, your first actions should be
+`create_doc`/`update_doc` to produce concrete planning docs (ARCHITECTURE, DESIGN,
+CLAUDE guidance) with enough implementation detail to plan against.
+Do NOT declare planning complete while foundation docs are incomplete.
 
 **CRITICAL: Issues must be granular and single-responsibility.**
 Each issue should be ONE implementable unit of work, not a bundle of features.
@@ -519,8 +551,8 @@ GOOD: "Create shelf display component for sports cards"
 GOOD: "Implement card rarity system and pricing tiers"
 GOOD: "Add card condition grading mechanics"
 
-Break down every ROADMAP item into its component parts. A single bullet in
-the ROADMAP like "Customer AI with browse and purchase behavior" should become
+Break down each discovered capability into component parts. A single high-level requirement
+like "Customer AI with browse and purchase behavior" should become
 multiple issues: pathfinding, browse behavior, purchase decision, dialog/haggling,
 satisfaction tracking, etc.
 
@@ -529,8 +561,8 @@ categories), each variant's unique mechanics get their own issues. N variants ×
 mechanics each = N×M issues, not N issues with mega-descriptions.
 
 **What you should do:**
-- Create issues for EVERY item in EVERY phase of the ROADMAP
-- Break each ROADMAP item into granular, single-responsibility issues
+- Create issues for EVERY currently supported capability inferred from docs + code
+- Break each discovered requirement into granular, single-responsibility issues
 - Each issue must have clear acceptance criteria that are specific and testable
 - Set appropriate priority levels (high = blocking/critical, medium = important, low = nice-to-have)
 - Define dependency chains — which issues must be completed before others
@@ -553,7 +585,7 @@ Use research for:
 - **Creative design**: Original fictional names, themed content, flavor text, visual
   direction for specific areas
 
-Example: If the ROADMAP says "design N themed levels", DO NOT just create an issue
+Example: If the product docs say "design N themed levels", DO NOT just create an issue
 "Design N levels". Instead, use a RESEARCH action to actually design each level with
 its layout, difficulty, mechanics, and theme. Then create implementation issues
 that reference the research doc.
@@ -575,7 +607,7 @@ parodies real-world brands, products, media, or intellectual property:
 - Create duplicate issues
 - Create vague issues without testable acceptance criteria
 - Ignore existing documentation — build on what's already planned
-- Stop after covering only one phase when there are more phases in the ROADMAP
+- Stop after covering only one area when significant repository scope remains
 - Bundle multiple features or mechanics into a single issue
 
 **Priority order:**
@@ -585,7 +617,7 @@ parodies real-world brands, products, media, or intellectual property:
 4. Polish, optimization, and documentation
 
 Produce 1-15 high-quality actions per cycle. Quality over quantity.
-Focus each cycle on a different phase or area until all ROADMAP work is captured."""
+Focus each cycle on a different area until all known repository scope is captured."""
 
     def _finalization_instructions(self) -> str:
         return """## Instructions — PLANNING FINALIZATION
@@ -607,7 +639,8 @@ The planning budget is nearly exhausted. Finalize the plan.
 Produce only refinement and gap-filling actions.
 
 **When to declare planning complete:**
-- Set "planning_complete": true once all issues are well-specified and no gaps remain
+- Set "planning_complete": true once all issues are well-specified, no critical gaps remain,
+  and planning foundation docs are sufficient (not missing/thin)
 - This is the finalization phase — wrapping up is the goal, not finding more work"""
 
     def _load_last_cycle_notes(self) -> str:
@@ -637,45 +670,6 @@ Produce only refinement and gap-filling actions.
             ),
         }
         notes_path.write_text(json.dumps(data, indent=2))
-
-    def _map_phase_docs(self) -> dict[str, list[str]]:
-        """Map ROADMAP phases to relevant doc paths for phase-focused context."""
-        if not self.doc_files:
-            return {}
-        # Find the ROADMAP content
-        roadmap_content = ""
-        for doc in self.doc_files:
-            if doc["path"].lower() in ("roadmap.md",):
-                roadmap_content = doc["content"]
-                break
-        if not roadmap_content:
-            return {}
-
-        from .context_prep import identify_phase_docs
-        return identify_phase_docs(self.doc_files, roadmap_content)
-
-    def _get_current_phase_name(self) -> str | None:
-        """Determine which ROADMAP phase the planner should focus on next.
-
-        Looks at which phases already have issues and suggests the next one.
-        """
-        if not self._phase_docs:
-            return None
-
-        phase_names = list(self._phase_docs.keys())
-
-        # Check which phases have issues created
-        issue_titles = " ".join(d.get("title", "") for d in self.state.issues).lower()
-
-        for phase_name in phase_names:
-            # If no issues mention this phase's keywords, it needs planning
-            phase_lower = phase_name.lower()
-            # Simple heuristic: if the phase name keywords appear in issue titles, it's covered
-            phase_words = [w for w in phase_lower.split() if len(w) > 3]
-            if phase_words and not any(w in issue_titles for w in phase_words):
-                return phase_name
-
-        return None
 
     def _completion_offer_instructions(self) -> str:
         return """## PLANNING WIND-DOWN NOTICE
@@ -746,6 +740,7 @@ instead of declaring complete."""
             file_path = self.project_root / action.file_path
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(action.content)
+            self._upsert_doc_file(action.file_path, action.content)
             self.state.files_created += 1
             self.state.created_artifacts.append({
                 "path": action.file_path,
@@ -897,6 +892,80 @@ instead of declaring complete."""
         output_dir = self.run_dir / "claude_outputs"
         output_dir.mkdir(exist_ok=True)
         (output_dir / f"research_{sanitized}.md").write_text(output)
+
+    def _upsert_doc_file(self, rel_path: str, content: str) -> None:
+        """Update in-memory doc cache so planning quality checks see new docs immediately."""
+        rel_path_norm = rel_path.replace("\\", "/")
+        size = len(content)
+        priority = 1
+        for idx, doc in enumerate(self.doc_files):
+            if doc.get("path", "").lower() == rel_path_norm.lower():
+                self.doc_files[idx] = {
+                    "path": rel_path_norm,
+                    "content": content,
+                    "priority": doc.get("priority", priority),
+                    "size": size,
+                }
+                self._planning_foundation = self._assess_planning_foundation()
+                return
+
+        self.doc_files.append({
+            "path": rel_path_norm,
+            "content": content,
+            "priority": priority,
+            "size": size,
+        })
+        self._planning_foundation = self._assess_planning_foundation()
+
+    def _assess_planning_foundation(self) -> dict:
+        """Assess whether core planning docs are present and sufficiently detailed."""
+        required_docs = ("ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md")
+        by_lower = {d.get("path", "").lower(): d for d in self.doc_files}
+        details = []
+        missing = []
+        thin = []
+        min_chars = self.planning_doc_min_chars
+
+        for name in required_docs:
+            doc = by_lower.get(name.lower())
+            if not doc:
+                details.append(f"- {name}: missing")
+                missing.append(name)
+                continue
+
+            content = (doc.get("content") or "").strip()
+            char_count = len(content)
+            placeholder_hits = sum(
+                token in content.lower()
+                for token in ("tbd", "todo", "to be determined", "[tbd]", "[todo]")
+            )
+            if char_count < min_chars or placeholder_hits >= 3:
+                details.append(
+                    f"- {name}: thin ({char_count} chars, placeholder markers: {placeholder_hits})"
+                )
+                thin.append(name)
+            else:
+                details.append(f"- {name}: ok ({char_count} chars)")
+
+        ready = not missing and not thin
+        return {
+            "ready": ready,
+            "missing": missing,
+            "thin": thin,
+            "details": details,
+        }
+
+    def _render_planning_foundation(self) -> str:
+        foundation = self._planning_foundation
+        lines = [
+            f"- Foundation ready: {'yes' if foundation.get('ready') else 'no'}",
+            *foundation.get("details", []),
+        ]
+        if not foundation.get("ready"):
+            lines.append(
+                "- Required action: prioritize create_doc/update_doc actions before declaring completion."
+            )
+        return "\n".join(lines)
 
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""

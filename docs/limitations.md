@@ -1,27 +1,36 @@
 # Limitations and Non-Goals
 
-This file documents current intentional constraints.
+This document captures intentionally unsupported behavior and known operational constraints.
 
-## Non-Goals
+## Intentional Non-Goals
 
-- Backward compatibility shims for removed execution paths.
-- Automatic bypass of unmet issue dependencies.
-- Automatic breaking of dependency cycles.
-- Accepting unstructured implementation output as success.
+- preserving legacy compatibility branches when SSOT cleanup removes behavior
+- automatically bypassing unmet issue dependencies
+- automatically resolving/breaking dependency cycles
+- treating unstructured implementation output as success
 
-## Current Operational Limits
-
-- Single-process run lock per target project (`.aidlc/run.lock`).
-- Planning and implementation quality depend on model output quality and parseability.
-- Test verification is only as strong as the configured or auto-detected test command.
-- Audit framework detection is heuristics-based and dependency-file dependent.
-
-## Explicitly Unsupported
+## Explicitly Unsupported CLI Behavior
 
 - `aidlc run --skip-precheck`
-- Automatic success on unstructured implementation output
+- in `runtime_profile=production`: `aidlc run --skip-validation`
+- in `runtime_profile=production`: `aidlc run --skip-finalize`
+
+## Operational Constraints
+
+- one active run per project (`.aidlc/run.lock`)
+- planning/implementation outcomes depend on model output quality and schema conformance
+- verification quality depends on configured or detected test commands
+- audit and project-type detection are heuristic and file-signature driven
+- full audits are bounded by configured Claude-call and source-size caps
 
 ## Known Tradeoffs
 
-- Planner and implementer fail fast on invalid/contradictory structured actions.
-- Full audit uses bounded Claude calls, so very large codebases may be sampled.
+- planner may fail cycles aggressively on invalid actions or high action-failure ratio
+- strict profile settings can pause runs earlier to avoid silent degradation
+- scanner and auditor may continue with degraded-read telemetry if some files cannot be parsed/read
+
+## Intentionally Not Automated
+
+- no automatic hidden fallback to previous planning completion criteria
+- no forced success when validation remains unstable
+- no auto-removal of dependency links to "make progress"

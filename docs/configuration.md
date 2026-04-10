@@ -1,59 +1,136 @@
 # Configuration
 
-Configuration is loaded from `.aidlc/config.json` in the target project (or explicit `--config`).
+Configuration is loaded from `.aidlc/config.json` in the target repository, unless `--config` is provided.
 
-## Defaults
+Canonical defaults live in `aidlc/config.py`.
 
-The canonical defaults are defined in `aidlc/config.py`.
+## Resolution Rules
 
-| Key | Default | Used for |
-|---|---:|---|
-| `runtime_profile` | `"standard"` | runtime strictness preset (`standard` or `production`) |
-| `plan_budget_hours` | `4` | planning budget in hours |
-| `checkpoint_interval_minutes` | `15` | checkpoint/report cadence |
-| `dry_run` | `false` | simulate model calls |
-| `claude_cli_command` | `"claude"` | CLI executable |
-| `claude_model` | `"opus"` | model label passed through configuration |
-| `claude_hard_timeout_seconds` | `0` | hard cap for Claude subprocess (`0` disables cap) |
-| `retry_max_attempts` | `2` | model call retry count |
-| `retry_base_delay_seconds` | `30` | retry backoff base |
-| `retry_max_delay_seconds` | `300` | retry backoff cap |
-| `retry_backoff_factor` | `2.0` | retry growth multiplier |
-| `max_consecutive_failures` | `3` | planning/implementation failure guard |
-| `diminishing_returns_window` | `5` | planning cycle history window |
-| `diminishing_returns_threshold` | `3` | no-new-issue threshold to stop planning |
-| `finalization_budget_percent` | `10` | planning finalization threshold |
-| `max_implementation_attempts` | `3` | per-issue implementation retries |
-| `max_planning_cycles` | `0` | planning cap (`0` means unlimited) |
-| `max_implementation_cycles` | `0` | implementation cap (`0` means unlimited) |
-| `run_tests_command` | `null` | explicit test command override |
-| `test_timeout_seconds` | `300` | test command timeout |
-| `max_doc_chars` | `10000` | per-doc read cap |
-| `max_context_chars` | `80000` | total scanner context cap |
-| `max_implementation_context_chars` | `30000` | implementation prompt context cap |
-| `doc_scan_patterns` | `["**/*.md","**/*.txt","**/*.rst"]` | scan include patterns |
-| `doc_scan_exclude` | built-in excludes | scan exclude patterns |
-| `implementation_allowed_paths` | `null` | reserved path-allowlist setting |
-| `audit_depth` | `"quick"` | default audit depth |
-| `audit_max_claude_calls` | `10` | full-audit model call cap |
-| `audit_max_source_chars_per_module` | `15000` | module source cap for full audit |
-| `audit_source_extensions` | language set | source extension allowlist |
-| `audit_exclude_patterns` | built-in patterns | audit exclusions |
-| `strict_validation` | `false` | pause run when validation is incomplete |
-| `validation_allow_no_tests` | `true` | allow no-tests-detected to be treated as stable |
-| `fail_on_validation_incomplete` | `false` | fail/pause run when validation loop ends unstable |
-| `fail_on_final_test_failure` | `false` | fail/pause run when final verification test suite fails |
-| `strict_change_detection` | `false` | require verifiable file changes for impl success |
-| `planning_action_failure_ratio_threshold` | `0.6` | fail cycle if action failure ratio reaches threshold |
+1. start with built-in defaults
+2. merge user config from `.aidlc/config.json` (or explicit config file)
+3. set internal runtime paths (`_project_root`, `_aidlc_dir`, `_runs_dir`, `_reports_dir`, `_issues_dir`)
+4. if `runtime_profile == "production"`, apply strict profile defaults for keys not explicitly set by the user
+
+## Defaults by Area
+
+### Core Runtime
+
+| Key | Default |
+|---|---|
+| `runtime_profile` | `"standard"` |
+| `plan_budget_hours` | `4` |
+| `checkpoint_interval_minutes` | `15` |
+| `dry_run` | `false` |
+| `max_consecutive_failures` | `3` |
+| `max_planning_cycles` | `0` (unlimited) |
+| `max_implementation_cycles` | `0` (unlimited) |
+
+### Claude Execution
+
+| Key | Default |
+|---|---|
+| `claude_cli_command` | `"claude"` |
+| `claude_model` | `"opus"` |
+| `claude_model_planning` | `"sonnet"` |
+| `claude_model_research` | `"sonnet"` |
+| `claude_model_implementation` | `"opus"` |
+| `claude_model_finalization` | `"sonnet"` |
+| `claude_long_run_warn_seconds` | `300` |
+| `claude_hard_timeout_seconds` | `0` (disabled) |
+| `retry_max_attempts` | `2` |
+| `retry_base_delay_seconds` | `30` |
+| `retry_max_delay_seconds` | `300` |
+| `retry_backoff_factor` | `2.0` |
+
+### Planning and Context
+
+| Key | Default |
+|---|---|
+| `diminishing_returns_window` | `5` |
+| `diminishing_returns_threshold` | `2` |
+| `finalization_budget_percent` | `10` |
+| `planning_doc_min_chars` | `800` |
+| `planning_action_failure_ratio_threshold` | `0.6` |
+| `max_doc_chars` | `10000` |
+| `max_context_chars` | `80000` |
+| `max_implementation_context_chars` | `30000` |
+| `project_brief_max_chars` | `20000` |
+| `phase_context_max_chars` | `20000` |
+| `max_planning_prompt_chars` | `60000` |
+| `doc_scan_patterns` | `["**/*.md", "**/*.txt", "**/*.rst"]` |
+| `doc_scan_exclude` | `["node_modules/**", ".git/**", "venv/**", ".venv/**", "__pycache__/**", ".aidlc/**", "dist/**", "build/**"]` |
+| `doc_gap_detection_enabled` | `true` |
+| `doc_gap_max_items` | `50` |
+
+### Implementation and Testing
+
+| Key | Default |
+|---|---|
+| `max_implementation_attempts` | `3` |
+| `run_tests_command` | `null` |
+| `test_timeout_seconds` | `300` |
+| `implementation_allowed_paths` | `null` |
+| `strict_change_detection` | `false` |
+| `fail_on_final_test_failure` | `false` |
+
+### Validation Loop
+
+| Key | Default |
+|---|---|
+| `validation_enabled` | `true` |
+| `strict_validation` | `false` |
+| `validation_allow_no_tests` | `true` |
+| `fail_on_validation_incomplete` | `false` |
+| `validation_max_cycles` | `3` |
+| `validation_batch_size` | `10` |
+| `test_profile_mode` | `"progressive"` |
+| `e2e_test_command` | `null` |
+| `build_validation_command` | `null` |
+
+### Audit
+
+| Key | Default |
+|---|---|
+| `audit_depth` | `"quick"` |
+| `audit_max_claude_calls` | `10` |
+| `audit_max_source_chars_per_module` | `15000` |
+| `audit_source_extensions` | `[".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb"]` |
+| `audit_exclude_patterns` | `["**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**"]` |
+
+### Research
+
+| Key | Default |
+|---|---|
+| `research_max_scope_files` | `10` |
+| `research_max_source_chars` | `15000` |
+| `research_max_per_cycle` | `2` |
+| `research_timeout_seconds` | `900` |
+
+### Finalization
+
+| Key | Default |
+|---|---|
+| `finalize_enabled` | `true` |
+| `finalize_passes` | `null` (all default passes) |
+| `finalize_timeout_seconds` | `900` |
+
+## Production Profile Behavior
+
+When `runtime_profile` is `"production"`, these defaults are applied only if the user did not set them explicitly:
+
+- `strict_validation=true`
+- `validation_allow_no_tests=false`
+- `fail_on_validation_incomplete=true`
+- `fail_on_final_test_failure=true`
+- `strict_change_detection=true`
+- `claude_hard_timeout_seconds=3600`
+
+Additionally, `aidlc run` rejects:
+
+- `--skip-validation`
+- `--skip-finalize`
 
 ## Notes
 
-- Unknown keys are loaded but only effective if read by runtime modules.
-- `max_*_cycles` defaults are unlimited in normal runs and effectively bounded in dry-run paths.
-- In `runtime_profile: "production"`, stricter defaults are auto-applied unless explicitly overridden:
-  - `strict_validation=true`
-  - `validation_allow_no_tests=false`
-  - `fail_on_validation_incomplete=true`
-  - `fail_on_final_test_failure=true`
-  - `strict_change_detection=true`
-  - `claude_hard_timeout_seconds=3600`
+- Unknown keys are loaded; they only have effect if runtime code reads them.
+- In dry-run mode, planning/implementation cycles are effectively capped when max-cycle settings are left at unlimited.

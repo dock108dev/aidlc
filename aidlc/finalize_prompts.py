@@ -233,18 +233,18 @@ FUTURES_TEMPLATE = """\
 
 ## Preparing for Next Run
 
-1. Review and update `ROADMAP.md` with next phase goals
+1. Review and update project docs (`README.md`, `ARCHITECTURE.md`, `DESIGN.md`, optional `ROADMAP.md`)
 2. Address any critical findings in the audit reports above
 3. Run `aidlc audit` to refresh `STATUS.md` with current codebase state
-4. Run `aidlc precheck` to verify all required docs are in place
+4. Run `aidlc precheck` to identify recommended documentation gaps
 5. Run `aidlc run` for the next development cycle
 
 ## Tips for a Productive Next Run
 
-- **ROADMAP.md is king** — the planner creates issues from your roadmap phases
-- **Be specific** — vague roadmap items produce vague issues
+- **Repository is source of truth** — planner uses code + docs, not a single planning file
+- **Be specific** — vague requirements produce vague issues
 - **Acceptance criteria matter** — the implementer tests against them
-- **Small phases** — break work into phases the planner can handle in one session
+- **Optional roadmap** — use `ROADMAP.md` for milestone tracking if your team prefers phases
 - **Review the plan first** — use `aidlc run --plan-only` to review before implementing
 
 ## Repo State

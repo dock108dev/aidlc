@@ -1,53 +1,56 @@
-# Code Audit Mode
+# Audit
 
-AIDLC supports standalone and pre-run audit modes.
+AIDLC supports standalone auditing and pre-run auditing.
 
 ## Commands
 
 - `aidlc audit` - quick audit
-- `aidlc audit --full` - quick audit plus Claude-assisted semantic analysis
-- `aidlc run --audit` - quick audit before planning
-- `aidlc run --audit full` - full audit before planning
+- `aidlc audit --full` - quick audit plus Claude-assisted full audit
+- `aidlc run --audit` - run quick audit before planning
+- `aidlc run --audit full` - run full audit before planning
 
-## Quick Audit
+## Quick Audit Behavior
 
-Quick audit is deterministic and local:
+Quick audit is local and deterministic. It includes:
 
-- project type detection
-- framework detection from dependency files
-- entry point detection
-- module listing and role guessing
-- source statistics
-- tech debt marker scan
-- heuristic test coverage assessment
+- project type and framework detection
+- module and entry-point discovery
+- source stats and tech-debt marker detection
+- heuristic test-coverage estimation
 
-Outputs:
+## Full Audit Behavior
 
-- `STATUS.md` (always generated in target project)
-- `ARCHITECTURE.md` (generated only if missing)
-- `.aidlc/audit_result.json`
-- `.aidlc/CONFLICTS.md` when conflicts are detected
+Full audit adds Claude analysis on top of quick audit for:
 
-## Full Audit
+- deeper module-level semantics
+- richer feature inventory synthesis
 
-Full audit includes quick audit plus targeted Claude calls:
-
-- module-level semantic analysis
-- feature inventory synthesis
-
-Full audit is constrained by:
+Full mode is bounded by:
 
 - `audit_max_claude_calls`
 - `audit_max_source_chars_per_module`
 
-If Claude CLI is unavailable, full mode is rejected for standalone `aidlc audit --full`.
+Standalone `aidlc audit --full` exits if Claude CLI is unavailable.
 
-## Conflict Handling
+## Outputs
 
-Audit compares generated understanding with user docs and emits conflicts such as:
+Audit writes artifacts into the target repository:
 
-- project type mismatch in existing `ARCHITECTURE.md`
+- `STATUS.md` (always generated/updated)
+- `ARCHITECTURE.md` (generated if missing)
+- `.aidlc/audit_result.json`
+- `.aidlc/CONFLICTS.md` when conflicts are detected
+
+## Conflict Semantics
+
+Audit conflict detection compares generated understanding with existing docs. Typical conflicts include:
+
+- documented project type mismatches
 - references to missing modules
-- major modules not mentioned in user docs
+- major modules absent from current docs
 
-Conflicts pause pre-run audit flow in `aidlc run --audit ...` and write `.aidlc/CONFLICTS.md`.
+When `aidlc run --audit ...` finds conflicts, the run pauses and sets a resume stop reason until conflicts are reviewed.
+
+## Degraded Read Telemetry
+
+Audit tracks degraded read counters (for example source/doc parse failures) and records them in `audit_result.json` as `degraded_stats`.

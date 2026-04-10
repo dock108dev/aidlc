@@ -2,7 +2,6 @@
 
 import json
 import pytest
-from pathlib import Path
 
 from aidlc.precheck import run_precheck, PrecheckResult
 
@@ -15,8 +14,8 @@ def empty_project(tmp_path):
 
 @pytest.fixture
 def minimal_project(tmp_path):
-    """A project with just ROADMAP.md."""
-    (tmp_path / "ROADMAP.md").write_text("# Roadmap\n## Phase 1\n- Build something")
+    """A project with just README.md."""
+    (tmp_path / "README.md").write_text("# Project\nSimple description.")
     return tmp_path
 
 
@@ -57,10 +56,9 @@ def python_project(tmp_path):
 
 
 class TestRunPrecheck:
-    def test_empty_project_not_ready(self, empty_project):
+    def test_empty_project_is_ready(self, empty_project):
         result = run_precheck(empty_project)
-        assert not result.ready
-        assert "ROADMAP.md" in result.required_missing
+        assert result.ready
 
     def test_empty_project_auto_creates_aidlc(self, empty_project):
         result = run_precheck(empty_project, auto_init=True)
@@ -83,11 +81,10 @@ class TestRunPrecheck:
     def test_minimal_project_is_ready(self, minimal_project):
         result = run_precheck(minimal_project)
         assert result.ready
-        assert "ROADMAP.md" in result.required_found
+        assert "README.md" in result.recommended_found
 
     def test_minimal_project_has_missing_recommended(self, minimal_project):
         result = run_precheck(minimal_project)
-        assert "README.md" in result.recommended_missing
         assert "ARCHITECTURE.md" in result.recommended_missing
 
     def test_full_project_excellent_score(self, full_project):
@@ -131,28 +128,24 @@ class TestRunPrecheck:
 
 
 class TestPrecheckResult:
-    def test_score_not_ready(self):
+    def test_score_not_ready_removed(self):
         r = PrecheckResult()
-        r.required_missing = ["ROADMAP.md"]
-        assert r.score == "not ready"
+        assert r.score in {"minimal", "good", "excellent"}
 
     def test_score_minimal(self):
         r = PrecheckResult()
-        r.required_found = ["ROADMAP.md"]
+        r.recommended_found = ["README.md"]
         assert r.score == "minimal"
 
     def test_score_good(self):
         r = PrecheckResult()
-        r.required_found = ["ROADMAP.md"]
         r.recommended_found = ["README.md", "ARCHITECTURE.md", "DESIGN.md"]
         r.optional_found = ["STATUS.md"]
         assert r.score == "good"
 
     def test_ready_property(self):
         r = PrecheckResult()
-        r.required_found = ["ROADMAP.md"]
         assert r.ready
 
         r2 = PrecheckResult()
-        r2.required_missing = ["ROADMAP.md"]
-        assert not r2.ready
+        assert r2.ready

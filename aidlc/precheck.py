@@ -9,20 +9,16 @@ import json
 from pathlib import Path
 
 # Document tiers with descriptions and suggestions
-REQUIRED_DOCS = {
-    "ROADMAP.md": {
-        "purpose": "Phased delivery plan — what to build and in what order",
-        "suggestion": (
-            "Create a ROADMAP.md with phases, each containing:\n"
-            "  - Clear deliverables and acceptance criteria\n"
-            "  - Priority level (critical/high/medium/low)\n"
-            "  - Dependencies between phases\n"
-            "  Run 'aidlc init --with-docs' to get a template."
-        ),
-    },
-}
+REQUIRED_DOCS = {}
 
 RECOMMENDED_DOCS = {
+    "ROADMAP.md": {
+        "purpose": "Optional phased delivery plan for teams that prefer milestone planning",
+        "suggestion": (
+            "If your team works in phases, add ROADMAP.md. Otherwise AIDLC can infer\n"
+            "scope from code, README, and architecture/design docs."
+        ),
+    },
     "README.md": {
         "purpose": "Project identity — what this project is and how to run it",
         "suggestion": "Add a README.md describing the project, setup instructions, and usage.",
@@ -42,7 +38,7 @@ RECOMMENDED_DOCS = {
         "purpose": "Direct AI instructions — project-specific rules for Claude",
         "suggestion": (
             "Add constraints like: 'always use TypeScript strict mode',\n"
-            "  'never add new dependencies without noting in ROADMAP.md',\n"
+            "  'never add new dependencies without documenting rationale',\n"
             "  'follow the existing event-driven pattern'."
         ),
     },

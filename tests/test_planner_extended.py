@@ -97,13 +97,20 @@ class TestPlanningCycleWithRealOutput:
         state.issues_created = 1
         config["max_planning_cycles"] = 20
         config["diminishing_returns_threshold"] = 3
+        config["planning_doc_min_chars"] = 10
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         from aidlc.models import Issue
         issue = Issue(id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"])
         state.update_issue(issue)
-        planner = Planner(state, run_dir, config, cli, "context", logger)
+        doc_files = [
+            {"path": "ROADMAP.md", "content": "Phase 1\n- A\n- B", "priority": 0, "size": 16},
+            {"path": "ARCHITECTURE.md", "content": "Components and flow", "priority": 0, "size": 19},
+            {"path": "DESIGN.md", "content": "Patterns and conventions", "priority": 0, "size": 24},
+            {"path": "CLAUDE.md", "content": "Agent rules and constraints", "priority": 0, "size": 27},
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         assert state.planning_cycles > 1
         assert "clear" in (state.stop_reason or "").lower()
@@ -119,6 +126,24 @@ class TestPlanningCycleWithRealOutput:
         state.plan_budget_seconds = 3600
         config["max_consecutive_failures"] = 1
         config["max_planning_cycles"] = 10
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+        assert "failures" in (state.stop_reason or "").lower()
+
+    def test_empty_actions_with_missing_docs_counts_as_failure(self, config, logger, tmp_path):
+        response = make_planning_response(actions=[])
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True, "output": response,
+            "error": None, "failure_type": None,
+            "duration_seconds": 1.0, "retries": 0,
+        }
+        state = RunState(run_id="test", config_name="default")
+        state.plan_budget_seconds = 3600
+        config["max_consecutive_failures"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()

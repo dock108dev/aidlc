@@ -73,6 +73,7 @@ DEFAULTS = {
     # Doc-gap detection
     "doc_gap_detection_enabled": True,
     "doc_gap_max_items": 50,                # cap gaps passed to planner prompt
+    "planning_doc_min_chars": 800,          # minimum chars for "sufficient" planning docs
 
     # Context preparation
     "project_brief_max_chars": 20000,       # max size of generated project brief

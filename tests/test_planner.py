@@ -4,10 +4,10 @@ import json
 import logging
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from aidlc.planner import Planner
-from aidlc.models import RunState, RunPhase, IssueStatus
+from aidlc.models import RunState, RunPhase
 
 
 @pytest.fixture
@@ -114,7 +114,6 @@ class TestPlanner:
 
     def test_apply_update_issue(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
-        from aidlc.models import Issue
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         # Create issues dir
@@ -215,7 +214,12 @@ class TestPlanner:
         issue = Issue(id="ISSUE-001", title="Existing", description="X", acceptance_criteria=["AC"])
         state.update_issue(issue)
         state.issues_created = 1
-        planner = Planner(state, run_dir, config, cli, "context", logger)
+        doc_files = [
+            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
+            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should NOT exit on cycle 1 — completion not offered yet
         assert state.planning_cycles > 1
@@ -279,7 +283,12 @@ class TestPlanner:
         issues_dir = Path(config["_issues_dir"])
         issues_dir.mkdir(parents=True, exist_ok=True)
 
-        planner = Planner(state, run_dir, config, cli, "context", logger)
+        doc_files = [
+            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
+            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should run: 1 create + 3 updates (triggers offer) + 1 complete = 5 cycles
         # But cycle 5 returns empty actions + planning_complete -> frontier clear
@@ -327,7 +336,12 @@ class TestPlanner:
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
 
-        planner = Planner(state, run_dir, config, cli, "context", logger)
+        doc_files = [
+            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
+            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # 3 cycles to detect winding down + offer, then 2 more before force exit = 5
         assert state.planning_cycles == 5

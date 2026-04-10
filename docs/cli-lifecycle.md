@@ -1,63 +1,88 @@
 # CLI Lifecycle
 
-## Phase Flow
+## `aidlc run` Phase Order
 
-The `aidlc run` command executes:
+`aidlc run` orchestrates a stateful run with these phases:
 
-1. `SCAN` - builds project context from documentation and structure
-2. `PLAN` - iterates planning cycles until completion criteria or stop conditions
-3. `IMPLEMENT` - executes issue implementation in dependency and priority order
-4. `REPORT` - writes run report artifacts
+1. `AUDITING` (optional): only when `--audit quick|full` is used
+2. `SCANNING`: documentation and repo structure scan
+3. `PLANNING`: iterative issue/doc/research action cycles
+4. `PLAN_FINALIZATION`: planning wind-down near budget end
+5. `IMPLEMENTING`: issue-by-issue implementation
+6. `VERIFYING`: final verification pass over implemented issues
+7. `VALIDATING` (optional): test/fix loop
+8. `FINALIZING` (optional): ssot/security/abend/docs/cleanup passes
+9. `REPORTING` -> `DONE`
 
 ## Run Modes
 
-- **Default run**: `aidlc run`
-- **Plan only**: `aidlc run --plan-only`
-- **Implement only**: `aidlc run --implement-only`
-- **Resume**: `aidlc run --resume`
-- **Dry run**: `aidlc run --dry-run`
-- **With audit first**: `aidlc run --audit` or `aidlc run --audit full`
+- **Default:** `aidlc run`
+- **Plan-only:** `aidlc run --plan-only`
+- **Implement-only:** `aidlc run --implement-only`
+- **Resume latest:** `aidlc run --resume`
+- **Dry run (no Claude execution):** `aidlc run --dry-run`
+- **Audit before planning:** `aidlc run --audit` or `aidlc run --audit full`
+- **Skip optional stages:** `--skip-validation`, `--skip-finalize` (not allowed in production profile)
+- **Revert planning snapshot:** `--revert-to-cycle <n>`
 
-## Precheck Rules
+## Precheck Behavior
 
-- Precheck runs before lifecycle by default.
-- Precheck is skipped only for `--resume` and `--implement-only`.
-- The `--skip-precheck` flag is not supported.
+- Precheck runs automatically before `run` except in `--resume` and `--implement-only`.
+- `.aidlc/` and `.aidlc/config.json` are auto-created when missing.
+- `--skip-precheck` is intentionally unsupported.
+- Current required-doc set is empty; readiness scoring is based on recommended/optional docs.
 
-## Planning Behavior
+## Planning Semantics
 
-Planning runs until one of these conditions:
+Planning can emit:
 
-- planning budget exhausted
-- max planning cycle cap reached
-- planning frontier clear (`no actions`)
-- model explicitly declares planning complete
-- diminishing returns condition (`diminishing_returns_threshold` cycles with zero new issues)
-- too many consecutive planning failures
+- `create_issue` / `update_issue`
+- `create_doc` / `update_doc`
+- `research`
 
-A planning cycle is treated as failed when:
+Planner completion is controlled by cycle outcomes and guards:
 
-- model call fails
-- model output cannot be parsed as expected schema
-- output validation fails
-- action application fails
+- budget/cycle caps
+- repeated no-new-issue cycles (diminishing returns)
+- explicit `planning_complete` accepted only when completion is offered and core planning docs are sufficient
+- consecutive-cycle failure ceiling (`max_consecutive_failures`)
+- action-failure ratio threshold (`planning_action_failure_ratio_threshold`)
 
-## Implementation Behavior
+Core planning foundation currently means `ARCHITECTURE.md`, `DESIGN.md`, and `CLAUDE.md` meeting size/quality checks.
 
-Implementation runs pending issues until resolved or blocked by stop conditions.
+## Implementation and Verification
 
-Hard-stop conditions include:
+- issues are sorted by dependency and priority
+- dependency cycles are treated as stop conditions
+- implementation success requires structured JSON output
+- tests are run when configured or auto-detected
+- final verification marks implemented issues as verified and can fail/pause on test failures (`fail_on_final_test_failure`)
+- optional strict git change verification can fail implementations (`strict_change_detection`)
 
-- dependency cycles in issue graph
-- issues blocked by unmet dependencies
+## Validation Loop
 
-Result handling:
+When enabled, validator runs test tiers (`build`, `unit`, `integration`, `e2e`) and:
 
-- structured JSON implementation result is required for success path
-- unstructured fallback success is not used
-- tests are run if configured or auto-detected
-- final verification pass marks implemented issues as verified and optionally re-runs tests
+- parses failures
+- creates fix issues
+- re-implements fixes
+- re-tests up to `validation_max_cycles`
 
-## Concurrency Guard
+In strict settings, unstable validation pauses the run.
 
-Only one run is allowed per target project via `.aidlc/run.lock`.
+## Finalization
+
+`finalize` pass order defaults to:
+
+`ssot -> security -> abend -> docs -> cleanup`
+
+During finalization, AIDLC also:
+
+- refreshes config detections into `.aidlc/config.json`
+- writes `AIDLC_FUTURES.md`
+
+## Concurrency and State
+
+- one active run per project via `.aidlc/run.lock`
+- run state persists under `.aidlc/runs/<run_id>/state.json`
+- checkpoint and report artifacts are written throughout the run

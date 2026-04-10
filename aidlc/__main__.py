@@ -107,7 +107,7 @@ def _print_precheck(result, project_root: Path, verbose: bool = False) -> None:
     if result.config_created:
         print(f"  {_green('+')} Auto-created {_cyan('.aidlc/')} with default config")
         print(f"    Config: {_dim(str(project_root / '.aidlc' / 'config.json'))}")
-        print(f"    Edit to set plan_budget_hours, run_tests_command, etc.")
+        print("    Edit to set plan_budget_hours, run_tests_command, etc.")
         print()
 
     # Project detection
@@ -280,15 +280,16 @@ def cmd_init(args: argparse.Namespace) -> None:
         print(f"  {_green(str(copied))} template files copied, {skipped} skipped (already exist)")
 
     print()
-    print(f"Next steps:")
+    print("Next steps:")
     if args.with_docs:
-        print(f"  1. Edit {_cyan('ROADMAP.md')} with your phased delivery plan")
-        print(f"  2. Edit {_cyan('ARCHITECTURE.md')} and {_cyan('DESIGN.md')} as needed")
+        print(f"  1. Edit {_cyan('ARCHITECTURE.md')} and {_cyan('DESIGN.md')} as needed")
+        print(f"  2. Optionally edit {_cyan('ROADMAP.md')} if you want phase-based planning")
         print(f"  3. Run {_cyan('aidlc run')}")
     else:
-        print(f"  1. Add your planning docs (ROADMAP.md, ARCHITECTURE.md, etc.)")
+        print("  1. Add architecture/design context docs (README.md, ARCHITECTURE.md, DESIGN.md)")
         print(f"     Or run {_cyan('aidlc init --with-docs')} to copy templates")
-        print(f"  2. Run {_cyan('aidlc run')}")
+        print("  2. ROADMAP.md is optional and can be generated/refined later")
+        print(f"  3. Run {_cyan('aidlc run')}")
 
 
 def cmd_audit(args: argparse.Namespace) -> None:
@@ -318,7 +319,7 @@ def cmd_audit(args: argparse.Namespace) -> None:
         cli = ClaudeCLI(config, logger)
         if not cli.check_available():
             print(f"{_red('x')} Claude CLI not available.")
-            print(f"  Use quick scan (without --full) or install Claude CLI.")
+            print("  Use quick scan (without --full) or install Claude CLI.")
             sys.exit(1)
 
     auditor = CodeAuditor(
@@ -380,7 +381,7 @@ def cmd_improve(args: argparse.Namespace) -> None:
     # Get the user's concern
     concern = args.concern
     if not concern:
-        print(f"  What would you like to improve?")
+        print("  What would you like to improve?")
         examples = 'Examples: "economy feels flat", "customers look robotic", "needs better UI"'
         print(f"  {_dim(examples)}")
         try:
@@ -496,7 +497,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         from .precheck import run_precheck
 
         _print_banner()
-        print(f"Pre-flight check...")
+        print("Pre-flight check...")
         print()
 
         result = run_precheck(project_path, auto_init=True)
@@ -508,7 +509,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         print()
-        print(f"  Starting lifecycle...")
+        print("  Starting lifecycle...")
         print()
 
     if args.plan_budget:

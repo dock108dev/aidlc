@@ -112,7 +112,7 @@ class TestCmdStatus:
         assert "complete" in captured.out
 
     def test_shows_issues(self, tmp_path, capsys):
-        from aidlc.models import RunState, RunStatus
+        from aidlc.models import RunState
         from aidlc.state_manager import save_state
 
         runs_dir = tmp_path / ".aidlc" / "runs" / "test_run"
