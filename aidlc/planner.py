@@ -17,7 +17,7 @@ from .schemas import (
     PLANNING_SCHEMA_DESCRIPTION,
 )
 from .claude_cli import ClaudeCLI
-from .state_manager import save_state, checkpoint
+from .state_manager import save_state, checkpoint, save_cycle_snapshot
 from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
 
@@ -95,6 +95,9 @@ class Planner:
                 self.state.phase = RunPhase.PLAN_FINALIZATION
                 self.logger.info(f"Entering planning finalization ({finalization_pct}% budget remaining)")
                 save_state(self.state, self.run_dir)
+
+            # Save cycle snapshot before running (for revert support)
+            save_cycle_snapshot(self.state, self.run_dir, self.state.planning_cycles + 1)
 
             # Run one planning cycle
             issues_before = self.state.issues_created
@@ -324,6 +327,27 @@ class Planner:
         # Project context from scanner
         sections.append("# Project Context\n")
         sections.append(self.project_context)
+
+        # Completed research — show Claude what research already exists so it doesn't re-request
+        research_dir = self.project_root / "docs" / "research"
+        if research_dir.exists():
+            research_files = sorted(research_dir.glob("*.md"))
+            if research_files:
+                sections.append("\n## Completed Research\n")
+                sections.append("These research documents have already been generated. "
+                                "Do NOT request research for topics that are already covered below. "
+                                "Reference these docs in your issue descriptions instead.\n")
+                for rf in research_files:
+                    rel = f"docs/research/{rf.name}"
+                    # Include a preview of the content so Claude can reference it
+                    try:
+                        content = rf.read_text(errors="replace")
+                        # Show first 500 chars as preview
+                        preview = content[:500].replace("\n", " ").strip()
+                        sections.append(f"- `{rel}` — {preview}...")
+                    except OSError:
+                        sections.append(f"- `{rel}`")
+                sections.append("")
 
         # Phase-focused context: include full docs relevant to next uncovered phase
         next_phase = self._get_current_phase_name()
@@ -631,6 +655,16 @@ instead of declaring complete."""
             )
             return
 
+        # Check if research output already exists — skip if so
+        sanitized = re.sub(r"[^a-z0-9_-]", "-", action.research_topic.lower())
+        sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
+        output_path = self.project_root / "docs" / "research" / f"{sanitized}.md"
+        if output_path.exists():
+            self.logger.info(
+                f"Research already exists: docs/research/{sanitized}.md — skipping"
+            )
+            return
+
         self.logger.info(f"Researching: {action.research_topic}")
 
         # Read scope files
@@ -726,12 +760,9 @@ instead of declaring complete."""
             self.logger.warning(f"Research returned empty output for {action.research_topic}")
             return
 
-        # Write research output
-        sanitized = re.sub(r"[^a-z0-9_-]", "-", action.research_topic.lower())
-        sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
+        # Write research output (sanitized and output_path computed at top of method)
         research_dir = self.project_root / "docs" / "research"
         research_dir.mkdir(parents=True, exist_ok=True)
-        output_path = research_dir / f"{sanitized}.md"
 
         # Add header
         full_content = (

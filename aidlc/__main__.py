@@ -353,6 +353,40 @@ def cmd_run(args: argparse.Namespace) -> None:
         config_path=args.config,
         project_root=project_root,
     )
+    # Handle --revert-to-cycle before anything else
+    revert_cycle = getattr(args, "revert_to_cycle", None)
+    if revert_cycle is not None:
+        from .state_manager import find_latest_run, load_cycle_snapshot, save_state as _save, list_cycle_snapshots
+        from .models import RunStatus
+
+        _print_banner()
+        runs_dir = project_path / ".aidlc" / "runs"
+        run_dir = find_latest_run(runs_dir)
+        if not run_dir:
+            print(f"{_red('x')} No runs found.")
+            sys.exit(1)
+
+        available = list_cycle_snapshots(run_dir)
+        if not available:
+            print(f"{_red('x')} No cycle snapshots found. Snapshots are created during planning.")
+            sys.exit(1)
+
+        if revert_cycle not in available:
+            print(f"{_red('x')} No snapshot for cycle {revert_cycle}.")
+            print(f"  Available cycles: {', '.join(str(c) for c in available)}")
+            sys.exit(1)
+
+        state = load_cycle_snapshot(run_dir, revert_cycle)
+        state.status = RunStatus.PAUSED
+        state.stop_reason = f"Reverted to cycle {revert_cycle}"
+        _save(state, run_dir)
+
+        print(f"{_green('+')} Reverted to start of planning cycle {revert_cycle}")
+        print(f"  Issues: {state.issues_created}")
+        print(f"  Planning cycles: {state.planning_cycles}")
+        print(f"  Run: {_cyan('aidlc run --resume')} to continue from here")
+        return
+
     skip_precheck = args.resume or args.implement_only
 
     # Run precheck before lifecycle (unless resuming or implementing only)
@@ -617,6 +651,10 @@ def main() -> None:
     run_parser.add_argument(
         "--passes",
         help="Comma-separated finalization passes to run (default: all). Options: ssot,security,abend,docs,cleanup",
+    )
+    run_parser.add_argument(
+        "--revert-to-cycle", type=int, default=None,
+        help="Revert planning state to the start of a specific cycle number, then exit",
     )
 
     # ── finalize ──

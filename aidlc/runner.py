@@ -111,28 +111,25 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
         manifest = build_doc_manifest(doc_files)
         context = context + "\n\n" + manifest
 
-        # Generate project brief via Claude if available
-        if cli and not config.get("dry_run"):
+        # Check for cached brief first (from previous run or earlier in this run)
+        brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
+        if brief_path.exists():
+            brief = brief_path.read_text()
+            context = f"## Project Brief\n\n{brief}\n\n{context}"
+            logger.info(f"Loaded cached project brief ({len(brief):,} chars)")
+        elif cli and not config.get("dry_run"):
+            # No cache — generate fresh
             logger.info("Generating project brief from all documentation...")
             brief = build_project_brief(
                 doc_files, cli, Path(config["_project_root"]), logger,
                 max_brief_chars=config.get("project_brief_max_chars", 20000),
             )
             if brief:
-                # Save brief to .aidlc/ for reuse on resume
-                brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
                 brief_path.write_text(brief)
                 context = f"## Project Brief\n\n{brief}\n\n{context}"
                 logger.info(f"Project brief generated ({len(brief):,} chars)")
             else:
                 logger.warning("Could not generate project brief — continuing with raw docs")
-        else:
-            # Check for cached brief from previous run
-            brief_path = Path(config["_aidlc_dir"]) / "project_brief.md"
-            if brief_path.exists():
-                brief = brief_path.read_text()
-                context = f"## Project Brief\n\n{brief}\n\n{context}"
-                logger.info(f"Loaded cached project brief ({len(brief):,} chars)")
 
     state.project_context = context[:2000]  # Save summary to state
 

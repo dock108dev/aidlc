@@ -128,6 +128,57 @@ def checkpoint(state: RunState, run_dir: Path) -> None:
     save_state(state, run_dir)
 
 
+def save_cycle_snapshot(state: RunState, run_dir: Path, cycle_num: int) -> Path:
+    """Save a state snapshot for a specific planning cycle.
+
+    These snapshots allow reverting to the state at the start of any cycle.
+    """
+    snap_dir = run_dir / "cycle_snapshots"
+    snap_dir.mkdir(exist_ok=True)
+    snap_path = snap_dir / f"cycle_{cycle_num:04d}.json"
+    tmp_path = snap_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w") as f:
+        json.dump(state.to_dict(), f, indent=2)
+    os.replace(tmp_path, snap_path)
+    return snap_path
+
+
+def load_cycle_snapshot(run_dir: Path, cycle_num: int) -> RunState:
+    """Load state from a specific cycle snapshot.
+
+    Raises FileNotFoundError if the snapshot doesn't exist.
+    """
+    snap_path = run_dir / "cycle_snapshots" / f"cycle_{cycle_num:04d}.json"
+    if not snap_path.exists():
+        available = list_cycle_snapshots(run_dir)
+        if available:
+            raise FileNotFoundError(
+                f"No snapshot for cycle {cycle_num}. "
+                f"Available: {', '.join(str(c) for c in available)}"
+            )
+        else:
+            raise FileNotFoundError(f"No cycle snapshots found in {run_dir}")
+
+    with open(snap_path) as f:
+        data = json.load(f)
+    return RunState.from_dict(data)
+
+
+def list_cycle_snapshots(run_dir: Path) -> list[int]:
+    """List available cycle snapshot numbers."""
+    snap_dir = run_dir / "cycle_snapshots"
+    if not snap_dir.exists():
+        return []
+    cycles = []
+    for f in sorted(snap_dir.glob("cycle_*.json")):
+        try:
+            num = int(f.stem.split("_")[1])
+            cycles.append(num)
+        except (IndexError, ValueError):
+            continue
+    return cycles
+
+
 def find_latest_run(runs_dir: Path, config_name: str = "") -> Path | None:
     runs_path = Path(runs_dir)
     if not runs_path.exists():
