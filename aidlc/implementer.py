@@ -363,7 +363,8 @@ class Implementer:
 
         return f"""## Instructions — Implementation
 
-You are implementing this issue. Your goal is to write production-ready code.
+You are implementing this issue. Your goal is to write production-ready code that will
+survive automated quality audits after implementation completes.
 
 **Requirements:**
 - Implement exactly what the issue describes — no more, no less
@@ -373,6 +374,22 @@ You are implementing this issue. Your goal is to write production-ready code.
 - Create or update tests for the changes{test_instruction}
 - Do NOT modify files unrelated to this issue
 - Do NOT introduce breaking changes to existing functionality
+
+**Code quality standards (enforced by post-implementation audits):**
+- **File size**: Keep files under 500 lines. Split into modules if needed.
+- **Single responsibility**: Each file/class/function does one thing well.
+- **No dead code**: Don't leave commented-out code, unused imports, or stale experiments.
+- **No duplicate logic**: Extract shared utilities. Don't copy-paste.
+- **Explicit error handling**: No bare excepts, no silent failures, no swallowed errors.
+  Log errors with context. Fail loudly on unexpected states.
+- **Test coverage**: Write tests alongside implementation. Test the happy path AND
+  edge cases. If a test framework exists, use it.
+- **No hardcoded secrets**: Use config/environment for API keys, credentials, URLs.
+- **Input validation**: Validate at system boundaries. Don't trust external input.
+- **Consistent naming**: Follow the project's naming conventions. No abbreviations
+  without precedent in the codebase.
+- **Documentation**: Add comments only where intent isn't obvious (why, not what).
+  Update docstrings for public APIs.
 
 **Acceptance criteria must ALL be met.** Check each one.
 

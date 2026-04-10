@@ -345,6 +345,38 @@ def cmd_audit(args: argparse.Namespace) -> None:
     print(f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first.")
 
 
+def cmd_plan(args: argparse.Namespace) -> None:
+    """Run an interactive planning session."""
+    from .plan_session import PlanSession
+    from .logger import setup_logger
+    from .claude_cli import ClaudeCLI
+
+    project_root = Path(args.project or ".").resolve()
+    config = load_config(
+        config_path=getattr(args, "config", None),
+        project_root=str(project_root),
+    )
+
+    _print_banner()
+
+    # Ensure .aidlc exists
+    (project_root / ".aidlc").mkdir(exist_ok=True)
+
+    logger = setup_logger("plan", project_root / ".aidlc", verbose=args.verbose)
+    cli = ClaudeCLI(config, logger)
+
+    if not cli.check_available() and not config.get("dry_run"):
+        print(f"{_red('x')} Claude CLI not available.")
+        sys.exit(1)
+
+    session = PlanSession(project_root, config, cli, logger)
+    session.run(
+        skip_wizard=getattr(args, "skip_wizard", False),
+        wizard_only=getattr(args, "wizard_only", False),
+        review_only=getattr(args, "review", False),
+    )
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
     project_root = args.project or str(Path.cwd())
@@ -610,6 +642,19 @@ def main() -> None:
         help="Copy planning doc templates (ROADMAP.md, ARCHITECTURE.md, etc.) into the project",
     )
 
+    # ── plan ──
+    plan_parser = subparsers.add_parser(
+        "plan",
+        help="Interactive planning session",
+        description="Guided wizard + doc generation + Claude refinement. Creates ROADMAP.md, ARCHITECTURE.md, DESIGN.md, CLAUDE.md.",
+    )
+    plan_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    plan_parser.add_argument("--config", "-c", help="Config file path")
+    plan_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+    plan_parser.add_argument("--skip-wizard", action="store_true", help="Skip wizard, go straight to Claude refinement")
+    plan_parser.add_argument("--wizard-only", action="store_true", help="Run wizard and generate drafts, no Claude session")
+    plan_parser.add_argument("--review", action="store_true", help="Review existing docs and suggest improvements")
+
     # ── audit ──
     audit_parser = subparsers.add_parser(
         "audit",
@@ -686,6 +731,8 @@ def main() -> None:
         cmd_precheck(args)
     elif args.command == "init":
         cmd_init(args)
+    elif args.command == "plan":
+        cmd_plan(args)
     elif args.command == "audit":
         cmd_audit(args)
     elif args.command == "run":

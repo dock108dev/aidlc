@@ -240,7 +240,7 @@ class TestBuildImplementationPrompt:
         issue = Issue(id="ISSUE-001", title="T", description="D")
         prompt = impl._build_implementation_prompt(issue)
         # The context portion should be truncated to ~100 chars
-        assert prompt.count("x") <= 110  # Allow small overhead from formatting
+        assert prompt.count("x") <= 120  # Allow overhead from formatting + instruction text
 
 
 class TestGetChangedFiles:

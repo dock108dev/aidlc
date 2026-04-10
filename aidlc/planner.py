@@ -44,6 +44,7 @@ class Planner:
         self.doc_gaps = doc_gaps or []
         self.doc_files = doc_files or []
         self._research_count = 0
+        self._last_cycle_notes = self._load_last_cycle_notes()
         self._phase_docs = self._map_phase_docs()
         self.logger = logger
         self.project_root = Path(config["_project_root"])
@@ -270,6 +271,18 @@ class Planner:
                 self.logger.warning(f"Validation: {err}")
             # Don't fail the whole cycle — skip bad actions individually below
 
+        # Save cycle context for resume continuity
+        self._save_cycle_notes(
+            planning_output.frontier_assessment,
+            planning_output.cycle_notes,
+            cycle_num,
+        )
+        self._last_cycle_notes = (
+            f"Last planning cycle ({cycle_num}) assessment: "
+            f"{planning_output.frontier_assessment}\n"
+            f"Notes: {planning_output.cycle_notes}"
+        )
+
         # Only accept planning_complete if we've actually offered it
         # (Claude sometimes adds this field unprompted — ignore it until invited)
         if planning_output.planning_complete and getattr(self, "_offer_completion", False):
@@ -327,6 +340,16 @@ class Planner:
         # Project context from scanner
         sections.append("# Project Context\n")
         sections.append(self.project_context)
+
+        # Resume context — what was happening in the last cycle
+        if self._last_cycle_notes:
+            sections.append("\n## Previous Cycle Context\n")
+            sections.append(
+                "This is where planning left off. Continue from here — "
+                "do NOT restart from scratch or re-cover phases that already have issues.\n"
+            )
+            sections.append(self._last_cycle_notes)
+            sections.append("")
 
         # Completed research — show Claude what research already exists so it doesn't re-request
         research_dir = self.project_root / "docs" / "research"
@@ -525,6 +548,34 @@ Produce only refinement and gap-filling actions.
 **When to declare planning complete:**
 - Set "planning_complete": true once all issues are well-specified and no gaps remain
 - This is the finalization phase — wrapping up is the goal, not finding more work"""
+
+    def _load_last_cycle_notes(self) -> str:
+        """Load the frontier assessment and notes from the last planning cycle.
+
+        This preserves context across resume — Claude knows where it left off.
+        """
+        notes_path = self.run_dir / "planning_context.json"
+        if notes_path.exists():
+            try:
+                import json
+                data = json.loads(notes_path.read_text())
+                return data.get("last_cycle_summary", "")
+            except (OSError, json.JSONDecodeError):
+                pass
+        return ""
+
+    def _save_cycle_notes(self, frontier: str, notes: str, cycle_num: int):
+        """Save the current cycle's context for resume."""
+        import json
+        notes_path = self.run_dir / "planning_context.json"
+        data = {
+            "last_cycle": cycle_num,
+            "last_cycle_summary": (
+                f"Last planning cycle ({cycle_num}) assessment: {frontier}\n"
+                f"Notes: {notes}"
+            ),
+        }
+        notes_path.write_text(json.dumps(data, indent=2))
 
     def _map_phase_docs(self) -> dict[str, list[str]]:
         """Map ROADMAP phases to relevant doc paths for phase-focused context."""
