@@ -130,12 +130,8 @@ def run_precheck(project_root: Path, auto_init: bool = True) -> PrecheckResult:
         result.config_existed = False
 
     # Detect project type
-    from .scanner import PROJECT_INDICATORS
-    detected = []
-    for filename, ptype in PROJECT_INDICATORS.items():
-        if (project_root / filename).exists():
-            detected.append(ptype)
-    result.project_type = ", ".join(sorted(set(detected))) if detected else "unknown"
+    from .scanner import detect_project_type
+    result.project_type = detect_project_type(project_root)
 
     # Check for source code
     source_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb"}

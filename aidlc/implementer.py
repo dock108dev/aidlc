@@ -1,19 +1,5 @@
-"""Implementation engine for AIDLC.
+"""Implementation engine for AIDLC issue execution and verification."""
 
-Takes the issues created during planning and implements them one by one
-using Claude. Loops until every issue is implemented and verified.
-
-Flow per issue:
-1. Check dependencies are met
-2. Build implementation prompt with issue spec + project context
-3. Claude implements via CLI (with file edit permissions)
-4. Parse result, run verification (tests if available)
-5. Mark issue as implemented/verified or failed
-6. If failed and retries remain, re-queue
-7. Continue until all issues resolved
-"""
-
-import json
 import subprocess
 import time
 from pathlib import Path
@@ -21,13 +7,15 @@ from pathlib import Path
 from .models import RunState, RunPhase, Issue, IssueStatus
 from .schemas import (
     ImplementationResult, parse_implementation_result,
-    IMPLEMENTATION_SCHEMA_DESCRIPTION,
 )
 from .claude_cli import ClaudeCLI
 from .state_manager import save_state, checkpoint
 from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
-
+from .implementer_helpers import (
+    build_implementation_prompt, detect_test_command, ensure_test_deps,
+    fix_failing_tests, implementation_instructions,
+)
 
 class Implementer:
     """Runs the implementation phase of an AIDLC session."""
@@ -320,208 +308,17 @@ class Implementer:
         return impl_result.success
 
     def _build_implementation_prompt(self, issue: Issue) -> str:
-        """Build the prompt for implementing a single issue."""
-        # Read issue file for full context
-        issue_file = Path(self.config["_issues_dir"]) / f"{issue.id}.md"
-        issue_content = ""
-        if issue_file.exists():
-            issue_content = issue_file.read_text()
-
-        # Get completed issues for context
-        completed = [
-            d for d in self.state.issues
-            if d.get("status") in ("implemented", "verified")
-        ]
-
-        sections = [
-            "# Implementation Task\n",
-            f"You are implementing issue **{issue.id}** for this project.",
-            "",
-            "## Project Context\n",
-            self.project_context[:self.max_impl_context_chars],
-            "",
-            f"## Issue: {issue.id} — {issue.title}\n",
-            f"**Priority**: {issue.priority}",
-            f"**Labels**: {', '.join(issue.labels) if issue.labels else 'none'}",
-            f"**Dependencies**: {', '.join(issue.dependencies) if issue.dependencies else 'none'}",
-            "",
-        ]
-
-        if issue_content:
-            sections.append("### Full Issue Specification\n")
-            sections.append(issue_content)
-        else:
-            sections.append("### Description\n")
-            sections.append(issue.description)
-            sections.append("\n### Acceptance Criteria\n")
-            for ac in issue.acceptance_criteria:
-                sections.append(f"- {ac}")
-
-        # Previous attempts
-        if issue.attempt_count > 1:
-            sections.append("\n### Previous Attempt Notes\n")
-            sections.append(issue.implementation_notes)
-            sections.append("\n**Fix the issues from the previous attempt.**")
-
-        # What's already been implemented
-        if completed:
-            sections.append(f"\n## Already Implemented ({len(completed)} issues)\n")
-            for d in completed[:20]:
-                sections.append(f"- {d['id']}: {d['title']}")
-
-        # Instructions
-        sections.append(self._implementation_instructions())
-
-        # Output schema
-        sections.append(IMPLEMENTATION_SCHEMA_DESCRIPTION)
-
-        return "\n\n".join(sections)
+        return build_implementation_prompt(self, issue)
 
     def _implementation_instructions(self) -> str:
-        test_instruction = ""
-        if self.test_command:
-            test_instruction = f"""
-- Run tests with: `{self.test_command}`
-- All tests must pass before marking as complete
-- If tests fail, fix the issues"""
-
-        return f"""## Instructions — Implementation
-
-You are implementing this issue. Your goal is to write production-ready code that will
-survive automated quality audits after implementation completes.
-
-**Requirements:**
-- Implement exactly what the issue describes — no more, no less
-- Follow the project's existing code style and patterns
-- Write clean, well-structured code
-- Add appropriate error handling
-- Create or update tests for the changes{test_instruction}
-- Do NOT modify files unrelated to this issue
-- Do NOT introduce breaking changes to existing functionality
-
-**Code quality standards (enforced by post-implementation audits):**
-- **File size**: Keep files under 500 lines. Split into modules if needed.
-- **Single responsibility**: Each file/class/function does one thing well.
-- **No dead code**: Don't leave commented-out code, unused imports, or stale experiments.
-- **No duplicate logic**: Extract shared utilities. Don't copy-paste.
-- **Explicit error handling**: No bare excepts, no silent failures, no swallowed errors.
-  Log errors with context. Fail loudly on unexpected states.
-- **Test coverage**: Write tests alongside implementation. Test the happy path AND
-  edge cases. If a test framework exists, use it.
-- **No hardcoded secrets**: Use config/environment for API keys, credentials, URLs.
-- **Input validation**: Validate at system boundaries. Don't trust external input.
-- **Consistent naming**: Follow the project's naming conventions. No abbreviations
-  without precedent in the codebase.
-- **Documentation**: Add comments only where intent isn't obvious (why, not what).
-  Update docstrings for public APIs.
-
-**Acceptance criteria must ALL be met.** Check each one.
-
-After implementation, output the structured JSON result.
-If you cannot fully implement the issue, set success to false and explain why in notes."""
+        return implementation_instructions(self.test_command)
 
     def _fix_failing_tests(self, issue: Issue) -> bool:
         """Give Claude a chance to fix failing tests."""
-        self.logger.info(f"Attempting to fix failing tests for {issue.id}")
-
-        # Get test output
-        test_output = self._run_tests(capture_output=True)
-
-        fix_prompt = f"""# Fix Failing Tests
-
-Tests are failing after implementing issue {issue.id}: {issue.title}
-
-## Test Output
-
-```
-{test_output[:5000]}
-```
-
-## Instructions
-
-Fix the failing tests. The implementation should match the acceptance criteria:
-{chr(10).join(f'- {ac}' for ac in issue.acceptance_criteria)}
-
-Fix the code or tests so everything passes. Do not remove or skip tests.
-
-{IMPLEMENTATION_SCHEMA_DESCRIPTION}
-"""
-
-        result = self.cli.execute_prompt(fix_prompt, self.project_root, allow_edits=True)
-        if result["success"]:
-            self.state.elapsed_seconds += result.get("duration_seconds", 0)
-            return self._run_tests()
-        return False
+        return fix_failing_tests(self, issue)
 
     def _ensure_test_deps(self):
-        """Check if test dependencies are installed and install if missing."""
-        install_commands = {
-            "pytest": "pip install pytest",
-            "jest": "npm install --save-dev jest",
-            "vitest": "npm install --save-dev vitest",
-            "playwright": "npx playwright install",
-            "cypress": "npx cypress install",
-            "rspec": "bundle install",
-            "cargo test": None,  # Comes with Rust toolchain
-            "go test": None,  # Comes with Go
-        }
-
-        # Check package managers / dependency files
-        dep_install = {
-            "package.json": "npm install",
-            "package-lock.json": "npm ci",
-            "yarn.lock": "yarn install",
-            "pnpm-lock.yaml": "pnpm install",
-            "requirements.txt": "pip install -r requirements.txt",
-            "Gemfile": "bundle install",
-            "Cargo.toml": None,
-            "go.mod": "go mod download",
-        }
-
-        # Install project deps if lock file exists but node_modules/venv doesn't
-        for dep_file, cmd in dep_install.items():
-            if cmd and (self.project_root / dep_file).exists():
-                # Check if deps are already installed
-                if dep_file in ("package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"):
-                    if (self.project_root / "node_modules").exists():
-                        continue
-                elif dep_file == "requirements.txt":
-                    # Don't auto-install Python deps globally — too risky
-                    continue
-                elif dep_file == "Gemfile":
-                    continue  # Bundle install can be slow
-
-                self.logger.info(f"Installing project dependencies: {cmd}")
-                try:
-                    subprocess.run(
-                        cmd, shell=True, cwd=str(self.project_root),
-                        capture_output=True, timeout=120,
-                    )
-                except (subprocess.TimeoutExpired, OSError) as e:
-                    self.logger.warning(f"Dependency install failed: {e}")
-                break  # Only install once
-
-        # Check if the test tool itself needs installation
-        for tool_name, install_cmd in install_commands.items():
-            if install_cmd and tool_name in (self.test_command or ""):
-                # Quick check if the tool is available
-                check_cmd = f"which {tool_name.split()[0]} || npx {tool_name.split()[0]} --version"
-                try:
-                    result = subprocess.run(
-                        check_cmd, shell=True, capture_output=True,
-                        cwd=str(self.project_root), timeout=10,
-                    )
-                    if result.returncode != 0:
-                        self.logger.info(f"Installing test tool: {install_cmd}")
-                        subprocess.run(
-                            install_cmd, shell=True, cwd=str(self.project_root),
-                            capture_output=True, timeout=120,
-                        )
-                except (subprocess.TimeoutExpired, OSError):
-                    self.logger.warning(
-                        f"Unable to verify/install test tool '{tool_name}' automatically."
-                    )
-                break
+        ensure_test_deps(self.project_root, self.test_command, self.logger)
 
     def _run_tests(self, capture_output: bool = False) -> bool | str:
         """Run the project's test suite.
@@ -685,47 +482,4 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
         return ([], detection_ok) if with_status else []
 
     def _detect_test_command(self) -> str | None:
-        """Auto-detect the test command for this project."""
-        root = self.project_root
-
-        # Python
-        if (root / "pyproject.toml").exists() or (root / "setup.py").exists():
-            if (root / "pytest.ini").exists() or (root / "conftest.py").exists():
-                return "python -m pytest"
-            if (root / "tests").is_dir() or (root / "test").is_dir():
-                return "python -m pytest"
-
-        # Node.js
-        pkg_json = root / "package.json"
-        if pkg_json.exists():
-            try:
-                pkg = json.loads(pkg_json.read_text())
-                scripts = pkg.get("scripts", {})
-                if "test" in scripts:
-                    return "npm test"
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        # Rust
-        if (root / "Cargo.toml").exists():
-            return "cargo test"
-
-        # Go
-        if (root / "go.mod").exists():
-            return "go test ./..."
-
-        # Ruby
-        if (root / "Gemfile").exists():
-            if (root / "spec").is_dir():
-                return "bundle exec rspec"
-
-        # Make
-        if (root / "Makefile").exists():
-            try:
-                content = (root / "Makefile").read_text()
-                if "test:" in content:
-                    return "make test"
-            except OSError:
-                pass
-
-        return None
+        return detect_test_command(self.project_root)

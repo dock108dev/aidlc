@@ -58,6 +58,19 @@ PROJECT_INDICATORS = {
 }
 
 
+def detect_project_type(project_root: Path) -> str:
+    """Detect project type from repo indicator files and glob patterns."""
+    detected: set[str] = set()
+    for pattern, project_type in PROJECT_INDICATORS.items():
+        if any(char in pattern for char in "*?[]"):
+            matches = list(project_root.glob(pattern))
+            if matches:
+                detected.add(project_type)
+        elif (project_root / pattern).exists():
+            detected.add(project_type)
+    return ", ".join(sorted(detected)) if detected else "unknown"
+
+
 class ProjectScanner:
     """Scans a repository to understand its structure and planning docs."""
 
@@ -106,11 +119,7 @@ class ProjectScanner:
 
     def _detect_project_type(self) -> str:
         """Detect project type from indicator files."""
-        detected = []
-        for filename, ptype in PROJECT_INDICATORS.items():
-            if (self.project_root / filename).exists():
-                detected.append(ptype)
-        return ", ".join(set(detected)) if detected else "unknown"
+        return detect_project_type(self.project_root)
 
     def _scan_docs(self) -> list[dict]:
         """Find and read all documentation files."""
@@ -167,10 +176,6 @@ class ProjectScanner:
         for prefix in ("planning/", "design/", "specs/", "rfcs/", "docs/"):
             if lower.startswith(prefix):
                 return 1
-
-        # Medium: other docs
-        if lower.startswith("docs/"):
-            return 2
 
         # Lower: everything else
         return 3
