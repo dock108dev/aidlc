@@ -6,6 +6,11 @@ import time
 from pathlib import Path
 
 from .models import Issue
+from .research_output import (
+    add_research_output_constraints,
+    build_repair_prompt,
+    is_permission_chatter,
+)
 from .schemas import PLANNING_SCHEMA_DESCRIPTION
 
 
@@ -241,7 +246,7 @@ def execute_research(planner, action) -> None:
         ]
     )
 
-    prompt = "\n".join(prompt_parts)
+    prompt = add_research_output_constraints("\n".join(prompt_parts))
     research_model = planner.config.get("claude_model_research")
     start_time = time.time()
     result = planner.cli.execute_prompt(
@@ -261,6 +266,35 @@ def execute_research(planner, action) -> None:
     if not output:
         planner.logger.warning(f"Research returned empty output for {action.research_topic}")
         return
+    if is_permission_chatter(output):
+        planner.logger.warning(
+            "Research output requested write permissions; retrying with stricter constraints"
+        )
+        retry_prompt = build_repair_prompt(
+            action.research_topic,
+            action.research_question or action.rationale,
+            output,
+        )
+        retry_start = time.time()
+        retry_result = planner.cli.execute_prompt(
+            retry_prompt,
+            planner.project_root,
+            model_override=research_model,
+        )
+        retry_duration = time.time() - retry_start
+        planner.state.plan_elapsed_seconds += retry_duration
+        planner.state.elapsed_seconds += retry_duration
+        if not retry_result["success"] or not retry_result.get("output"):
+            planner.logger.error(
+                f"Research retry failed for {action.research_topic}: {retry_result.get('error')}"
+            )
+            return
+        output = retry_result["output"]
+        if is_permission_chatter(output):
+            planner.logger.error(
+                f"Research output for {action.research_topic} still contains permission chatter; skipping write"
+            )
+            return
 
     research_dir = planner.project_root / "docs" / "research"
     research_dir.mkdir(parents=True, exist_ok=True)

@@ -1,87 +1,137 @@
-"""Interactive wizard for AIDLC planning sessions.
+"""Planning wizard for AIDLC — brain dump approach.
 
-Keeps it simple: get the project name, auto-detect what we can,
-then let the user brain dump everything else in one shot.
+User writes everything into BRAINDUMP.md, presses Enter, AIDLC processes it.
 """
 
 import sys
 from pathlib import Path
 
 
-# ANSI helpers
 def _bold(t): return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
 def _dim(t): return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
 def _cyan(t): return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
 def _green(t): return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
+def _yellow(t): return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
 
 
 def run_wizard(project_root: Path, auto_detect: bool = True) -> dict:
-    """Run the planning wizard. Quick basics then brain dump.
+    """Prompt user to write BRAINDUMP.md, then read it.
 
-    Returns dict with: project_name, tech_stack, brain_dump, and any auto-detected info.
+    Returns dict with: project_name, tech_stack, brain_dump, and auto-detected info.
     """
     answers = {}
 
     # Auto-detect what we can
-    defaults = _auto_detect(project_root) if auto_detect else {}
-    answers.update(defaults)
+    if auto_detect:
+        answers.update(_auto_detect(project_root))
 
-    print(f"  {_bold('Project Planning')}")
+    braindump_path = project_root / "BRAINDUMP.md"
+
+    # Check if BRAINDUMP.md already exists
+    has_existing = braindump_path.exists() and braindump_path.read_text(errors="replace").strip()
+
+    if not has_existing:
+        # Create a starter template
+        starter = _build_starter(project_root, answers)
+        braindump_path.write_text(starter)
+
+    print(f"  {_bold('Brain Dump Time')}")
     print()
-
-    # 1. Project name (auto-detect from dir)
-    default_name = defaults.get("project_name", project_root.name)
-    print(f"  Project name? {_dim(f'[{default_name}]')}")
-    try:
-        name = input("  > ").strip()
-    except (EOFError, KeyboardInterrupt):
-        name = ""
-    answers["project_name"] = name or default_name
-
-    # 2. Show what was auto-detected
-    if defaults.get("tech_stack"):
-        print(f"\n  {_green('+')} Detected: {defaults['tech_stack']}")
-    if defaults.get("has_code"):
+    if answers.get("tech_stack"):
+        print(f"  {_green('+')} Detected: {answers['tech_stack']}")
+    if answers.get("has_code"):
         print(f"  {_green('+')} Existing codebase found")
-
-    # 3. Brain dump — the main event
-    print(f"\n  {_bold('Tell me everything.')}")
-    print(f"  {_dim('What are you building? What should it do? What matters?')}")
-    print(f"  {_dim('Paste a doc, write bullet points, stream of consciousness — all good.')}")
-    print(f"  {_dim('Blank line + Enter when done.')}")
+    print()
+    if has_existing:
+        size = len(braindump_path.read_text(errors="replace"))
+        print(f"  {_green('+')} Found existing {_cyan('BRAINDUMP.md')} ({size:,} chars)")
+        print(f"  Review or update it if needed.")
+    else:
+        print(f"  Created {_cyan('BRAINDUMP.md')} in your project root.")
+        print(f"  Open it and write everything about what you want to build.")
+    print()
+    print(f"  {_dim('What is it? What should it do? Features, vibes, inspiration,')}")
+    print(f"  {_dim('constraints, phases, whatever — dump it all in there.')}")
+    print(f"  {_dim('Markdown, bullet points, stream of consciousness, paste a doc.')}")
     print()
 
-    lines = []
-    empty_count = 0
-    while True:
-        try:
-            line = input("  ")
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if line.strip() == "":
-            empty_count += 1
-            if empty_count >= 2:
-                break
-            lines.append("")
+    try:
+        input(f"  Press {_bold('Enter')} when BRAINDUMP.md is ready...")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return answers
+
+    # Read the brain dump
+    if braindump_path.exists():
+        content = braindump_path.read_text(errors="replace").strip()
+        # Strip the starter template comments if user didn't replace them
+        content = _strip_starter_comments(content)
+        if content:
+            print(f"  {_green('+')} Read BRAINDUMP.md ({len(content):,} chars)")
+            answers["brain_dump"] = content
         else:
-            empty_count = 0
-            lines.append(line)
+            print(f"  {_yellow('!')} BRAINDUMP.md is empty — Claude will work from existing docs")
+    else:
+        print(f"  {_yellow('!')} BRAINDUMP.md not found — Claude will work from existing docs")
 
-    answers["brain_dump"] = "\n".join(lines).strip()
-
-    # If brain dump is empty, that's fine — Claude will work from existing docs
-    if not answers["brain_dump"]:
-        print(f"  {_dim('No input — Claude will work from existing project docs.')}")
-
+    answers.setdefault("project_name", project_root.name)
     return answers
+
+
+def _build_starter(project_root: Path, detected: dict) -> str:
+    """Build a starter BRAINDUMP.md with hints."""
+    lines = [
+        f"# {detected.get('project_name', project_root.name)}",
+        "",
+        "<!-- WRITE YOUR BRAIN DUMP BELOW -->",
+        "<!-- Delete these comments and write whatever you want -->",
+        "<!-- Markdown, bullet points, stream of consciousness, paste a whole doc -->",
+        "",
+    ]
+
+    if detected.get("tech_stack"):
+        lines.append(f"**Tech stack:** {detected['tech_stack']}")
+        lines.append("")
+
+    if detected.get("one_liner"):
+        lines.append(f"> {detected['one_liner']}")
+        lines.append("")
+
+    lines.extend([
+        "## What am I building?",
+        "",
+        "",
+        "## What should it do?",
+        "",
+        "",
+        "## What matters most?",
+        "",
+        "",
+    ])
+
+    return "\n".join(lines)
+
+
+def _strip_starter_comments(content: str) -> str:
+    """Remove the starter template HTML comments."""
+    lines = []
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("<!-- ") and stripped.endswith(" -->"):
+            continue
+        lines.append(line)
+    # Also strip empty sections that were never filled
+    result = "\n".join(lines).strip()
+    # Remove empty ## sections
+    import re
+    result = re.sub(r"## .+?\n\n(?=## |\Z)", "", result)
+    return result.strip()
 
 
 def _auto_detect(project_root: Path) -> dict:
     """Auto-detect project info from existing repo."""
     defaults = {"project_name": project_root.name}
 
-    # Tech stack
     indicators = {
         "package.json": "JavaScript/TypeScript, Node.js",
         "pyproject.toml": "Python",
@@ -101,7 +151,6 @@ def _auto_detect(project_root: Path) -> dict:
     if detected_stack:
         defaults["tech_stack"] = ", ".join(detected_stack)
 
-    # Check if there's existing code
     source_exts = {".py", ".js", ".ts", ".gd", ".rs", ".go", ".java", ".rb", ".swift", ".cpp"}
     for entry in project_root.iterdir():
         if entry.is_dir() and not entry.name.startswith(".") and entry.name not in {
@@ -114,7 +163,6 @@ def _auto_detect(project_root: Path) -> dict:
             if defaults.get("has_code"):
                 break
 
-    # One-liner from README
     readme = project_root / "README.md"
     if readme.exists():
         try:

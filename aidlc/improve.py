@@ -20,6 +20,11 @@ from pathlib import Path
 
 from .claude_cli import ClaudeCLI
 from .models import RunState, RunPhase, RunStatus, Issue, IssueStatus
+from .research_output import (
+    add_research_output_constraints,
+    build_repair_prompt,
+    is_permission_chatter,
+)
 from .schemas import parse_json_output
 from .state_manager import save_state, generate_run_id
 
@@ -239,13 +244,28 @@ class ImprovementCycle:
                 user_concern=concern,
                 project_type=project_type,
             )
+            prompt = add_research_output_constraints(prompt)
 
             res = self.cli.execute_prompt(prompt, self.project_root)
             if res["success"] and res.get("output"):
+                output = res["output"]
+                if is_permission_chatter(output):
+                    self.logger.warning(
+                        "Improvement research output requested write permissions; retrying"
+                    )
+                    retry_prompt = build_repair_prompt(name, question, output)
+                    retry_res = self.cli.execute_prompt(retry_prompt, self.project_root)
+                    if not retry_res["success"] or not retry_res.get("output"):
+                        print(f"    {_yellow('!')} research failed for {name}")
+                        continue
+                    output = retry_res["output"]
+                    if is_permission_chatter(output):
+                        print(f"    {_yellow('!')} research returned invalid output for {name}")
+                        continue
                 output_path.write_text(
                     f"# Research: {name}\n\n"
                     f"*Generated for improvement: {concern}*\n\n"
-                    f"---\n\n{res['output']}"
+                    f"---\n\n{output}"
                 )
                 print(f"    {_green('+')} docs/research/improve-{sanitized}.md")
 
