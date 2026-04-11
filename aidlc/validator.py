@@ -10,7 +10,7 @@ from pathlib import Path
 from .claude_cli import ClaudeCLI
 from .models import RunState, RunPhase, Issue, IssueStatus
 from .state_manager import save_state
-from .test_parser import parse_test_failures
+from .test_parser import parse_test_failures, TestFailure
 from .test_profiles import detect_test_profile
 from .validation_issues import create_fix_issues
 
@@ -165,8 +165,20 @@ class Validator:
                 "passed": passed,
             })
 
-            if not passed and output:
-                failures = parse_test_failures(output)
+            if not passed:
+                failures = parse_test_failures(output) if output else []
+                if not failures:
+                    excerpt = (output or "").strip()
+                    if excerpt:
+                        excerpt = excerpt[-500:]
+                    else:
+                        excerpt = "Command exited non-zero with no output."
+                    failures = [TestFailure(
+                        test_name=f"{tier} command failed",
+                        assertion=f"Command `{command}` failed",
+                        stack_trace=excerpt,
+                        framework="generic",
+                    )]
                 all_failures.extend(failures)
                 self.logger.info(f"  {tier}: FAILED ({len(failures)} failures parsed)")
 
@@ -174,7 +186,7 @@ class Validator:
                 if self.config.get("test_profile_mode", "progressive") == "progressive":
                     break
             else:
-                self.logger.info(f"  {tier}: {'PASSED' if passed else 'FAILED (no output)'}")
+                self.logger.info(f"  {tier}: PASSED")
 
         all_passed = all(r["passed"] for r in tier_results) if tier_results else True
         return all_passed, all_failures, tier_results

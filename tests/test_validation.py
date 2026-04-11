@@ -1,14 +1,12 @@
 """Tests for validation loop: test_profiles, test_parser, validation_issues, validator."""
 
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from aidlc.test_profiles import detect_test_profile
 from aidlc.test_parser import parse_test_failures, TestFailure
 from aidlc.validation_issues import create_fix_issues
-from aidlc.models import RunState, RunPhase, Issue
+from aidlc.models import RunState, RunPhase
 
 
 class TestTestProfiles:
@@ -190,3 +188,33 @@ class TestValidator:
         validator = Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
         result = validator.run()
         assert result is False
+
+    def test_failed_tier_without_parseable_output_creates_synthetic_failure(self, tmp_path):
+        from aidlc.validator import Validator
+
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+        }
+        cli = MagicMock()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        logger = MagicMock()
+
+        validator = Validator(state, run_dir, config, cli, "project type: unknown", logger)
+        validator.test_profile = {"build": "fake-build-cmd", "unit": None, "integration": None, "e2e": None}
+        validator._run_command = lambda _cmd: (False, "fatal: export preset missing")
+
+        all_passed, failures, tier_results = validator._run_test_tiers()
+
+        assert all_passed is False
+        assert len(tier_results) == 1
+        assert tier_results[0]["tier"] == "build"
+        assert tier_results[0]["passed"] is False
+        assert len(failures) == 1
+        assert failures[0].test_name == "build command failed"
+        assert "fake-build-cmd" in failures[0].assertion
+        assert "export preset missing" in failures[0].stack_trace
