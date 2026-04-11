@@ -102,7 +102,8 @@ class PlanSession:
         print(f"  {_bold('Launching Claude for interactive refinement...')}")
         print()
         print(f"  {_dim('Talk through your design with Claude. Claude can edit your docs directly.')}")
-        print(f"  {_dim('Try: \"Expand Phase 2\" or \"What am I missing for MVP?\"')}")
+        hint = 'Try: "Expand Phase 2" or "What am I missing for MVP?"'
+        print(f"  {_dim(hint)}")
         print(f"  {_dim('Exit Claude (Ctrl+C or /exit) when done.')}")
         print()
 
@@ -118,21 +119,20 @@ class PlanSession:
 
     def _identify_research(self, answers: dict) -> list[dict]:
         """Identify research topics from wizard answers."""
-        user_research = answers.get("research_needs", [])
-        inspiration = answers.get("inspiration", "")
+        brain_dump = answers.get("brain_dump", "")
 
-        # Skip if nothing to research
-        if not user_research and not inspiration:
+        # Skip if no brain dump
+        if not brain_dump:
             return []
 
         prompt = RESEARCH_TRIGGER_PROMPT.format(
             project_name=answers.get("project_name", ""),
             one_liner=answers.get("one_liner", ""),
-            project_type=answers.get("project_type", ""),
+            project_type=answers.get("tech_stack", "unknown"),
             tech_stack=answers.get("tech_stack", ""),
-            inspiration=inspiration,
-            core_features="\n".join(f"- {f}" for f in answers.get("core_features", [])),
-            research_needs="\n".join(f"- {r}" for r in user_research) if user_research else "(none specified)",
+            inspiration="(see brain dump)",
+            core_features=brain_dump,
+            research_needs="(extract from brain dump above)",
         )
 
         result = self.cli.execute_prompt(prompt, self.project_root)
@@ -210,17 +210,18 @@ class PlanSession:
         # Build existing context from audit/scan data if available
         existing_context = self._get_existing_context()
 
+        brain_dump = answers.get("brain_dump", "")
         template_vars = {
             "project_name": answers.get("project_name", ""),
-            "one_liner": answers.get("one_liner", ""),
-            "project_type": answers.get("project_type", ""),
+            "one_liner": answers.get("one_liner", brain_dump[:200] if brain_dump else ""),
+            "project_type": answers.get("tech_stack", "unknown"),
             "tech_stack": answers.get("tech_stack", ""),
-            "target_audience": answers.get("target_audience", ""),
-            "mvp_definition": answers.get("mvp_definition", ""),
-            "constraints": answers.get("constraints", ""),
-            "inspiration": answers.get("inspiration", ""),
-            "core_features": "\n".join(f"- {f}" for f in answers.get("core_features", [])),
-            "phases": "\n".join(f"- {p}" for p in answers.get("phases", [])),
+            "target_audience": "(extract from brain dump)",
+            "mvp_definition": "(extract from brain dump)",
+            "constraints": "(extract from brain dump)",
+            "inspiration": "(extract from brain dump)",
+            "core_features": brain_dump or "(no description provided — work from existing docs)",
+            "phases": "(derive from brain dump and project scope)",
             "existing_context": existing_context,
         }
 
