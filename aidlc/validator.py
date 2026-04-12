@@ -13,6 +13,7 @@ from .state_manager import save_state
 from .test_parser import parse_test_failures, TestFailure
 from .test_profiles import detect_test_profile
 from .validation_issues import create_fix_issues
+from .context_utils import parse_project_type
 
 
 class Validator:
@@ -36,12 +37,7 @@ class Validator:
         self.project_root = Path(config["_project_root"])
 
         # Detect test profile
-        project_type = ""
-        if "project_type" in project_context.lower():
-            for line in project_context.split("\n"):
-                if "project type" in line.lower() and ":" in line:
-                    project_type = line.split(":")[-1].strip()
-                    break
+        project_type = parse_project_type(project_context)
 
         self.test_profile = detect_test_profile(self.project_root, project_type, config)
         self.max_cycles = config.get("validation_max_cycles", 3)

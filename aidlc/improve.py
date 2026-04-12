@@ -12,14 +12,13 @@ AIDLC runs a focused mini-lifecycle:
 This is a scoped, targeted version of the full lifecycle.
 """
 
-import json
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .claude_cli import ClaudeCLI
-from .models import RunState, RunPhase, RunStatus, Issue, IssueStatus
+from .context_utils import parse_project_type
+from .models import RunState, RunPhase, RunStatus, Issue
 from .research_output import (
     add_research_output_constraints,
     build_repair_prompt,
@@ -30,11 +29,24 @@ from .state_manager import save_state, generate_run_id
 
 
 # ANSI helpers
-def _bold(t): return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
-def _dim(t): return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
-def _cyan(t): return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
-def _green(t): return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
-def _yellow(t): return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
+def _bold(text):
+    return f"\033[1m{text}\033[0m" if sys.stdout.isatty() else text
+
+
+def _dim(text):
+    return f"\033[2m{text}\033[0m" if sys.stdout.isatty() else text
+
+
+def _cyan(text):
+    return f"\033[36m{text}\033[0m" if sys.stdout.isatty() else text
+
+
+def _green(text):
+    return f"\033[32m{text}\033[0m" if sys.stdout.isatty() else text
+
+
+def _yellow(text):
+    return f"\033[33m{text}\033[0m" if sys.stdout.isatty() else text
 
 
 AUDIT_PROMPT = """\
@@ -134,7 +146,7 @@ class ImprovementCycle:
         print()
 
         # 1. AUDIT — analyze the area
-        print(f"  {_cyan('1/5')} Auditing relevant code...")
+        print(f"  {_cyan('1/6')} Auditing relevant code...")
         audit = self._audit_area(user_concern)
         if not audit:
             print(f"  {_yellow('!')} Could not audit area")
@@ -150,10 +162,10 @@ class ImprovementCycle:
         # 2. RESEARCH — investigate improvements
         research_topics = audit.get("research_needed", [])
         if research_topics:
-            print(f"\n  {_cyan('2/5')} Researching {len(research_topics)} topic(s)...")
+            print(f"\n  {_cyan('2/6')} Researching {len(research_topics)} topic(s)...")
             self._run_research(research_topics, user_concern)
         else:
-            print(f"\n  {_cyan('2/5')} No additional research needed")
+            print(f"\n  {_cyan('2/6')} No additional research needed")
 
         # 3. PLAN — create improvement issues
         improvements = audit.get("improvements", [])
@@ -161,7 +173,7 @@ class ImprovementCycle:
             print(f"\n  {_green('+')} No improvements needed — area looks good!")
             return {"status": "no_improvements", "audit": audit}
 
-        print(f"\n  {_cyan('3/5')} Creating {len(improvements)} improvement issue(s)...")
+        print(f"\n  {_cyan('3/6')} Creating {len(improvements)} improvement issue(s)...")
         issues = self._create_issues(improvements, user_concern)
 
         for issue in issues:
@@ -219,11 +231,7 @@ class ImprovementCycle:
         research_dir = self.project_root / "docs" / "research"
         research_dir.mkdir(parents=True, exist_ok=True)
 
-        project_type = ""
-        for line in self.project_context.split("\n"):
-            if "project type" in line.lower() and ":" in line:
-                project_type = line.split(":")[-1].strip()
-                break
+        project_type = parse_project_type(self.project_context)
 
         for topic in topics[:3]:  # Cap at 3 research topics per cycle
             name = topic.get("topic", "unknown")
@@ -294,13 +302,13 @@ class ImprovementCycle:
             # Write issue file
             issues_dir = self.project_root / ".aidlc" / "issues"
             issues_dir.mkdir(parents=True, exist_ok=True)
+            acceptance = "\n".join(f"- [ ] {ac}" for ac in issue.acceptance_criteria)
             (issues_dir / f"{issue.id}.md").write_text(
                 f"# {issue.id}: {issue.title}\n\n"
                 f"**Priority**: {issue.priority}\n"
                 f"**Labels**: {', '.join(issue.labels)}\n\n"
                 f"## Description\n\n{issue.description}\n\n"
-                f"## Acceptance Criteria\n\n"
-                + "\n".join(f"- [ ] {ac}" for ac in issue.acceptance_criteria)
+                f"## Acceptance Criteria\n\n{acceptance}"
             )
 
         return issues
@@ -308,7 +316,6 @@ class ImprovementCycle:
     def _implement_issues(self, issues: list[Issue]) -> int:
         """Implement improvement issues via Claude."""
         from .implementer import Implementer
-        from .config import load_config
 
         # Create a mini run state
         run_id = generate_run_id("improve")

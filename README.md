@@ -69,9 +69,4 @@ In production profile, `aidlc run --skip-validation` and `aidlc run --skip-final
 
 ## Documentation
 
-- `docs/cli-lifecycle.md` - lifecycle phases, stop conditions, and mode behavior
-- `docs/configuration.md` - configuration keys and profile behavior
-- `docs/audit.md` - audit modes, outputs, and conflict handling
-- `docs/local-development.md` - install, test, and packaging workflow for this repo
-- `docs/limitations.md` - intentional constraints and non-goals
-- `docs/deprecations.md` - removed legacy behavior and compatibility guarantees
+See [`docs/README.md`](docs/README.md) for the full documentation map.
