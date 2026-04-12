@@ -31,6 +31,7 @@ class PlanningAction:
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
+    critical_gap: bool = False
     labels: list = field(default_factory=list)
     dependencies: list = field(default_factory=list)
     acceptance_criteria: list = field(default_factory=list)
@@ -63,7 +64,14 @@ class PlanningAction:
             errors.append("rationale must not be empty")
 
         if is_finalization and self.action_type == "create_issue":
-            errors.append("create_issue prohibited during finalization")
+            if not self.critical_gap:
+                errors.append(
+                    "create_issue prohibited during finalization unless critical_gap=true"
+                )
+            elif self.priority != "high":
+                errors.append(
+                    "finalization create_issue requires priority='high' when critical_gap=true"
+                )
 
         # For dependency checks, include both state IDs and batch IDs
         all_valid_ids = (known_issue_ids or set()) | (batch_issue_ids or set())
@@ -115,6 +123,7 @@ class PlanningAction:
             title=data.get("title"),
             description=data.get("description"),
             priority=data.get("priority"),
+            critical_gap=bool(data.get("critical_gap", False)),
             labels=data.get("labels", []),
             dependencies=data.get("dependencies", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
@@ -245,6 +254,7 @@ You MUST output your planning actions as a single JSON block wrapped in ```json`
       "title": "Short descriptive title",
       "description": "Full description of what needs to be built/changed",
       "priority": "high | medium | low",
+      "critical_gap": false,  // set true only for critical gap issues during finalization
       "labels": ["feature", "backend"],
       "dependencies": ["ISSUE-000"],  // IDs of issues that must be done first
       "acceptance_criteria": [
@@ -278,6 +288,7 @@ Rules:
 - Produce 1-15 high-quality actions per cycle. Quality over quantity.
 - For create_doc, file_path must be relative to the project root
 - Every action must have a rationale explaining why it's needed
+- During finalization, create_issue is allowed only when critical_gap=true and priority=high
 - Use "research" when you need to investigate source code, derive formulas, explore
   design options, or resolve knowledge gaps BEFORE creating issues. Research results
   are written to docs/research/ and available in subsequent planning cycles.

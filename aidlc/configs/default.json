@@ -4,7 +4,7 @@
   "dry_run": false,
   "claude_cli_command": "claude",
   "claude_model": "opus",
-  "claude_timeout_seconds": 600,
+  "claude_hard_timeout_seconds": 600,
   "retry_max_attempts": 2,
   "retry_base_delay_seconds": 30,
   "retry_max_delay_seconds": 300,

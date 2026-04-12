@@ -72,6 +72,10 @@ class Planner:
         consecutive_failures = 0
         finalization_pct = self.config.get("finalization_budget_percent", 10)
         finalization_threshold = 1.0 - (finalization_pct / 100.0)
+        finalization_grace_cycles = max(
+            0, int(self.config.get("planning_finalization_grace_cycles", 1))
+        )
+        finalization_grace_used = 0
 
         # Diminishing returns tracking — tracks (new_issues, total_actions) per cycle
         recent_cycles = []  # list of (new_issue_count, total_action_count)
@@ -91,26 +95,44 @@ class Planner:
         self.logger.info(f"  Budget: {self.state.plan_budget_seconds / 3600:.1f}h")
 
         while True:
+            budget_exhausted = self.state.is_plan_budget_exhausted()
+            if (
+                not budget_exhausted
+                and
+                self.state.plan_elapsed_seconds
+                >= self.state.plan_budget_seconds * finalization_threshold
+                and self.state.phase != RunPhase.PLAN_FINALIZATION
+            ):
+                self.state.phase = RunPhase.PLAN_FINALIZATION
+                self.logger.info(
+                    f"Entering planning finalization ({finalization_pct}% budget remaining)"
+                )
+                save_state(self.state, self.run_dir)
+
             # Budget check
-            if self.state.is_plan_budget_exhausted():
-                self.state.stop_reason = "Planning budget exhausted"
-                self.logger.info("Planning budget exhausted.")
-                break
+            if budget_exhausted:
+                if (
+                    self.state.phase != RunPhase.PLAN_FINALIZATION
+                    and finalization_grace_used < finalization_grace_cycles
+                ):
+                    self.state.phase = RunPhase.PLAN_FINALIZATION
+                    finalization_grace_used += 1
+                    self.logger.warning(
+                        "Planning budget exhausted before finalization; "
+                        f"running grace finalization cycle "
+                        f"({finalization_grace_used}/{finalization_grace_cycles})"
+                    )
+                    save_state(self.state, self.run_dir)
+                else:
+                    self.state.stop_reason = "Planning budget exhausted"
+                    self.logger.info("Planning budget exhausted.")
+                    break
 
             # Cycle cap
             if max_cycles and self.state.planning_cycles >= max_cycles:
                 self.state.stop_reason = f"Max planning cycles ({max_cycles})"
                 self.logger.info(f"Max planning cycles reached ({max_cycles}).")
                 break
-
-            # Finalization transition
-            if (
-                self.state.plan_elapsed_seconds >= self.state.plan_budget_seconds * finalization_threshold
-                and self.state.phase != RunPhase.PLAN_FINALIZATION
-            ):
-                self.state.phase = RunPhase.PLAN_FINALIZATION
-                self.logger.info(f"Entering planning finalization ({finalization_pct}% budget remaining)")
-                save_state(self.state, self.run_dir)
 
             # Save cycle snapshot before running (for revert support)
             save_cycle_snapshot(self.state, self.run_dir, self.state.planning_cycles + 1)

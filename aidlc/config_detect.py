@@ -49,12 +49,12 @@ def detect_config(project_root: Path) -> dict:
 
     # Stack-specific config adjustments
     if "godot" in project_type:
-        detected["claude_timeout_seconds"] = 900  # Godot scenes take longer
+        detected["claude_hard_timeout_seconds"] = 900  # Godot scenes take longer
         detected["max_implementation_context_chars"] = 40000
     elif "rust" in project_type:
         detected["test_timeout_seconds"] = 600  # Rust compiles slow
     elif "unity" in project_type:
-        detected["claude_timeout_seconds"] = 900
+        detected["claude_hard_timeout_seconds"] = 900
 
     # Detect lint/format commands
     lint_cmd = _detect_lint_command(project_root, project_type)

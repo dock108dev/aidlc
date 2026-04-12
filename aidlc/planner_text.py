@@ -108,6 +108,11 @@ The planning budget is nearly exhausted. Finalize the plan.
 
 Produce only refinement and gap-filling actions.
 
+If you must create a critical-gap issue during finalization:
+- Set `critical_gap: true`
+- Set priority to `high`
+- Keep scope minimal and strictly blocking
+
 **When to declare planning complete:**
 - Set "planning_complete": true once all issues are well-specified, no critical gaps remain,
   and planning foundation docs are sufficient (not missing/thin)

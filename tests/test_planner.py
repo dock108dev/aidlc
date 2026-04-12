@@ -88,6 +88,33 @@ class TestPlanner:
         planner.run()
         assert state.phase == RunPhase.PLAN_FINALIZATION
 
+    def test_budget_exhaustion_runs_one_grace_finalization_cycle(
+        self, state, config, cli, logger, tmp_path
+    ):
+        state.plan_budget_seconds = 100.0
+        state.plan_elapsed_seconds = 80.0  # Below normal finalization threshold
+        config["max_planning_cycles"] = 0
+        config["planning_finalization_grace_cycles"] = 1
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+
+        phases_seen = []
+
+        def fake_cycle():
+            phases_seen.append(state.phase)
+            # Simulate first planning cycle overrunning remaining budget.
+            if len(phases_seen) == 1:
+                state.plan_elapsed_seconds = 120.0
+            return True
+
+        planner._planning_cycle = fake_cycle
+        planner.run()
+
+        assert phases_seen == [RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION]
+        assert (state.stop_reason or "") == "Planning budget exhausted"
+
     def test_apply_create_issue(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
         run_dir = tmp_path / "run"

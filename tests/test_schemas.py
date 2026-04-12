@@ -67,7 +67,7 @@ class TestPlanningAction:
         assert any("description" in e for e in errors)
         assert any("acceptance_criteria" in e for e in errors)
 
-    def test_create_issue_blocked_during_finalization(self):
+    def test_create_issue_blocked_during_finalization_without_critical_gap(self):
         action = PlanningAction(
             action_type="create_issue",
             rationale="Need this",
@@ -78,6 +78,34 @@ class TestPlanningAction:
         )
         errors = action.validate(is_finalization=True)
         assert any("prohibited during finalization" in e for e in errors)
+
+    def test_create_issue_allowed_during_finalization_for_critical_gap(self):
+        action = PlanningAction(
+            action_type="create_issue",
+            rationale="Critical blocker discovered late",
+            issue_id="ISSUE-001",
+            title="Patch critical blocker",
+            description="Fixes a blocker found during final review",
+            priority="high",
+            critical_gap=True,
+            acceptance_criteria=["Blocking issue is covered"],
+        )
+        errors = action.validate(is_finalization=True)
+        assert errors == []
+
+    def test_create_issue_critical_gap_requires_high_priority(self):
+        action = PlanningAction(
+            action_type="create_issue",
+            rationale="Critical blocker discovered late",
+            issue_id="ISSUE-001",
+            title="Patch critical blocker",
+            description="Fixes a blocker found during final review",
+            priority="medium",
+            critical_gap=True,
+            acceptance_criteria=["Blocking issue is covered"],
+        )
+        errors = action.validate(is_finalization=True)
+        assert any("priority='high'" in e for e in errors)
 
     def test_create_issue_duplicate(self):
         action = PlanningAction(

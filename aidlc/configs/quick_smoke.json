@@ -4,7 +4,7 @@
   "dry_run": true,
   "max_planning_cycles": 3,
   "max_implementation_cycles": 3,
-  "claude_timeout_seconds": 60,
+  "claude_hard_timeout_seconds": 60,
   "max_consecutive_failures": 2,
   "max_implementation_attempts": 1
 }

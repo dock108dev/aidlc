@@ -31,6 +31,7 @@ class ClaudeCLI:
         self.retry_max_delay = config.get("retry_max_delay_seconds", 300)
         self.retry_backoff_factor = config.get("retry_backoff_factor", 2.0)
         self.dry_run = config.get("dry_run", False)
+        self._warned_legacy_timeout_key = False
 
     def execute_prompt(
         self,
@@ -68,7 +69,16 @@ class ClaudeCLI:
             cmd.append("--dangerously-skip-permissions")
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
-        hard_timeout = max(0, int(self.config.get("claude_hard_timeout_seconds", 1800)))
+        hard_timeout_raw = self.config.get("claude_hard_timeout_seconds")
+        if hard_timeout_raw is None and self.config.get("claude_timeout_seconds") is not None:
+            hard_timeout_raw = self.config.get("claude_timeout_seconds")
+            if not self._warned_legacy_timeout_key:
+                self.logger.warning(
+                    "Config uses deprecated 'claude_timeout_seconds'; "
+                    "use 'claude_hard_timeout_seconds' instead."
+                )
+                self._warned_legacy_timeout_key = True
+        hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 1800))
         timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
 
         retries = 0

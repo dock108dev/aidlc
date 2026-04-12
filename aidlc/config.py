@@ -30,6 +30,7 @@ DEFAULTS = {
     "diminishing_returns_window": 5,       # track last N cycles for diminishing returns
     "diminishing_returns_threshold": 2,    # exit after N consecutive cycles with no new issues
     "finalization_budget_percent": 10,
+    "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
     "max_planning_cycles": 0,       # 0 = unlimited (dry-run defaults to 3)
     "max_implementation_cycles": 0,  # 0 = unlimited (dry-run defaults to 3)

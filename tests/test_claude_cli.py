@@ -5,7 +5,6 @@ import itertools
 import subprocess
 import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
 
 from aidlc.claude_cli import ClaudeCLI, ClaudeCLIError
 
@@ -165,6 +164,15 @@ class TestExecutePrompt:
         assert "--model" in cmd
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "sonnet"
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_legacy_timeout_key_used_as_fallback(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("ok")
+        base_config.pop("claude_hard_timeout_seconds", None)
+        base_config["claude_timeout_seconds"] = 7
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["success"] is True
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
