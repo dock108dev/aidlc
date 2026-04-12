@@ -24,7 +24,7 @@ Full audit adds Claude analysis on top of quick audit for:
 
 - deeper module-level semantics
 - richer feature inventory synthesis
-- runtime execution checks (build/unit/integration/e2e) when commands are detected
+- runtime execution checks (build/unit/integration/e2e) when commands are detected and `audit_runtime_enabled=true`
 - planning handoff generation via `BRAINDUMP.md`
 
 Full mode is bounded by:
@@ -34,6 +34,12 @@ Full mode is bounded by:
 - `audit_runtime_timeout_seconds`
 
 Standalone `aidlc audit --full` exits if Claude CLI is unavailable.
+
+Runtime checks run with:
+
+- `CI=1` environment default
+- per-command timeout from `audit_runtime_timeout_seconds`
+- Playwright headless normalization when `audit_playwright_headless=true`
 
 ## Outputs
 
@@ -52,6 +58,12 @@ Audit writes artifacts into the target repository:
 - The cap uses `plan_budget_hours` and `audit_planning_workload_stop_ratio`.
 - Audit continues gathering evidence, but stops adding active issue/research seeds once projected planning effort is near the cap.
 - Overflow opportunities are listed in a deferred section when `audit_include_deferred_backlog=true`.
+
+BRAINDUMP focus order is deterministic:
+
+1. CI/build/test stabilization
+2. coverage uplift toward `audit_coverage_threshold_percent`
+3. Playwright/UAT depth and UX artifact review
 
 ## Conflict Semantics
 

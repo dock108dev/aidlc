@@ -2,16 +2,16 @@
 
 AIDLC is a Python CLI for running an AI-assisted development lifecycle inside a target repository.
 
-Core lifecycle in `aidlc run`:
+Primary `aidlc run` flow:
 
-`SCAN -> PLAN -> IMPLEMENT -> VALIDATE -> FINALIZE -> REPORT`
-
-Audit can also run before planning via `--audit`.
+`AUDIT (optional) -> SCAN -> PLAN -> IMPLEMENT -> VERIFY -> VALIDATE (optional) -> FINALIZE (optional) -> REPORT`
 
 ## Quick Start
 
 ```bash
-pip install -e .
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 
 # initialize metadata in a target repository
 aidlc init --project /path/to/target-repo
@@ -30,7 +30,7 @@ aidlc run --project /path/to/target-repo
 - `aidlc precheck` auto-creates `.aidlc/` if missing and reports documentation readiness tiers
 - `aidlc init` initializes `.aidlc/` and optionally copies planning templates with `--with-docs`
 - `aidlc audit [--full]` analyzes an existing codebase and writes audit artifacts
-- `aidlc run` executes the lifecycle with optional modes (`--resume`, `--plan-only`, `--implement-only`, `--audit`)
+- `aidlc run` executes the lifecycle with optional modes (`--resume`, `--plan-only`, `--implement-only`, `--audit [quick|full]`)
 - `aidlc finalize` runs finalization passes against the latest run
 - `aidlc plan` runs an interactive planning/doc-generation session
 - `aidlc improve` runs a targeted improvement cycle from a user concern
@@ -50,6 +50,7 @@ Additional runtime outputs may include:
 
 - `.aidlc/audit_result.json`
 - `.aidlc/CONFLICTS.md`
+- `BRAINDUMP.md` (full audit handoff and plan wizard input)
 - `docs/audits/*.md`
 - `AIDLC_FUTURES.md`
 
@@ -73,3 +74,4 @@ In production profile, `aidlc run --skip-validation` and `aidlc run --skip-final
 - `docs/audit.md` - audit modes, outputs, and conflict handling
 - `docs/local-development.md` - install, test, and packaging workflow for this repo
 - `docs/limitations.md` - intentional constraints and non-goals
+- `docs/deprecations.md` - removed legacy behavior and compatibility guarantees

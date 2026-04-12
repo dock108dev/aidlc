@@ -87,7 +87,7 @@ Canonical defaults live in `aidlc/config.py`.
 | `fail_on_validation_incomplete` | `false` |
 | `validation_max_cycles` | `3` |
 | `validation_batch_size` | `10` |
-| `test_profile_mode` | `"progressive"` |
+| `test_profile_mode` | `"progressive"` (only supported mode) |
 | `e2e_test_command` | `null` |
 | `build_validation_command` | `null` |
 
@@ -149,3 +149,4 @@ Additionally, `aidlc run` rejects:
 
 - Unknown keys are loaded; they only have effect if runtime code reads them.
 - In dry-run mode, planning/implementation cycles are effectively capped when max-cycle settings are left at unlimited.
+- `test_profile_mode` values other than `"progressive"` are intentionally unsupported.

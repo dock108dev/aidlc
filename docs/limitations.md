@@ -8,6 +8,7 @@ This document captures intentionally unsupported behavior and known operational 
 - automatically bypassing unmet issue dependencies
 - automatically resolving/breaking dependency cycles
 - treating unstructured implementation output as success
+- supporting non-progressive validation modes
 
 ## Explicitly Unsupported CLI Behavior
 
@@ -34,3 +35,4 @@ This document captures intentionally unsupported behavior and known operational 
 - no automatic hidden fallback to previous planning completion criteria
 - no forced success when validation remains unstable
 - no auto-removal of dependency links to "make progress"
+- no compatibility shim for legacy validation flow selection

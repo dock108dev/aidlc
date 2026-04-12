@@ -8,10 +8,14 @@
 ## Setup
 
 ```bash
-pip install -e .
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
 ```
 
 Optional dev test dependencies are defined in `pyproject.toml` under `project.optional-dependencies.dev`.
+
+If your system Python enforces PEP 668 (externally managed environment), use the virtualenv workflow above.
 
 ## Test Commands
 
@@ -31,6 +35,12 @@ Against this repository:
 ```bash
 aidlc precheck --project .
 aidlc run --project .
+```
+
+For full audit testing:
+
+```bash
+aidlc audit --project . --full
 ```
 
 Common targeted commands:

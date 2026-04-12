@@ -68,6 +68,11 @@ When enabled, validator runs test tiers (`build`, `unit`, `integration`, `e2e`) 
 - re-implements fixes
 - re-tests up to `validation_max_cycles`
 
+Validation mode is SSOT-only:
+
+- `test_profile_mode` must be `"progressive"`
+- non-progressive modes are rejected at runtime
+
 In strict settings, unstable validation pauses the run.
 
 ## Finalization
