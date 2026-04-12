@@ -100,6 +100,17 @@ Canonical defaults live in `aidlc/config.py`.
 | `audit_max_source_chars_per_module` | `15000` |
 | `audit_source_extensions` | `[".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb"]` |
 | `audit_exclude_patterns` | `["**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**"]` |
+| `audit_runtime_enabled` | `true` |
+| `audit_runtime_timeout_seconds` | `600` |
+| `audit_coverage_threshold_percent` | `85` |
+| `audit_playwright_headless` | `true` |
+| `audit_playwright_command_override` | `null` |
+| `audit_braindump_enabled` | `true` |
+| `audit_braindump_path` | `"BRAINDUMP.md"` |
+| `audit_planning_workload_stop_ratio` | `0.95` |
+| `audit_research_estimate_default_hours` | `2.0` |
+| `audit_issue_estimate_defaults` | `{"high": 3.0, "medium": 1.5, "low": 0.75}` |
+| `audit_include_deferred_backlog` | `true` |
 
 ### Research
 

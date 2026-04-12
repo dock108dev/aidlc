@@ -47,6 +47,9 @@ class Validator:
         self.max_cycles = config.get("validation_max_cycles", 3)
         self.batch_size = config.get("validation_batch_size", 10)
         self.test_timeout = config.get("test_timeout_seconds", 300)
+        self.test_profile_mode = config.get("test_profile_mode", "progressive")
+        if self.test_profile_mode != "progressive":
+            raise RuntimeError("Legacy path removed — use SSOT implementation")
 
     def run(self) -> bool:
         """Run the validation loop. Returns True if project is stable."""
@@ -183,7 +186,7 @@ class Validator:
                 self.logger.info(f"  {tier}: FAILED ({len(failures)} failures parsed)")
 
                 # For progressive mode, stop on first failing tier
-                if self.config.get("test_profile_mode", "progressive") == "progressive":
+                if self.test_profile_mode == "progressive":
                     break
             else:
                 self.logger.info(f"  {tier}: PASSED")

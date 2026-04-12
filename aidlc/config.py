@@ -64,6 +64,21 @@ DEFAULTS = {
     "audit_exclude_patterns": [
         "**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**",
     ],
+    "audit_runtime_enabled": True,          # run build/unit/integration/e2e checks during full audit
+    "audit_runtime_timeout_seconds": 600,   # timeout for each runtime audit command
+    "audit_coverage_threshold_percent": 85,  # focus shifts to UI when >= threshold
+    "audit_playwright_headless": True,      # enforce headless Playwright in runtime audit
+    "audit_playwright_command_override": None,  # optional custom Playwright command
+    "audit_braindump_enabled": True,        # generate BRAINDUMP.md during full audit
+    "audit_braindump_path": "BRAINDUMP.md",
+    "audit_planning_workload_stop_ratio": 0.95,  # stop adding issue seeds near planning budget
+    "audit_research_estimate_default_hours": 2.0,
+    "audit_issue_estimate_defaults": {      # default projected effort per issue priority
+        "high": 3.0,
+        "medium": 1.5,
+        "low": 0.75,
+    },
+    "audit_include_deferred_backlog": True,  # include overflow ideas after workload cap
 
     # Research settings
     "research_max_scope_files": 10,         # max files to read per research action

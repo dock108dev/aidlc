@@ -285,8 +285,8 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
     print(f"  {_bold('Total lines:')}    {result.source_stats.get('total_lines', 0):,}")
     if result.test_coverage:
         tc = result.test_coverage
-        est = tc.estimated_coverage if hasattr(tc, "estimated_coverage") else "unknown"
-        fw = f" ({tc.test_framework})" if hasattr(tc, "test_framework") and tc.test_framework else ""
+        est = tc.estimated_coverage
+        fw = f" ({tc.test_framework})" if tc.test_framework else ""
         print(f"  {_bold('Test coverage:')}  {est}{fw}")
     if result.tech_debt:
         print(f"  {_bold('Tech debt:')}      {len(result.tech_debt)} markers")

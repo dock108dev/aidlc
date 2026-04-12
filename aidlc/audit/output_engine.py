@@ -2,6 +2,7 @@
 
 import json
 import re
+from datetime import datetime, timezone
 
 from ..audit_models import AuditConflict, ModuleInfo, TechDebtItem, TestCoverageInfo
 from .constants import EXCLUDE_DIRS
@@ -35,6 +36,15 @@ class AuditOutputEngine:
             arch_path.write_text(arch_content)
             result.generated_docs.append("ARCHITECTURE.md")
             self.logger.info(f"Generated {arch_path}")
+
+        if result.depth == "full" and self.auditor.config.get("audit_braindump_enabled", True):
+            braindump_rel = self.auditor.config.get("audit_braindump_path", "BRAINDUMP.md")
+            braindump_path = self.project_root / braindump_rel
+            braindump_content, summary = self.render_braindump_doc(result)
+            braindump_path.write_text(braindump_content)
+            result.braindump_summary = summary
+            result.generated_docs.append(braindump_rel)
+            self.logger.info(f"Generated {braindump_path}")
 
     def render_status_doc(self, result) -> str:
         """Render STATUS.md from audit results."""
@@ -93,6 +103,25 @@ class AuditOutputEngine:
                 lines.append(f"- **Framework**: {tc.test_framework}")
             lines.append("")
 
+        runtime = result.runtime_checks or {}
+        tier_results = runtime.get("tier_results", [])
+        if tier_results:
+            lines.append("## Runtime Audit Checks")
+            lines.append("")
+            lines.append(
+                f"- **Overall runtime health**: "
+                f"{'pass' if runtime.get('overall_passed') else 'fail'}"
+            )
+            if runtime.get("coverage_percent") is not None:
+                lines.append(f"- **Observed coverage**: {runtime.get('coverage_percent')}%")
+            for tier in tier_results:
+                lines.append(
+                    f"- **{tier.get('tier')}**: "
+                    f"{'pass' if tier.get('passed') else 'fail'} "
+                    f"({tier.get('duration_seconds', 0)}s)"
+                )
+            lines.append("")
+
         if result.features:
             lines.append("## Features")
             lines.append("")
@@ -140,6 +169,303 @@ class AuditOutputEngine:
                 lines.append("")
         return "\n".join(lines)
 
+    def render_braindump_doc(self, result) -> tuple[str, dict]:
+        """Render workload-capped BRAINDUMP.md ready for planning handoff."""
+        runtime = result.runtime_checks or {}
+        tier_results = runtime.get("tier_results", [])
+        coverage_threshold = float(
+            self.auditor.config.get("audit_coverage_threshold_percent", 85)
+        )
+        coverage_percent = runtime.get("coverage_percent")
+        build_health = runtime.get("build_health", "unknown")
+        has_failures = any(not item.get("passed") for item in tier_results)
+
+        if build_health == "unhealthy" or has_failures:
+            focus = "ci_build_test_stabilization"
+            focus_reason = (
+                "Runtime checks show failing build/test tiers, so recommendations "
+                "prioritize CI/build/test stabilization before expanding scope."
+            )
+        elif coverage_percent is not None and coverage_percent < coverage_threshold:
+            focus = "coverage_uplift"
+            focus_reason = (
+                f"Build/test health is stable, but observed coverage ({coverage_percent}%) "
+                f"is below target ({coverage_threshold}%)."
+            )
+        else:
+            focus = "ui_playwright_expansion"
+            focus_reason = (
+                "Build/test and coverage gates are healthy enough to prioritize "
+                "UI/UAT Playwright depth and UX evidence reviews."
+            )
+
+        issue_estimates = self.auditor.config.get("audit_issue_estimate_defaults", {})
+        high_h = float(issue_estimates.get("high", 3.0))
+        medium_h = float(issue_estimates.get("medium", 1.5))
+        low_h = float(issue_estimates.get("low", 0.75))
+        research_h = float(self.auditor.config.get("audit_research_estimate_default_hours", 2.0))
+        plan_budget_h = float(self.auditor.config.get("plan_budget_hours", 4))
+        stop_ratio = float(self.auditor.config.get("audit_planning_workload_stop_ratio", 0.95))
+        workload_limit_h = plan_budget_h * stop_ratio
+
+        candidates = []
+        if focus == "ci_build_test_stabilization":
+            for tier in tier_results:
+                if tier.get("passed"):
+                    continue
+                tier_name = tier.get("tier", "unknown")
+                candidates.append(
+                    {
+                        "kind": "issue",
+                        "priority": "high" if tier_name == "build" else "medium",
+                        "title": f"Stabilize failing {tier_name} validation tier",
+                        "detail": (
+                            f"Repair `{tier.get('command')}` failures and make the tier "
+                            "consistently green in CI and local runs."
+                        ),
+                        "estimated_hours": high_h if tier_name == "build" else medium_h,
+                    }
+                )
+            candidates.append(
+                {
+                    "kind": "research",
+                    "priority": "medium",
+                    "title": "Research deterministic CI test execution profile",
+                    "detail": (
+                        "Define deterministic command order, cache strategy, and retry/flake "
+                        "policy for build/unit/integration/e2e."
+                    ),
+                    "estimated_hours": research_h,
+                }
+            )
+        elif focus == "coverage_uplift":
+            candidates.extend(
+                [
+                    {
+                        "kind": "research",
+                        "priority": "medium",
+                        "title": "Map highest-impact coverage gaps",
+                        "detail": (
+                            "Identify top risk modules with low test density and define a phased "
+                            "coverage uplift sequence."
+                        ),
+                        "estimated_hours": research_h,
+                    },
+                    {
+                        "kind": "issue",
+                        "priority": "high",
+                        "title": "Raise coverage on critical modules to threshold",
+                        "detail": (
+                            f"Add tests for core flows until measured coverage reaches at least "
+                            f"{coverage_threshold}%."
+                        ),
+                        "estimated_hours": high_h,
+                    },
+                    {
+                        "kind": "issue",
+                        "priority": "medium",
+                        "title": "Add coverage reporting gate in CI",
+                        "detail": "Fail CI when coverage drops below configured threshold.",
+                        "estimated_hours": medium_h,
+                    },
+                ]
+            )
+        else:
+            playwright_present = runtime.get("playwright_present", False)
+            playwright_passed = runtime.get("playwright_passed")
+            if not playwright_present:
+                candidates.append(
+                    {
+                        "kind": "issue",
+                        "priority": "high",
+                        "title": "Establish Playwright headless baseline suite",
+                        "detail": (
+                            "Create initial browser e2e smoke flows (critical user journeys) "
+                            "and run them in headless CI."
+                        ),
+                        "estimated_hours": high_h,
+                    }
+                )
+            elif playwright_passed is False:
+                candidates.append(
+                    {
+                        "kind": "issue",
+                        "priority": "high",
+                        "title": "Stabilize failing Playwright/UAT suite",
+                        "detail": (
+                            "Fix failing UI flows and harden selectors/assertions for deterministic "
+                            "headless execution."
+                        ),
+                        "estimated_hours": high_h,
+                    }
+                )
+            else:
+                candidates.append(
+                    {
+                        "kind": "issue",
+                        "priority": "medium",
+                        "title": "Expand Playwright journey coverage to edge cases",
+                        "detail": (
+                            "Add negative/edge path coverage, richer assertions, and artifact review "
+                            "hooks for UI regressions."
+                        ),
+                        "estimated_hours": medium_h,
+                    }
+                )
+            candidates.extend(
+                [
+                    {
+                        "kind": "research",
+                        "priority": "medium",
+                        "title": "Analyze UI screenshots/videos for UX regressions",
+                        "detail": (
+                            "Review runtime artifacts for visual defects, broken interaction states, "
+                            "and suggest targeted UI enhancements."
+                        ),
+                        "estimated_hours": research_h,
+                    },
+                    {
+                        "kind": "issue",
+                        "priority": "low",
+                        "title": "Add Playwright artifact retention policy",
+                        "detail": "Persist screenshots/videos/traces on failure for planning review.",
+                        "estimated_hours": low_h,
+                    },
+                ]
+            )
+
+        selected = []
+        deferred = []
+        projected_hours = 0.0
+        for candidate in candidates:
+            est = float(candidate.get("estimated_hours", 0.0))
+            next_total = projected_hours + est
+            if selected and next_total > workload_limit_h:
+                deferred.append(candidate)
+                continue
+            selected.append(candidate)
+            projected_hours = next_total
+
+        include_deferred = self.auditor.config.get("audit_include_deferred_backlog", True)
+        workload_reached = bool(deferred)
+
+        lines = [
+            "# BRAINDUMP",
+            "",
+            f"*Auto-generated by AIDLC full audit on "
+            f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%SZ')}*",
+            "",
+            "## FocusDecision",
+            "",
+            f"- focus: `{focus}`",
+            f"- rationale: {focus_reason}",
+            "",
+            "## WorkloadBudgetAndStopReason",
+            "",
+            f"- plan_budget_hours: {plan_budget_h}",
+            f"- stop_ratio: {stop_ratio}",
+            f"- workload_limit_hours: {round(workload_limit_h, 2)}",
+            f"- projected_selected_hours: {round(projected_hours, 2)}",
+            f"- workload_budget_reached: {'true' if workload_reached else 'false'}",
+            (
+                "- stop_reason: stopped adding active issue seeds because projected planning "
+                "workload is near configured limit"
+                if workload_reached
+                else "- stop_reason: projected workload remains under configured limit"
+            ),
+            "",
+            "## Evidence",
+            "",
+            f"- project_type: {result.project_type}",
+            f"- frameworks_detected: {len(result.frameworks)}",
+            f"- modules_detected: {len(result.modules)}",
+            f"- runtime_checks_executed: {len(tier_results)}",
+        ]
+
+        if coverage_percent is not None:
+            lines.append(f"- observed_coverage_percent: {coverage_percent}")
+        for tier in tier_results:
+            lines.append(
+                f"- {tier.get('tier')}: {'pass' if tier.get('passed') else 'fail'} "
+                f"({tier.get('duration_seconds', 0)}s)"
+            )
+        lines.append("")
+
+        lines.extend(
+            [
+                "## RecommendedEnhancements",
+                "",
+            ]
+        )
+        for item in selected:
+            lines.append(
+                f"- [{item['kind']}/{item['priority']}] {item['title']} "
+                f"(~{item['estimated_hours']}h): {item['detail']}"
+            )
+        if not selected:
+            lines.append("- No additional recommendations generated in this pass.")
+        lines.append("")
+
+        lines.extend(
+            [
+                "## IssueSeeds",
+                "",
+            ]
+        )
+        for idx, item in enumerate(selected, 1):
+            if item["kind"] != "issue":
+                continue
+            lines.append(
+                f"- ISSUE-SEED-{idx:03d}: {item['title']} "
+                f"[{item['priority']}] (~{item['estimated_hours']}h)"
+            )
+        lines.append("")
+        lines.append("## ResearchSeeds")
+        lines.append("")
+        for idx, item in enumerate(selected, 1):
+            if item["kind"] != "research":
+                continue
+            lines.append(
+                f"- RESEARCH-SEED-{idx:03d}: {item['title']} "
+                f"[{item['priority']}] (~{item['estimated_hours']}h)"
+            )
+        lines.append("")
+
+        if include_deferred and deferred:
+            lines.append("## DeferredOpportunities")
+            lines.append("")
+            for item in deferred:
+                lines.append(
+                    f"- [{item['kind']}/{item['priority']}] {item['title']} "
+                    f"(~{item['estimated_hours']}h) — deferred by workload cap"
+                )
+            lines.append("")
+
+        lines.extend(
+            [
+                "## ReRunExpectations",
+                "",
+                "- Re-run audit after implementing top IssueSeeds and ResearchSeeds.",
+                "- If CI/build/test failures persist, keep focus on stabilization.",
+                (
+                    f"- Once coverage is >= {coverage_threshold}%, shift next cycle to "
+                    "Playwright/UAT depth and UX evidence review."
+                ),
+            ]
+        )
+
+        summary = {
+            "focus": focus,
+            "plan_budget_hours": plan_budget_h,
+            "stop_ratio": stop_ratio,
+            "workload_limit_hours": workload_limit_h,
+            "projected_selected_hours": projected_hours,
+            "selected_count": len(selected),
+            "deferred_count": len(deferred),
+            "workload_budget_reached": workload_reached,
+        }
+        return "\n".join(lines), summary
+
     def render_architecture_doc(self, result) -> str:
         """Render a skeleton ARCHITECTURE.md from audit results."""
         lines = [
@@ -186,6 +512,7 @@ class AuditOutputEngine:
     def detect_conflicts(self, result) -> list[AuditConflict]:
         """Compare audit findings against existing user-provided docs."""
         conflicts = []
+        generated_docs = set(result.generated_docs or [])
 
         arch_path = self.project_root / "ARCHITECTURE.md"
         if arch_path.exists() and "ARCHITECTURE.md" not in result.generated_docs:
@@ -224,7 +551,7 @@ class AuditOutputEngine:
                 self.auditor._mark_degraded("doc_read_errors")
 
         if result.modules:
-            user_docs_content = self.read_all_user_docs()
+            user_docs_content = self.read_all_user_docs(generated_docs)
             if user_docs_content:
                 for module in result.modules:
                     mod = module if isinstance(module, ModuleInfo) else ModuleInfo.from_dict(module)
@@ -244,12 +571,12 @@ class AuditOutputEngine:
                             )
         return conflicts
 
-    def read_all_user_docs(self) -> str:
+    def read_all_user_docs(self, generated_docs: set[str]) -> str:
         """Read all user-provided markdown docs for conflict checking."""
         parts = []
         for doc_name in ("README.md", "ARCHITECTURE.md", "ROADMAP.md", "DESIGN.md"):
             doc_path = self.project_root / doc_name
-            if doc_path.exists() and doc_name not in getattr(self.auditor, "_generated_docs", []):
+            if doc_path.exists() and doc_name not in generated_docs:
                 try:
                     parts.append(doc_path.read_text(errors="replace"))
                 except OSError:

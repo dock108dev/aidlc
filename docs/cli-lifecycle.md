@@ -81,6 +81,15 @@ During finalization, AIDLC also:
 - refreshes config detections into `.aidlc/config.json`
 - writes `AIDLC_FUTURES.md`
 
+## Audit-to-Planning Handoff
+
+In `full` audit mode, AIDLC can execute runtime checks (build/unit/integration/e2e), then generate
+`BRAINDUMP.md` for planning handoff.
+
+- Focus order: CI/build/test health -> coverage threshold -> Playwright/UAT depth.
+- BRAINDUMP issue/research seeds are workload-capped against `plan_budget_hours` using
+  `audit_planning_workload_stop_ratio`.
+
 ## Concurrency and State
 
 - one active run per project via `.aidlc/run.lock`

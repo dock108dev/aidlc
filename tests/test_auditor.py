@@ -2,7 +2,6 @@
 
 import json
 import pytest
-from pathlib import Path
 
 from aidlc.auditor import CodeAuditor
 from aidlc.audit_models import AuditResult, ModuleInfo, TechDebtItem, TestCoverageInfo, AuditConflict
@@ -201,6 +200,85 @@ class TestCodeAuditorQuickScan:
         assert result.source_stats["total_files"] == 0
 
 
+class TestBraindumpGeneration:
+    def test_full_audit_generates_workload_capped_braindump(self, python_project, config, monkeypatch):
+        config.update({
+            "plan_budget_hours": 1,
+            "audit_planning_workload_stop_ratio": 0.5,  # 0.5h workload cap
+            "audit_research_estimate_default_hours": 0.4,
+            "audit_issue_estimate_defaults": {"high": 0.4, "medium": 0.3, "low": 0.2},
+            "audit_runtime_enabled": True,
+            "audit_braindump_enabled": True,
+        })
+
+        cli = object()
+        auditor = CodeAuditor(python_project, config, cli=cli)
+
+        monkeypatch.setattr(
+            auditor._full,
+            "full_audit",
+            lambda result: result,
+        )
+        monkeypatch.setattr(
+            auditor._runtime,
+            "run_runtime_checks",
+            lambda _ptype: {
+                "tier_results": [
+                    {"tier": "build", "command": "echo build", "passed": True, "duration_seconds": 1},
+                    {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
+                    {"tier": "integration", "command": "echo integ", "passed": True, "duration_seconds": 1},
+                ],
+                "overall_passed": True,
+                "build_health": "healthy",
+                "playwright_present": True,
+                "playwright_passed": True,
+                "coverage_percent": 96.0,
+            },
+        )
+
+        result = auditor.run(depth="full")
+        braindump_path = python_project / "BRAINDUMP.md"
+        assert braindump_path.exists()
+        content = braindump_path.read_text()
+        assert "## WorkloadBudgetAndStopReason" in content
+        assert "workload_budget_reached: true" in content
+        assert "## DeferredOpportunities" in content
+        assert result.braindump_summary is not None
+        assert result.braindump_summary["workload_budget_reached"] is True
+
+    def test_braindump_focuses_coverage_when_build_is_healthy(self, python_project, config, monkeypatch):
+        config.update({
+            "plan_budget_hours": 4,
+            "audit_runtime_enabled": True,
+            "audit_braindump_enabled": True,
+            "audit_coverage_threshold_percent": 85,
+        })
+
+        cli = object()
+        auditor = CodeAuditor(python_project, config, cli=cli)
+
+        monkeypatch.setattr(auditor._full, "full_audit", lambda result: result)
+        monkeypatch.setattr(
+            auditor._runtime,
+            "run_runtime_checks",
+            lambda _ptype: {
+                "tier_results": [
+                    {"tier": "build", "command": "echo build", "passed": True, "duration_seconds": 1},
+                    {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
+                ],
+                "overall_passed": True,
+                "build_health": "healthy",
+                "playwright_present": False,
+                "playwright_passed": None,
+                "coverage_percent": 62.0,
+            },
+        )
+
+        result = auditor.run(depth="full")
+        assert result.braindump_summary is not None
+        assert result.braindump_summary["focus"] == "coverage_uplift"
+
+
 class TestConflictDetection:
     def test_no_conflicts_when_no_user_docs(self, python_project, config):
         auditor = CodeAuditor(python_project, config)
@@ -254,6 +332,8 @@ class TestAuditModels:
             tech_debt=[TechDebtItem(file="app/main.py", line=10, type="todo", text="TODO: fix this")],
             test_coverage=TestCoverageInfo(test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"),
             conflicts=[AuditConflict(doc_path="ARCH.md", field="type", audit_value="python", user_value="java")],
+            runtime_checks={"overall_passed": False},
+            braindump_summary={"focus": "ci_build_test_stabilization"},
         )
         d = result.to_dict()
         restored = AuditResult.from_dict(d)
@@ -264,6 +344,8 @@ class TestAuditModels:
         assert len(restored.tech_debt) == 1
         assert restored.test_coverage.estimated_coverage == "moderate"
         assert len(restored.conflicts) == 1
+        assert restored.runtime_checks["overall_passed"] is False
+        assert restored.braindump_summary["focus"] == "ci_build_test_stabilization"
 
     def test_module_info_serialization(self):
         m = ModuleInfo(name="api", path="src/api", file_count=3, line_count=100, role="api", key_files=["routes.py"])

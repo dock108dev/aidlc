@@ -7,6 +7,7 @@ from .audit.constants import DEFAULT_SOURCE_EXTENSIONS
 from .audit.full_engine import FullAuditEngine
 from .audit.output_engine import AuditOutputEngine
 from .audit.quick_engine import QuickAuditEngine
+from .audit.runtime_engine import RuntimeAuditEngine
 from .audit_models import AuditResult
 
 
@@ -40,6 +41,7 @@ class CodeAuditor:
         # Engines keep implementation details out of this facade.
         self._quick = QuickAuditEngine(self)
         self._full = FullAuditEngine(self)
+        self._runtime = RuntimeAuditEngine(self)
         self._output = AuditOutputEngine(self)
 
     def _mark_degraded(self, key: str) -> None:
@@ -54,6 +56,10 @@ class CodeAuditor:
         if depth == "full" and self.cli:
             self.logger.info("Running full audit with Claude analysis...")
             result = self._full.full_audit(result)
+
+        if depth == "full" and self.config.get("audit_runtime_enabled", True):
+            self.logger.info("Running runtime audit checks (build/test/e2e)...")
+            result.runtime_checks = self._runtime.run_runtime_checks(result.project_type)
 
         self._output.generate_docs(result)
         result.conflicts = self._output.detect_conflicts(result)

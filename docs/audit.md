@@ -24,11 +24,14 @@ Full audit adds Claude analysis on top of quick audit for:
 
 - deeper module-level semantics
 - richer feature inventory synthesis
+- runtime execution checks (build/unit/integration/e2e) when commands are detected
+- planning handoff generation via `BRAINDUMP.md`
 
 Full mode is bounded by:
 
 - `audit_max_claude_calls`
 - `audit_max_source_chars_per_module`
+- `audit_runtime_timeout_seconds`
 
 Standalone `aidlc audit --full` exits if Claude CLI is unavailable.
 
@@ -40,6 +43,15 @@ Audit writes artifacts into the target repository:
 - `ARCHITECTURE.md` (generated if missing)
 - `.aidlc/audit_result.json`
 - `.aidlc/CONFLICTS.md` when conflicts are detected
+- `BRAINDUMP.md` (full audit, when `audit_braindump_enabled=true`)
+
+## BRAINDUMP Workload Cap
+
+`BRAINDUMP.md` is deliberately workload-capped for planning handoff.
+
+- The cap uses `plan_budget_hours` and `audit_planning_workload_stop_ratio`.
+- Audit continues gathering evidence, but stops adding active issue/research seeds once projected planning effort is near the cap.
+- Overflow opportunities are listed in a deferred section when `audit_include_deferred_backlog=true`.
 
 ## Conflict Semantics
 

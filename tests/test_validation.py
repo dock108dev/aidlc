@@ -2,6 +2,7 @@
 
 import json
 from unittest.mock import MagicMock
+import pytest
 
 from aidlc.test_profiles import detect_test_profile
 from aidlc.test_parser import parse_test_failures, TestFailure
@@ -218,3 +219,21 @@ class TestValidator:
         assert failures[0].test_name == "build command failed"
         assert "fake-build-cmd" in failures[0].assertion
         assert "export preset missing" in failures[0].stack_trace
+
+    def test_non_progressive_mode_is_rejected(self, tmp_path):
+        from aidlc.validator import Validator
+
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+            "test_profile_mode": "legacy",
+        }
+        cli = MagicMock()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        with pytest.raises(RuntimeError, match="Legacy path removed"):
+            Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
