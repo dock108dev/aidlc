@@ -3,11 +3,11 @@
 import json
 import logging
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from aidlc.planner import Planner
-from aidlc.models import RunState, RunPhase, Issue
+from aidlc.models import RunState, Issue
+from aidlc.planner_helpers import write_planning_index
 
 
 @pytest.fixture
@@ -243,6 +243,98 @@ class TestBuildPrompt:
         prompt = planner._build_prompt(is_finalization=False)
         assert "Planning Mode" in prompt
         assert "acceptance criteria" in prompt.lower()
+
+    def test_issue_context_is_bounded_for_large_backlog(self, config, logger, tmp_path):
+        state = RunState(run_id="test", config_name="default")
+        state.issues = [
+            {
+                "id": f"ISSUE-{idx:03d}",
+                "title": f"Issue title {idx}",
+                "description": "D",
+                "priority": "high" if idx % 7 == 0 else "medium",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            }
+            for idx in range(1, 121)
+        ]
+        config["planning_issue_index_max_items"] = 25
+        config["planning_issue_index_include_all_until"] = 20
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
+        prompt = planner._build_prompt(is_finalization=False)
+        assert "Compact issue index (bounded for token control)." in prompt
+        assert "Omitted from inline list" in prompt
+        assert prompt.count("ISSUE-") < 60
+
+    def test_planning_index_contains_full_status_and_category_rollups(
+        self, config, logger, tmp_path
+    ):
+        state = RunState(run_id="test", config_name="default")
+        state.issues = [
+            {
+                "id": "ISSUE-001",
+                "title": "Foundation setup",
+                "description": "D",
+                "priority": "high",
+                "labels": ["infra", "backend"],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "implemented",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "Add UI panel",
+                "description": "D",
+                "priority": "medium",
+                "labels": ["frontend"],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-003",
+                "title": "Fix sync bug",
+                "description": "D",
+                "priority": "high",
+                "labels": ["backend"],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "blocked",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+        ]
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
+        index_path = write_planning_index(planner)
+        text = index_path.read_text()
+        assert "## Issue Backlog Summary" in text
+        assert "### Category Rollup (Labels)" in text
+        assert "### Active Issues" in text
+        assert "### Completed Issues" in text
+        assert "Completion: 1/3" in text
 
 
 class TestApplyActionEdgeCases:

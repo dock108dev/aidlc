@@ -64,13 +64,15 @@ class TestLoadConfig:
         expected_keys = [
             "runtime_profile", "plan_budget_hours", "checkpoint_interval_minutes", "dry_run",
             "claude_cli_command", "claude_model", "claude_long_run_warn_seconds",
-            "claude_hard_timeout_seconds",
+            "claude_hard_timeout_seconds", "claude_timeout_grace_seconds",
             "retry_max_attempts", "retry_base_delay_seconds", "retry_max_delay_seconds",
             "retry_backoff_factor", "max_consecutive_failures",
             "finalization_budget_percent", "max_implementation_attempts",
             "max_planning_cycles", "max_implementation_cycles",
             "run_tests_command", "test_timeout_seconds",
             "max_doc_chars", "max_context_chars", "max_implementation_context_chars",
+            "planning_issue_index_max_items", "planning_issue_index_include_all_until",
+            "planning_last_cycle_notes_max_chars",
             "doc_scan_patterns", "doc_scan_exclude", "implementation_allowed_paths",
             "strict_validation", "validation_allow_no_tests", "fail_on_validation_incomplete",
             "fail_on_final_test_failure", "strict_change_detection",
@@ -105,7 +107,7 @@ class TestLoadConfig:
         assert config["fail_on_validation_incomplete"] is True
         assert config["fail_on_final_test_failure"] is True
         assert config["strict_change_detection"] is True
-        assert config["claude_hard_timeout_seconds"] == 3600
+        assert config["claude_hard_timeout_seconds"] == 1800
 
     def test_production_profile_respects_explicit_override(self, tmp_path):
         aidlc_dir = tmp_path / ".aidlc"

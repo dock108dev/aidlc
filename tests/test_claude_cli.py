@@ -2,6 +2,7 @@
 
 import logging
 import itertools
+import subprocess
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -170,8 +171,12 @@ class TestExecutePrompt:
     def test_hard_timeout_terminates_process(self, mock_popen, mock_time, base_config, logger, tmp_path):
         proc = MagicMock()
         proc.poll.side_effect = [None, 124]
-        proc.wait.side_effect = [0]
-        proc.returncode = 0
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=300),
+            subprocess.TimeoutExpired(cmd="claude", timeout=30),
+            124,
+        ]
+        proc.returncode = 124
         proc.stdin = MagicMock()
         proc.stdout = MagicMock()
         proc.stdout.read.return_value = ""
@@ -180,6 +185,7 @@ class TestExecutePrompt:
         mock_popen.return_value = proc
 
         base_config["claude_hard_timeout_seconds"] = 1
+        base_config["claude_timeout_grace_seconds"] = 30
         base_config["retry_max_attempts"] = 0
         clock = itertools.count(start=0.0, step=1.2)
         mock_time.side_effect = lambda: next(clock)
@@ -188,7 +194,38 @@ class TestExecutePrompt:
         result = cli.execute_prompt("prompt", tmp_path)
         assert result["success"] is False
         assert result["failure_type"] == "timeout"
+        assert proc.send_signal.called
         assert proc.terminate.called
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_hard_timeout_graceful_exit_keeps_success(self, mock_popen, mock_time, base_config, logger, tmp_path):
+        proc = MagicMock()
+        proc.poll.side_effect = [None, 0]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=300),
+            0,
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.read.return_value = "partial final output"
+        proc.stderr = MagicMock()
+        proc.stderr.read.return_value = ""
+        mock_popen.return_value = proc
+
+        base_config["claude_hard_timeout_seconds"] = 1
+        base_config["claude_timeout_grace_seconds"] = 30
+        base_config["retry_max_attempts"] = 0
+        clock = itertools.count(start=0.0, step=1.2)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["success"] is True
+        assert result["output"] == "partial final output"
+        assert proc.send_signal.called
+        assert not proc.terminate.called
 
 
 class TestClassifyFailure:

@@ -62,7 +62,7 @@ Set `runtime_profile` to `"production"` in `.aidlc/config.json` to auto-apply st
 - `fail_on_validation_incomplete=true`
 - `fail_on_final_test_failure=true`
 - `strict_change_detection=true`
-- `claude_hard_timeout_seconds=3600`
+- `claude_hard_timeout_seconds=1800`
 
 In production profile, `aidlc run --skip-validation` and `aidlc run --skip-finalize` are rejected.
 

@@ -36,7 +36,8 @@ Canonical defaults live in `aidlc/config.py`.
 | `claude_model_implementation` | `"opus"` |
 | `claude_model_finalization` | `"sonnet"` |
 | `claude_long_run_warn_seconds` | `300` |
-| `claude_hard_timeout_seconds` | `0` (disabled) |
+| `claude_hard_timeout_seconds` | `1800` (30 minutes) |
+| `claude_timeout_grace_seconds` | `30` |
 | `retry_max_attempts` | `2` |
 | `retry_base_delay_seconds` | `30` |
 | `retry_max_delay_seconds` | `300` |
@@ -57,6 +58,9 @@ Canonical defaults live in `aidlc/config.py`.
 | `project_brief_max_chars` | `20000` |
 | `phase_context_max_chars` | `20000` |
 | `max_planning_prompt_chars` | `60000` |
+| `planning_issue_index_max_items` | `40` |
+| `planning_issue_index_include_all_until` | `30` |
+| `planning_last_cycle_notes_max_chars` | `500` |
 | `doc_scan_patterns` | `["**/*.md", "**/*.txt", "**/*.rst"]` |
 | `doc_scan_exclude` | `["node_modules/**", ".git/**", "venv/**", ".venv/**", "__pycache__/**", ".aidlc/**", "dist/**", "build/**"]` |
 | `doc_gap_detection_enabled` | `true` |
@@ -123,7 +127,7 @@ When `runtime_profile` is `"production"`, these defaults are applied only if the
 - `fail_on_validation_incomplete=true`
 - `fail_on_final_test_failure=true`
 - `strict_change_detection=true`
-- `claude_hard_timeout_seconds=3600`
+- `claude_hard_timeout_seconds=1800`
 
 Additionally, `aidlc run` rejects:
 

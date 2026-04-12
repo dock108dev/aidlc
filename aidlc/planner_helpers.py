@@ -14,6 +14,112 @@ from .research_output import (
 from .schemas import PLANNING_SCHEMA_DESCRIPTION
 
 
+def _issue_number(issue_id: str) -> int:
+    """Extract numeric suffix from ISSUE-123 style IDs."""
+    match = re.search(r"(\d+)$", issue_id or "")
+    if not match:
+        return -1
+    return int(match.group(1))
+
+
+def _render_existing_issues_section(planner) -> list[str]:
+    """Render a bounded issue section so planning prompt size stays stable."""
+    issues = list(planner.state.issues or [])
+    if not issues:
+        return []
+
+    total = len(issues)
+    max_items = max(5, int(planner.config.get("planning_issue_index_max_items", 40)))
+    include_all_until = max(
+        0, int(planner.config.get("planning_issue_index_include_all_until", 30))
+    )
+
+    lines = [f"\n## Existing Issues ({total} total)\n"]
+
+    if total <= include_all_until:
+        lines.append("One-line index. Read .aidlc/issues/{ID}.md for full specs.\n")
+        selected = issues
+    else:
+        status_counts = {}
+        priority_counts = {"high": 0, "medium": 0, "low": 0}
+        for issue in issues:
+            status = issue.get("status", "pending")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            prio = issue.get("priority", "medium")
+            if prio in priority_counts:
+                priority_counts[prio] += 1
+
+        lines.append(
+            "Compact issue index (bounded for token control). "
+            "Read .aidlc/issues/{ID}.md for full specs.\n"
+        )
+        lines.append(
+            f"- Priority totals: high={priority_counts['high']}, "
+            f"medium={priority_counts['medium']}, low={priority_counts['low']}"
+        )
+        status_summary = ", ".join(
+            f"{status}={count}" for status, count in sorted(status_counts.items())
+        )
+        lines.append(f"- Status totals: {status_summary}")
+
+        high_priority_pending = [
+            issue for issue in issues
+            if (
+                issue.get("priority") == "high"
+                and issue.get("status", "pending")
+                in ("pending", "in_progress", "blocked", "failed")
+            )
+        ]
+        high_priority_pending.sort(
+            key=lambda issue: _issue_number(issue.get("id", "")),
+            reverse=True,
+        )
+        recent_issues = sorted(
+            issues,
+            key=lambda issue: _issue_number(issue.get("id", "")),
+            reverse=True,
+        )
+
+        selected = []
+        selected_ids = set()
+        half_budget = max_items // 2
+
+        for issue in high_priority_pending:
+            issue_id = issue.get("id")
+            if not issue_id or issue_id in selected_ids:
+                continue
+            selected.append(issue)
+            selected_ids.add(issue_id)
+            if len(selected) >= half_budget:
+                break
+
+        for issue in recent_issues:
+            if len(selected) >= max_items:
+                break
+            issue_id = issue.get("id")
+            if not issue_id or issue_id in selected_ids:
+                continue
+            selected.append(issue)
+            selected_ids.add(issue_id)
+
+        omitted = max(0, total - len(selected))
+        if omitted:
+            lines.append(
+                f"- Omitted from inline list: {omitted} older/lower-priority issues "
+                "(still available in .aidlc/issues/)"
+            )
+
+    for issue in selected:
+        title = (issue.get("title", "") or "").strip()
+        if len(title) > 120:
+            title = f"{title[:117]}..."
+        lines.append(
+            f"- {issue.get('id', 'UNKNOWN')}: {title} "
+            f"[{issue.get('priority', 'medium')}/{issue.get('status', 'pending')}]"
+        )
+    return lines
+
+
 def write_planning_index(planner) -> Path:
     """Write an index file that Claude can reference instead of pasting everything."""
     index_path = planner.run_dir.parent.parent / "planning_index.md"
@@ -50,6 +156,75 @@ def write_planning_index(planner) -> Path:
             for issue_file in issue_files:
                 lines.append(f"- .aidlc/issues/{issue_file.name}")
             lines.append("")
+
+    if planner.state.issues:
+        issues = sorted(
+            planner.state.issues,
+            key=lambda issue: _issue_number(issue.get("id", "")),
+        )
+        lines.append("## Issue Backlog Summary")
+        lines.append(f"- Total issues: {len(issues)}")
+
+        status_counts = {}
+        priority_counts = {"high": 0, "medium": 0, "low": 0}
+        label_counts = {}
+        for issue in issues:
+            status = issue.get("status", "pending")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            priority = issue.get("priority", "medium")
+            if priority in priority_counts:
+                priority_counts[priority] += 1
+            for label in issue.get("labels", []) or []:
+                label_counts[label] = label_counts.get(label, 0) + 1
+
+        completed = sum(
+            status_counts.get(name, 0) for name in ("implemented", "verified", "skipped")
+        )
+        completion_pct = (completed / len(issues)) * 100 if issues else 0.0
+        lines.append(f"- Completion: {completed}/{len(issues)} ({completion_pct:.1f}%)")
+        lines.append(
+            f"- Priority totals: high={priority_counts['high']}, "
+            f"medium={priority_counts['medium']}, low={priority_counts['low']}"
+        )
+        lines.append(
+            "- Status totals: "
+            + ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+        )
+        lines.append("")
+
+        if label_counts:
+            lines.append("### Category Rollup (Labels)")
+            for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0])):
+                lines.append(f"- {label}: {count}")
+            lines.append("")
+
+        lines.append("### Active Issues")
+        active_statuses = ("pending", "in_progress", "blocked", "failed")
+        active_issues = [issue for issue in issues if issue.get("status", "pending") in active_statuses]
+        if active_issues:
+            for issue in active_issues:
+                labels = ", ".join(issue.get("labels", []) or [])
+                label_part = f" labels: {labels}" if labels else ""
+                lines.append(
+                    f"- {issue.get('id', 'UNKNOWN')} [{issue.get('status', 'pending')}] "
+                    f"[{issue.get('priority', 'medium')}] — {issue.get('title', '')}{label_part}"
+                )
+        else:
+            lines.append("- none")
+        lines.append("")
+
+        lines.append("### Completed Issues")
+        done_statuses = ("implemented", "verified", "skipped")
+        done_issues = [issue for issue in issues if issue.get("status", "pending") in done_statuses]
+        if done_issues:
+            for issue in done_issues:
+                lines.append(
+                    f"- {issue.get('id', 'UNKNOWN')} [{issue.get('status', 'pending')}] "
+                    f"[{issue.get('priority', 'medium')}] — {issue.get('title', '')}"
+                )
+        else:
+            lines.append("- none")
+        lines.append("")
 
     if planner.doc_files:
         other_docs = [
@@ -97,17 +272,13 @@ def build_prompt(planner, is_finalization: bool) -> str:
     ]
 
     if planner._last_cycle_notes:
+        max_prev_notes = max(
+            100, int(planner.config.get("planning_last_cycle_notes_max_chars", 500))
+        )
         sections.append("\n## Previous Cycle\n")
-        sections.append(planner._last_cycle_notes[:500])
+        sections.append(planner._last_cycle_notes[:max_prev_notes])
 
-    if planner.state.issues:
-        sections.append(f"\n## Existing Issues ({len(planner.state.issues)} total)\n")
-        sections.append("One-line index. Read .aidlc/issues/{ID}.md for full specs.\n")
-        for issue in planner.state.issues:
-            sections.append(
-                f"- {issue['id']}: {issue.get('title', '')} "
-                f"[{issue.get('priority', 'medium')}]"
-            )
+    sections.extend(_render_existing_issues_section(planner))
 
     if planner.doc_gaps:
         critical_gaps = [g for g in planner.doc_gaps if g.severity == "critical"]
@@ -126,7 +297,7 @@ def build_prompt(planner, is_finalization: bool) -> str:
         "- **ARCHITECTURE.md** — system structure\n"
         "- **DESIGN.md** — patterns and conventions\n"
         "- **ROADMAP.md** (optional) — milestone guidance if maintained\n"
-        "- **.aidlc/planning_index.md** — full index of all docs, research, and issues\n"
+        "- **.aidlc/planning_index.md** — full issue ledger (status/category/completion) plus docs index\n"
         "- **.aidlc/issues/*.md** — full specs of existing issues\n"
         "- **docs/research/*.md** — completed research (do NOT re-request)\n\n"
         "Read specific files when you need detail. Do NOT ask for content to be "

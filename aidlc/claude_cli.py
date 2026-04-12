@@ -4,6 +4,7 @@ Shells out to `claude` CLI. The CLI must be installed and authenticated.
 """
 
 import re
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -66,8 +67,9 @@ class ClaudeCLI:
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
 
-        warn_interval = self.config.get("claude_long_run_warn_seconds", 300)
-        hard_timeout = self.config.get("claude_hard_timeout_seconds", 0)
+        warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
+        hard_timeout = max(0, int(self.config.get("claude_hard_timeout_seconds", 1800)))
+        timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
 
         retries = 0
         last_failure_type = None
@@ -91,38 +93,51 @@ class ClaudeCLI:
                 proc.stdin.write(prompt)
                 proc.stdin.close()
 
-                # Wait with periodic warnings instead of hard timeout
+                # Wait with periodic warnings and optional hard timeout.
                 timed_out = False
+                timeout_forced = False
                 while proc.poll() is None:
-                    elapsed = time.time() - start
-                    if hard_timeout and elapsed >= hard_timeout:
-                        timed_out = True
-                        self.logger.warning(
-                            f"Claude CLI exceeded hard timeout ({hard_timeout}s). "
-                            "Terminating process."
-                        )
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
-                            proc.wait(timeout=5)
-                        break
                     try:
                         proc.wait(timeout=warn_interval)
                     except subprocess.TimeoutExpired:
+                        elapsed = time.time() - start
                         self.logger.warning(
                             f"Claude CLI still running ({elapsed:.0f}s elapsed)..."
                         )
+                        if hard_timeout and elapsed >= hard_timeout:
+                            timed_out = True
+                            self.logger.warning(
+                                f"Claude CLI exceeded hard timeout ({hard_timeout}s). "
+                                f"Requesting graceful stop (grace={timeout_grace}s)."
+                            )
+                            self._request_graceful_stop(proc)
+                            try:
+                                proc.wait(timeout=timeout_grace)
+                            except subprocess.TimeoutExpired:
+                                timeout_forced = True
+                                self.logger.warning(
+                                    "Claude CLI did not stop gracefully; forcing termination."
+                                )
+                                proc.terminate()
+                                try:
+                                    proc.wait(timeout=5)
+                                except subprocess.TimeoutExpired:
+                                    proc.kill()
+                                    proc.wait(timeout=5)
+                            break
 
                 duration = time.time() - start
                 stdout = proc.stdout.read()
                 stderr = proc.stderr.read()
                 returncode = proc.returncode if proc.returncode is not None else 124
-                if timed_out and returncode == 0:
+                if timeout_forced and returncode == 0:
                     returncode = 124
 
                 if returncode == 0:
+                    if timed_out:
+                        self.logger.info(
+                            "Claude CLI exited cleanly after timeout stop request; accepting output."
+                        )
                     return {
                         "success": True,
                         "output": stdout,
@@ -166,6 +181,14 @@ class ClaudeCLI:
             "duration_seconds": last_duration,
             "retries": retries,
         }
+
+    @staticmethod
+    def _request_graceful_stop(proc: subprocess.Popen) -> None:
+        """Ask Claude process to stop cleanly before forcing termination."""
+        try:
+            proc.send_signal(signal.SIGINT)
+        except (AttributeError, ValueError, ProcessLookupError):
+            proc.terminate()
 
     def _retry_delay(self, attempt: int) -> float:
         """Calculate retry delay with exponential backoff and jitter."""

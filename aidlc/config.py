@@ -20,7 +20,8 @@ DEFAULTS = {
     "claude_model_implementation": "opus",   # model for implementation
     "claude_model_finalization": "sonnet",    # model for finalization passes
     "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
-    "claude_hard_timeout_seconds": 0,       # 0 = disabled (no hard kill)
+    "claude_hard_timeout_seconds": 1800,    # default 30-minute escape hatch for stuck runs
+    "claude_timeout_grace_seconds": 30,     # wait for graceful Claude shutdown before force-kill
     "retry_max_attempts": 2,
     "retry_base_delay_seconds": 30,
     "retry_max_delay_seconds": 300,
@@ -79,6 +80,9 @@ DEFAULTS = {
     "project_brief_max_chars": 20000,       # max size of generated project brief
     "phase_context_max_chars": 20000,       # max chars for phase-focused docs per cycle
     "max_planning_prompt_chars": 60000,     # total prompt budget per planning cycle
+    "planning_issue_index_max_items": 40,   # max issues listed inline in planning prompt
+    "planning_issue_index_include_all_until": 30,  # list all issues until this count
+    "planning_last_cycle_notes_max_chars": 500,    # max chars from previous-cycle notes
 
     # Validation loop
     "validation_enabled": True,
@@ -158,7 +162,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
             "fail_on_validation_incomplete": True,
             "fail_on_final_test_failure": True,
             "strict_change_detection": True,
-            "claude_hard_timeout_seconds": 3600,
+            "claude_hard_timeout_seconds": 1800,
         }
         for key, value in production_defaults.items():
             if key not in user_keys:
