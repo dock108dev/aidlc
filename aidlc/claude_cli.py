@@ -16,6 +16,16 @@ _TRANSIENT_PATTERNS = re.compile(
 )
 
 
+def _compact_text(value: str | None, max_len: int = 240) -> str:
+    """Compact multiline text for concise log output."""
+    if not value:
+        return ""
+    compact = " ".join(value.split())
+    if len(compact) <= max_len:
+        return compact
+    return f"{compact[: max_len - 3]}..."
+
+
 class ClaudeCLIError(Exception):
     pass
 
@@ -106,13 +116,22 @@ class ClaudeCLI:
                 # Wait with periodic warnings and optional hard timeout.
                 timed_out = False
                 timeout_forced = False
+                still_running_warnings = 0
                 while proc.poll() is None:
                     try:
                         proc.wait(timeout=warn_interval)
                     except subprocess.TimeoutExpired:
                         elapsed = time.time() - start
+                        still_running_warnings += 1
+                        timeout_status = (
+                            f"hard timeout in {max(0, hard_timeout - elapsed):.0f}s"
+                            if hard_timeout
+                            else "no hard timeout configured"
+                        )
                         self.logger.warning(
-                            f"Claude CLI still running ({elapsed:.0f}s elapsed)..."
+                            "Claude CLI still running "
+                            f"(elapsed={elapsed:.0f}s, warn_count={still_running_warnings}, "
+                            f"{timeout_status}, model={model})"
                         )
                         if hard_timeout and elapsed >= hard_timeout:
                             timed_out = True
@@ -148,6 +167,10 @@ class ClaudeCLI:
                         self.logger.info(
                             "Claude CLI exited cleanly after timeout stop request; accepting output."
                         )
+                    self.logger.debug(
+                        "Claude CLI completed successfully "
+                        f"(duration={duration:.1f}s, stdout_chars={len(stdout)}, retries={retries})"
+                    )
                     return {
                         "success": True,
                         "output": stdout,
@@ -158,22 +181,38 @@ class ClaudeCLI:
                     }
                 else:
                     stderr_text = stderr or ""
+                    stdout_text = stdout or ""
                     if timed_out:
                         failure_type = "timeout"
-                        if not stderr_text:
+                        if not stderr_text and not stdout_text:
                             stderr_text = "Claude CLI timed out"
                     else:
-                        failure_type = self._classify_failure(returncode, stderr_text)
+                        failure_type = self._classify_failure(
+                            returncode, f"{stderr_text}\n{stdout_text}"
+                        )
                     last_failure_type = failure_type
-                    last_error = stderr_text[:500]
+                    stderr_snippet = _compact_text(stderr_text, 320)
+                    stdout_snippet = _compact_text(stdout_text, 320)
+                    reason_snippet = stderr_snippet or stdout_snippet or "no stderr/stdout captured"
+                    last_error = reason_snippet[:500]
                     last_duration = duration
                     self.logger.warning(
-                        f"Claude CLI returned {returncode} ({failure_type}): {stderr_text[:200]}"
+                        "Claude CLI failed "
+                        f"(attempt={attempt + 1}/{self.max_retries + 1}, rc={returncode}, "
+                        f"failure_type={failure_type}, duration={duration:.1f}s, "
+                        f"stderr_chars={len(stderr_text)}, stdout_chars={len(stdout_text)})"
+                    )
+                    self.logger.warning(
+                        f"Claude CLI failure detail: {reason_snippet}"
                     )
                     retries += 1
                     if attempt < self.max_retries:
                         delay = self._retry_delay(attempt)
-                        self.logger.info(f"Retrying in {delay:.0f}s (attempt {attempt + 1})...")
+                        next_attempt = attempt + 2
+                        self.logger.info(
+                            "Retrying Claude CLI "
+                            f"in {delay:.0f}s (next attempt {next_attempt}/{self.max_retries + 1})"
+                        )
                         time.sleep(delay)
 
             except FileNotFoundError:
