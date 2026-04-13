@@ -4,11 +4,10 @@ import json
 import logging
 import subprocess
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from aidlc.implementer import Implementer
-from aidlc.models import RunState, RunPhase, Issue, IssueStatus
+from aidlc.models import RunState, Issue, IssueStatus
 
 
 @pytest.fixture
@@ -79,6 +78,71 @@ def make_state_with_issue(issue_id="ISSUE-001", **overrides):
 
 
 class TestImplementIssueSuccess:
+    @patch("aidlc.implementer.subprocess.run")
+    def test_uses_default_implementation_model(self, mock_subproc, config, logger, tmp_path):
+        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        config["claude_model_implementation"] = "sonnet"
+        config["claude_model_implementation_complex"] = "opus"
+        cli = make_cli_success({
+            "issue_id": "ISSUE-001", "success": True,
+            "summary": "Done", "files_changed": ["a.py"],
+            "tests_passed": True, "notes": "",
+        })
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        result = impl._implement_issue(issue)
+        assert result is True
+        kwargs = cli.execute_prompt.call_args.kwargs
+        assert kwargs.get("model_override") == "sonnet"
+
+    @patch("aidlc.implementer.subprocess.run")
+    def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):
+        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        config["claude_model_implementation"] = "sonnet"
+        config["claude_model_implementation_complex"] = "opus"
+        config["implementation_complexity_acceptance_criteria_threshold"] = 2
+        cli = make_cli_success({
+            "issue_id": "ISSUE-001", "success": True,
+            "summary": "Done", "files_changed": ["a.py"],
+            "tests_passed": True, "notes": "",
+        })
+        state = make_state_with_issue(acceptance_criteria=["AC1", "AC2", "AC3"])
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        result = impl._implement_issue(issue)
+        assert result is True
+        kwargs = cli.execute_prompt.call_args.kwargs
+        assert kwargs.get("model_override") == "opus"
+
+    @patch("aidlc.implementer.subprocess.run")
+    def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
+        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        config["claude_model_implementation"] = "sonnet"
+        config["claude_model_implementation_complex"] = "opus"
+        config["implementation_escalate_on_retry"] = True
+        cli = make_cli_success({
+            "issue_id": "ISSUE-001", "success": True,
+            "summary": "Done", "files_changed": ["a.py"],
+            "tests_passed": True, "notes": "",
+        })
+        state = make_state_with_issue(attempt_count=1)
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        result = impl._implement_issue(issue)
+        assert result is True
+        kwargs = cli.execute_prompt.call_args.kwargs
+        assert kwargs.get("model_override") == "opus"
+
     @patch("aidlc.implementer.subprocess.run")
     def test_successful_with_json_result(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
@@ -384,8 +448,10 @@ class TestFixFailingTests:
         impl.test_command = "pytest"
         issue = Issue(id="ISSUE-001", title="T", description="D",
                       acceptance_criteria=["AC1"])
-        result = impl._fix_failing_tests(issue)
+        result = impl._fix_failing_tests(issue, model_override="opus")
         assert result is True
+        kwargs = cli.execute_prompt.call_args.kwargs
+        assert kwargs.get("model_override") == "opus"
 
     @patch("aidlc.implementer.subprocess.run")
     def test_fix_fails(self, mock_run, config, logger, tmp_path):

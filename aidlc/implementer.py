@@ -40,6 +40,41 @@ class Implementer:
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
+        self.implementation_default_model = config.get(
+            "claude_model_implementation",
+            config.get("claude_model", "sonnet"),
+        )
+        self.implementation_complex_model = config.get(
+            "claude_model_implementation_complex",
+            "opus",
+        )
+        self.escalate_on_retry = config.get("implementation_escalate_on_retry", True)
+        self.complexity_ac_threshold = max(
+            1, int(config.get("implementation_complexity_acceptance_criteria_threshold", 6))
+        )
+        self.complexity_dep_threshold = max(
+            1, int(config.get("implementation_complexity_dependencies_threshold", 3))
+        )
+        self.complexity_description_threshold = max(
+            200,
+            int(config.get("implementation_complexity_description_chars_threshold", 2500)),
+        )
+        default_labels = [
+            "architecture",
+            "security",
+            "migration",
+            "refactor-core",
+            "cross-cutting",
+        ]
+        raw_complexity_labels = config.get(
+            "implementation_complexity_labels",
+            default_labels,
+        )
+        self.complexity_labels = {
+            str(label).strip().lower()
+            for label in raw_complexity_labels
+            if str(label).strip()
+        }
 
     def run(self) -> bool:
         """Run implementation loop until all issues are resolved.
@@ -88,7 +123,7 @@ class Implementer:
             # Cycle cap for dry-run
             if max_cycles and self.state.implementation_cycles >= max_cycles:
                 self.state.stop_reason = f"Max implementation cycles ({max_cycles})"
-                self.logger.info(f"Max implementation cycles reached.")
+                self.logger.info("Max implementation cycles reached.")
                 break
 
             # Get next issue to work on
@@ -168,6 +203,7 @@ class Implementer:
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
         self.logger.debug(f"Implementation prompt: {len(prompt)} chars")
+        model_override = self._select_implementation_model(issue)
 
         # Execute Claude with file edit permissions
         start_time = time.time()
@@ -175,6 +211,7 @@ class Implementer:
             prompt,
             self.project_root,
             allow_edits=True,
+            model_override=model_override,
         )
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration
@@ -256,7 +293,7 @@ class Implementer:
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
                 # Give Claude a chance to fix
-                fix_success = self._fix_failing_tests(issue)
+                fix_success = self._fix_failing_tests(issue, model_override=model_override)
                 if fix_success:
                     impl_result.tests_passed = True
                 else:
@@ -313,9 +350,45 @@ class Implementer:
     def _implementation_instructions(self) -> str:
         return implementation_instructions(self.test_command)
 
-    def _fix_failing_tests(self, issue: Issue) -> bool:
+    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> bool:
         """Give Claude a chance to fix failing tests."""
-        return fix_failing_tests(self, issue)
+        return fix_failing_tests(self, issue, model_override=model_override)
+
+    def _select_implementation_model(self, issue: Issue) -> str:
+        """Select model for an issue, escalating to complex model when warranted."""
+        is_complex = False
+        reasons = []
+
+        if self.escalate_on_retry and issue.attempt_count >= 2:
+            is_complex = True
+            reasons.append("retry")
+
+        if len(issue.acceptance_criteria or []) >= self.complexity_ac_threshold:
+            is_complex = True
+            reasons.append("acceptance_criteria")
+
+        if len(issue.dependencies or []) >= self.complexity_dep_threshold:
+            is_complex = True
+            reasons.append("dependencies")
+
+        if len((issue.description or "").strip()) >= self.complexity_description_threshold:
+            is_complex = True
+            reasons.append("description_size")
+
+        if self.complexity_labels:
+            labels = {str(label).strip().lower() for label in (issue.labels or [])}
+            if labels.intersection(self.complexity_labels):
+                is_complex = True
+                reasons.append("labels")
+
+        selected = self.implementation_complex_model if is_complex else self.implementation_default_model
+        if reasons:
+            self.logger.info(
+                f"{issue.id}: using model '{selected}' (complexity: {', '.join(reasons)})"
+            )
+        else:
+            self.logger.info(f"{issue.id}: using model '{selected}'")
+        return selected
 
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger)

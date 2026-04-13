@@ -33,7 +33,8 @@ Canonical defaults live in `aidlc/config.py`.
 | `claude_model` | `"opus"` |
 | `claude_model_planning` | `"sonnet"` |
 | `claude_model_research` | `"sonnet"` |
-| `claude_model_implementation` | `"opus"` |
+| `claude_model_implementation` | `"sonnet"` |
+| `claude_model_implementation_complex` | `"opus"` |
 | `claude_model_finalization` | `"sonnet"` |
 | `claude_long_run_warn_seconds` | `300` |
 | `claude_hard_timeout_seconds` | `1800` (30 minutes) |
@@ -71,6 +72,11 @@ Canonical defaults live in `aidlc/config.py`.
 | Key | Default |
 |---|---|
 | `max_implementation_attempts` | `3` |
+| `implementation_escalate_on_retry` | `true` |
+| `implementation_complexity_acceptance_criteria_threshold` | `6` |
+| `implementation_complexity_dependencies_threshold` | `3` |
+| `implementation_complexity_description_chars_threshold` | `2500` |
+| `implementation_complexity_labels` | `["architecture", "security", "migration", "refactor-core", "cross-cutting"]` |
 | `run_tests_command` | `null` |
 | `test_timeout_seconds` | `300` |
 | `implementation_allowed_paths` | `null` |

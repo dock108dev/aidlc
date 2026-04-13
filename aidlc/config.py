@@ -17,7 +17,8 @@ DEFAULTS = {
     "claude_model": "opus",                  # default model (used for implementation)
     "claude_model_planning": "sonnet",       # model for planning cycles
     "claude_model_research": "sonnet",       # model for research actions
-    "claude_model_implementation": "opus",   # model for implementation
+    "claude_model_implementation": "sonnet",   # default model for implementation
+    "claude_model_implementation_complex": "opus",  # model for complex implementation issues
     "claude_model_finalization": "sonnet",    # model for finalization passes
     "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
     "claude_hard_timeout_seconds": 1800,    # default 30-minute escape hatch for stuck runs
@@ -32,6 +33,17 @@ DEFAULTS = {
     "finalization_budget_percent": 10,
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
+    "implementation_escalate_on_retry": True,  # escalate retries to complex implementation model
+    "implementation_complexity_acceptance_criteria_threshold": 6,
+    "implementation_complexity_dependencies_threshold": 3,
+    "implementation_complexity_description_chars_threshold": 2500,
+    "implementation_complexity_labels": [  # labels that force complex implementation model
+        "architecture",
+        "security",
+        "migration",
+        "refactor-core",
+        "cross-cutting",
+    ],
     "max_planning_cycles": 0,       # 0 = unlimited (dry-run defaults to 3)
     "max_implementation_cycles": 0,  # 0 = unlimited (dry-run defaults to 3)
     "run_tests_command": None,       # auto-detected if not set

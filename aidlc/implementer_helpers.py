@@ -213,7 +213,7 @@ def ensure_test_deps(project_root: Path, test_command: str | None, logger) -> No
             break
 
 
-def fix_failing_tests(impl, issue) -> bool:
+def fix_failing_tests(impl, issue, model_override: str | None = None) -> bool:
     """Run test-fix prompt and re-run tests."""
     impl.logger.info(f"Attempting to fix failing tests for {issue.id}")
     test_output = impl._run_tests(capture_output=True)
@@ -236,7 +236,12 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
 
 {IMPLEMENTATION_SCHEMA_DESCRIPTION}
 """
-    result = impl.cli.execute_prompt(fix_prompt, impl.project_root, allow_edits=True)
+    result = impl.cli.execute_prompt(
+        fix_prompt,
+        impl.project_root,
+        allow_edits=True,
+        model_override=model_override,
+    )
     if result["success"]:
         impl.state.elapsed_seconds += result.get("duration_seconds", 0)
         return impl._run_tests()
