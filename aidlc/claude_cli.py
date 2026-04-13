@@ -14,6 +14,14 @@ _TRANSIENT_PATTERNS = re.compile(
     r"rate.?limit|connection|timeout|API error|overloaded|503|502|429|ECONNRESET",
     re.IGNORECASE,
 )
+_SERVICE_OUTAGE_PATTERNS = re.compile(
+    (
+        r"\b500\b|internal server error|service unavailable|temporarily unavailable|"
+        r"bad gateway|gateway timeout|upstream|network is unreachable|dns|eai_again|"
+        r"could not resolve|name or service not known"
+    ),
+    re.IGNORECASE,
+)
 
 
 def _compact_text(value: str | None, max_len: int = 240) -> str:
@@ -90,15 +98,33 @@ class ClaudeCLI:
                 self._warned_legacy_timeout_key = True
         hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 1800))
         timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
+        outage_max_wait = max(
+            0, int(self.config.get("claude_service_outage_max_wait_seconds", 7200))
+        )
 
         retries = 0
         last_failure_type = None
         last_error = None
         last_duration = 0.0
-        for attempt in range(self.max_retries + 1):
+        attempt = 0
+        outage_started_at: float | None = None
+        outage_retry_attempt = 0
+        outage_budget_exceeded = False
+        while True:
+            attempt += 1
             start = time.time()
             try:
-                self.logger.debug(f"Claude CLI attempt {attempt + 1}/{self.max_retries + 1}")
+                if outage_started_at is not None:
+                    outage_elapsed = max(0.0, time.time() - outage_started_at)
+                    outage_remaining = max(0.0, outage_max_wait - outage_elapsed)
+                    self.logger.debug(
+                        "Claude CLI outage retry attempt "
+                        f"{attempt} (elapsed={outage_elapsed:.0f}s, remaining={outage_remaining:.0f}s)"
+                    )
+                else:
+                    self.logger.debug(
+                        f"Claude CLI attempt {attempt}/{self.max_retries + 1}"
+                    )
 
                 # Run without timeout — let Claude finish. Warn periodically.
                 proc = subprocess.Popen(
@@ -186,6 +212,8 @@ class ClaudeCLI:
                         failure_type = "timeout"
                         if not stderr_text and not stdout_text:
                             stderr_text = "Claude CLI timed out"
+                    elif self._is_service_outage(returncode, stderr_text, stdout_text):
+                        failure_type = "service_down"
                     else:
                         failure_type = self._classify_failure(
                             returncode, f"{stderr_text}\n{stdout_text}"
@@ -206,14 +234,43 @@ class ClaudeCLI:
                         f"Claude CLI failure detail: {reason_snippet}"
                     )
                     retries += 1
-                    if attempt < self.max_retries:
-                        delay = self._retry_delay(attempt)
-                        next_attempt = attempt + 2
+                    if failure_type == "service_down":
+                        if outage_started_at is None:
+                            outage_started_at = time.time()
+                            self.logger.warning(
+                                "Claude service appears offline (5xx/network outage). "
+                                f"Will keep retrying with exponential backoff for up to "
+                                f"{outage_max_wait:.0f}s."
+                            )
+                        outage_elapsed = max(0.0, time.time() - outage_started_at)
+                        outage_remaining = max(0.0, outage_max_wait - outage_elapsed)
+                        if outage_remaining <= 0:
+                            outage_budget_exceeded = True
+                            self.logger.error(
+                                "Claude service outage exceeded retry window "
+                                f"({outage_max_wait:.0f}s)."
+                            )
+                            break
+                        delay = min(self._retry_delay(outage_retry_attempt), outage_remaining)
+                        outage_retry_attempt += 1
+                        self.logger.info(
+                            "Retrying Claude CLI "
+                            f"in {delay:.0f}s due to service outage "
+                            f"(outage_elapsed={outage_elapsed:.0f}s, "
+                            f"outage_remaining={outage_remaining:.0f}s)"
+                        )
+                        time.sleep(delay)
+                        continue
+                    if attempt <= self.max_retries:
+                        delay = self._retry_delay(attempt - 1)
+                        next_attempt = attempt + 1
                         self.logger.info(
                             "Retrying Claude CLI "
                             f"in {delay:.0f}s (next attempt {next_attempt}/{self.max_retries + 1})"
                         )
                         time.sleep(delay)
+                        continue
+                    break
 
             except FileNotFoundError:
                 raise ClaudeCLIError(
@@ -221,6 +278,18 @@ class ClaudeCLI:
                     "Install it or set claude_cli_command in config."
                 )
 
+        if outage_budget_exceeded:
+            return {
+                "success": False,
+                "output": None,
+                "error": (
+                    "Claude has been unavailable for an extended period (2h outage window reached). "
+                    "Please check Claude status and retry when service is available."
+                ),
+                "failure_type": "service_down",
+                "duration_seconds": last_duration,
+                "retries": retries,
+            }
         return {
             "success": False,
             "output": None,
@@ -255,6 +324,13 @@ class ClaudeCLI:
         if _TRANSIENT_PATTERNS.search(stderr):
             return "transient"
         return "issue"
+
+    @staticmethod
+    def _is_service_outage(returncode: int, stderr: str, stdout: str) -> bool:
+        if returncode in (500, 502, 503, 504):
+            return True
+        combined = f"{stderr}\n{stdout}"
+        return bool(_SERVICE_OUTAGE_PATTERNS.search(combined))
 
     def check_available(self) -> bool:
         if self.dry_run:

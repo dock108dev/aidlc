@@ -27,6 +27,7 @@ DEFAULTS = {
     "retry_base_delay_seconds": 30,
     "retry_max_delay_seconds": 300,
     "retry_backoff_factor": 2.0,
+    "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
     "max_consecutive_failures": 3,
     "diminishing_returns_window": 5,       # track last N cycles for diminishing returns
     "diminishing_returns_threshold": 2,    # exit after N consecutive cycles with no new issues

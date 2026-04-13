@@ -165,6 +165,26 @@ class TestExecutePrompt:
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "sonnet"
 
+    @patch("aidlc.claude_cli.time.sleep")
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_service_outage_retries_until_window_expires(
+        self, mock_popen, mock_time, mock_sleep, base_config, logger, tmp_path
+    ):
+        mock_popen.return_value = _mock_popen_failure(1, "HTTP 500 internal server error")
+        base_config["retry_max_attempts"] = 0
+        base_config["claude_service_outage_max_wait_seconds"] = 3
+        clock = itertools.count(start=0.0, step=1.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["success"] is False
+        assert result["failure_type"] == "service_down"
+        assert "unavailable for an extended period" in result["error"]
+        assert mock_popen.call_count > 1
+        assert mock_sleep.called
+
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_legacy_timeout_key_used_as_fallback(self, mock_popen, base_config, logger, tmp_path):
         mock_popen.return_value = _mock_popen_success("ok")
@@ -252,3 +272,9 @@ class TestClassifyFailure:
     def test_signal_death_is_transient(self):
         assert ClaudeCLI._classify_failure(137, "") == "transient"
         assert ClaudeCLI._classify_failure(-9, "") == "transient"
+
+    def test_service_outage_detection_from_500(self):
+        assert ClaudeCLI._is_service_outage(1, "HTTP 500 internal server error", "") is True
+
+    def test_service_outage_detection_from_network_message(self):
+        assert ClaudeCLI._is_service_outage(1, "", "temporary DNS failure") is True

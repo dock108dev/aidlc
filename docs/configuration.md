@@ -43,6 +43,7 @@ Canonical defaults live in `aidlc/config.py`.
 | `retry_base_delay_seconds` | `30` |
 | `retry_max_delay_seconds` | `300` |
 | `retry_backoff_factor` | `2.0` |
+| `claude_service_outage_max_wait_seconds` | `7200` (2 hours) |
 
 ### Planning and Context
 
