@@ -108,6 +108,25 @@ class RunState:
     plan_budget_seconds: float = 14400.0  # 4 hours default
     plan_elapsed_seconds: float = 0.0
 
+    # Claude usage telemetry
+    claude_calls_total: int = 0
+    claude_calls_succeeded: int = 0
+    claude_calls_failed: int = 0
+    claude_retries_total: int = 0
+    claude_input_tokens: int = 0
+    claude_output_tokens: int = 0
+    claude_cache_creation_input_tokens: int = 0
+    claude_cache_read_input_tokens: int = 0
+    claude_total_input_tokens: int = 0
+    claude_total_tokens: int = 0
+    claude_web_search_requests: int = 0
+    claude_web_fetch_requests: int = 0
+    claude_cost_usd_exact: float = 0.0
+    claude_cost_usd_estimated: float = 0.0
+    claude_estimated_cost_calls: int = 0
+    claude_exact_cost_calls: int = 0
+    claude_model_usage: dict = field(default_factory=dict)
+
     # Planning stats
     planning_cycles: int = 0
     issues_created: int = 0
@@ -212,6 +231,23 @@ class RunState:
             "wall_clock_seconds": self.wall_clock_seconds,
             "plan_budget_seconds": self.plan_budget_seconds,
             "plan_elapsed_seconds": self.plan_elapsed_seconds,
+            "claude_calls_total": self.claude_calls_total,
+            "claude_calls_succeeded": self.claude_calls_succeeded,
+            "claude_calls_failed": self.claude_calls_failed,
+            "claude_retries_total": self.claude_retries_total,
+            "claude_input_tokens": self.claude_input_tokens,
+            "claude_output_tokens": self.claude_output_tokens,
+            "claude_cache_creation_input_tokens": self.claude_cache_creation_input_tokens,
+            "claude_cache_read_input_tokens": self.claude_cache_read_input_tokens,
+            "claude_total_input_tokens": self.claude_total_input_tokens,
+            "claude_total_tokens": self.claude_total_tokens,
+            "claude_web_search_requests": self.claude_web_search_requests,
+            "claude_web_fetch_requests": self.claude_web_fetch_requests,
+            "claude_cost_usd_exact": self.claude_cost_usd_exact,
+            "claude_cost_usd_estimated": self.claude_cost_usd_estimated,
+            "claude_estimated_cost_calls": self.claude_estimated_cost_calls,
+            "claude_exact_cost_calls": self.claude_exact_cost_calls,
+            "claude_model_usage": self.claude_model_usage,
             "planning_cycles": self.planning_cycles,
             "issues_created": self.issues_created,
             "docs_scanned": self.docs_scanned,
@@ -255,6 +291,27 @@ class RunState:
         state.wall_clock_seconds = data.get("wall_clock_seconds", 0.0)
         state.plan_budget_seconds = data.get("plan_budget_seconds", 14400.0)
         state.plan_elapsed_seconds = data.get("plan_elapsed_seconds", 0.0)
+        state.claude_calls_total = data.get("claude_calls_total", 0)
+        state.claude_calls_succeeded = data.get("claude_calls_succeeded", 0)
+        state.claude_calls_failed = data.get("claude_calls_failed", 0)
+        state.claude_retries_total = data.get("claude_retries_total", 0)
+        state.claude_input_tokens = data.get("claude_input_tokens", 0)
+        state.claude_output_tokens = data.get("claude_output_tokens", 0)
+        state.claude_cache_creation_input_tokens = data.get(
+            "claude_cache_creation_input_tokens", 0
+        )
+        state.claude_cache_read_input_tokens = data.get(
+            "claude_cache_read_input_tokens", 0
+        )
+        state.claude_total_input_tokens = data.get("claude_total_input_tokens", 0)
+        state.claude_total_tokens = data.get("claude_total_tokens", 0)
+        state.claude_web_search_requests = data.get("claude_web_search_requests", 0)
+        state.claude_web_fetch_requests = data.get("claude_web_fetch_requests", 0)
+        state.claude_cost_usd_exact = data.get("claude_cost_usd_exact", 0.0)
+        state.claude_cost_usd_estimated = data.get("claude_cost_usd_estimated", 0.0)
+        state.claude_estimated_cost_calls = data.get("claude_estimated_cost_calls", 0)
+        state.claude_exact_cost_calls = data.get("claude_exact_cost_calls", 0)
+        state.claude_model_usage = data.get("claude_model_usage", {})
         state.planning_cycles = data.get("planning_cycles", 0)
         state.issues_created = data.get("issues_created", 0)
         state.docs_scanned = data.get("docs_scanned", 0)
@@ -282,3 +339,146 @@ class RunState:
         state.notes = data.get("notes", "")
         state.validation_results = data.get("validation_results", [])
         return state
+
+    def record_claude_result(self, result: dict, config: dict | None = None) -> None:
+        """Accumulate telemetry from a Claude CLI result payload."""
+        self.claude_calls_total += 1
+        if result.get("success"):
+            self.claude_calls_succeeded += 1
+        else:
+            self.claude_calls_failed += 1
+
+        retries = int(result.get("retries", 0) or 0)
+        self.claude_retries_total += retries
+
+        usage = result.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+        cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+        web_search_requests = int(usage.get("web_search_requests", 0) or 0)
+        web_fetch_requests = int(usage.get("web_fetch_requests", 0) or 0)
+        total_input_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
+        total_tokens = total_input_tokens + output_tokens
+
+        self.claude_input_tokens += input_tokens
+        self.claude_output_tokens += output_tokens
+        self.claude_cache_creation_input_tokens += cache_creation_tokens
+        self.claude_cache_read_input_tokens += cache_read_tokens
+        self.claude_total_input_tokens += total_input_tokens
+        self.claude_total_tokens += total_tokens
+        self.claude_web_search_requests += web_search_requests
+        self.claude_web_fetch_requests += web_fetch_requests
+
+        model = str(result.get("model_used") or "unknown")
+        model_usage = self.claude_model_usage.setdefault(
+            model,
+            {
+                "calls": 0,
+                "success": 0,
+                "failed": 0,
+                "retries": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "total_input_tokens": 0,
+                "total_tokens": 0,
+                "web_search_requests": 0,
+                "web_fetch_requests": 0,
+                "cost_usd_exact": 0.0,
+                "cost_usd_estimated": 0.0,
+            },
+        )
+        model_usage["calls"] += 1
+        model_usage["success"] += 1 if result.get("success") else 0
+        model_usage["failed"] += 0 if result.get("success") else 1
+        model_usage["retries"] += retries
+        model_usage["input_tokens"] += input_tokens
+        model_usage["output_tokens"] += output_tokens
+        model_usage["cache_creation_input_tokens"] += cache_creation_tokens
+        model_usage["cache_read_input_tokens"] += cache_read_tokens
+        model_usage["total_input_tokens"] += total_input_tokens
+        model_usage["total_tokens"] += total_tokens
+        model_usage["web_search_requests"] += web_search_requests
+        model_usage["web_fetch_requests"] += web_fetch_requests
+
+        cost_mode = "auto"
+        if isinstance(config, dict):
+            cost_mode = str(config.get("telemetry_cost_mode", "auto") or "auto").lower()
+
+        exact_cost = result.get("total_cost_usd")
+        exact_cost_value = None
+        try:
+            exact_cost_value = float(exact_cost) if exact_cost is not None else None
+        except (TypeError, ValueError):
+            exact_cost_value = None
+
+        should_track_exact = cost_mode in ("auto", "exact_only")
+        should_track_estimated = (
+            cost_mode in ("estimate_only", "auto")
+            and (exact_cost_value is None or cost_mode == "estimate_only")
+        )
+
+        if should_track_exact and exact_cost_value is not None:
+            self.claude_cost_usd_exact += exact_cost_value
+            self.claude_exact_cost_calls += 1
+            model_usage["cost_usd_exact"] += exact_cost_value
+
+        if should_track_estimated:
+            estimated_cost = self._estimate_usage_cost(
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+                cache_read_tokens=cache_read_tokens,
+                config=config or {},
+            )
+            self.claude_cost_usd_estimated += estimated_cost
+            self.claude_estimated_cost_calls += 1
+            model_usage["cost_usd_estimated"] += estimated_cost
+
+    @staticmethod
+    def _estimate_usage_cost(
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_creation_tokens: int,
+        cache_read_tokens: int,
+        config: dict,
+    ) -> float:
+        """Estimate cost using configurable per-model rates (USD per million tokens)."""
+        pricing = config.get("telemetry_model_pricing_usd_per_million_tokens", {})
+        if not isinstance(pricing, dict):
+            pricing = {}
+
+        model_key = str(model or "").lower()
+        selected = pricing.get(model_key)
+        if not isinstance(selected, dict):
+            if "opus" in model_key and isinstance(pricing.get("opus"), dict):
+                selected = pricing.get("opus")
+            elif "sonnet" in model_key and isinstance(pricing.get("sonnet"), dict):
+                selected = pricing.get("sonnet")
+            elif "haiku" in model_key and isinstance(pricing.get("haiku"), dict):
+                selected = pricing.get("haiku")
+            else:
+                selected = pricing.get("default")
+        if not isinstance(selected, dict):
+            selected = {}
+
+        input_rate = float(selected.get("input", 0.0) or 0.0)
+        output_rate = float(selected.get("output", 0.0) or 0.0)
+        cache_creation_rate = float(
+            selected.get("cache_creation_input", input_rate * 1.25) or 0.0
+        )
+        cache_read_rate = float(
+            selected.get("cache_read_input", input_rate * 0.10) or 0.0
+        )
+
+        return (
+            (input_tokens / 1_000_000.0) * input_rate
+            + (output_tokens / 1_000_000.0) * output_rate
+            + (cache_creation_tokens / 1_000_000.0) * cache_creation_rate
+            + (cache_read_tokens / 1_000_000.0) * cache_read_rate
+        )

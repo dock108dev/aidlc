@@ -10,6 +10,33 @@
   "claude_model_implementation_complex": "opus",
   "claude_model_finalization": "sonnet",
   "claude_hard_timeout_seconds": 600,
+  "telemetry_cost_mode": "auto",
+  "telemetry_model_pricing_usd_per_million_tokens": {
+    "default": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_creation_input": 3.75,
+      "cache_read_input": 0.3
+    },
+    "sonnet": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_creation_input": 3.75,
+      "cache_read_input": 0.3
+    },
+    "opus": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_creation_input": 18.75,
+      "cache_read_input": 1.5
+    },
+    "haiku": {
+      "input": 0.8,
+      "output": 4.0,
+      "cache_creation_input": 1.0,
+      "cache_read_input": 0.08
+    }
+  },
   "retry_max_attempts": 2,
   "retry_base_delay_seconds": 30,
   "retry_max_delay_seconds": 300,
@@ -19,9 +46,9 @@
   "finalization_budget_percent": 10,
   "max_implementation_attempts": 3,
   "implementation_escalate_on_retry": true,
-  "implementation_complexity_acceptance_criteria_threshold": 6,
-  "implementation_complexity_dependencies_threshold": 3,
-  "implementation_complexity_description_chars_threshold": 2500,
+  "implementation_complexity_acceptance_criteria_threshold": 12,
+  "implementation_complexity_dependencies_threshold": 5,
+  "implementation_complexity_description_chars_threshold": 5000,
   "implementation_complexity_labels": [
     "architecture",
     "security",

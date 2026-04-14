@@ -265,6 +265,7 @@ class Planner:
         result = self.cli.execute_prompt(
             prompt, self.project_root, allow_edits=True, model_override=planning_model,
         )
+        self.state.record_claude_result(result, self.config)
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration

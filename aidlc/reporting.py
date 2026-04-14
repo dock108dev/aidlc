@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import RunState, IssueStatus, Issue
+from .models import RunState, Issue
 
 
 def generate_run_report(state: RunState, report_dir: Path) -> Path:
@@ -33,8 +33,8 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         lines.extend([
             "## Audit Summary",
             "",
-            f"| Metric | Value |",
-            f"|---|---|",
+            "| Metric | Value |",
+            "|---|---|",
             f"| Depth | {state.audit_depth} |",
             f"| Completed | {state.audit_completed} |",
             f"| Conflicts | {len(state.audit_conflicts)} |",
@@ -44,8 +44,8 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     lines.extend([
         "## Planning Summary",
         "",
-        f"| Metric | Count |",
-        f"|---|---|",
+        "| Metric | Count |",
+        "|---|---|",
         f"| Docs scanned | {state.docs_scanned} |",
         f"| Planning cycles | {state.planning_cycles} |",
         f"| Issues created | {state.issues_created} |",
@@ -53,8 +53,8 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         "",
         "## Implementation Summary",
         "",
-        f"| Metric | Count |",
-        f"|---|---|",
+        "| Metric | Count |",
+        "|---|---|",
         f"| Total issues | {state.total_issues} |",
         f"| Implementation cycles | {state.implementation_cycles} |",
         f"| Issues implemented | {state.issues_implemented} |",
@@ -62,6 +62,46 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         f"| Issues failed | {state.issues_failed} |",
         "",
     ])
+
+    lines.extend([
+        "## Claude Telemetry",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Calls total | {state.claude_calls_total} |",
+        f"| Calls succeeded | {state.claude_calls_succeeded} |",
+        f"| Calls failed | {state.claude_calls_failed} |",
+        f"| Retries | {state.claude_retries_total} |",
+        f"| Input tokens | {state.claude_input_tokens} |",
+        f"| Output tokens | {state.claude_output_tokens} |",
+        f"| Cache write tokens | {state.claude_cache_creation_input_tokens} |",
+        f"| Cache read tokens | {state.claude_cache_read_input_tokens} |",
+        f"| Total input tokens | {state.claude_total_input_tokens} |",
+        f"| Total tokens | {state.claude_total_tokens} |",
+        f"| Web search requests | {state.claude_web_search_requests} |",
+        f"| Web fetch requests | {state.claude_web_fetch_requests} |",
+        f"| Cost exact (USD) | {state.claude_cost_usd_exact:.4f} |",
+        f"| Cost estimated (USD) | {state.claude_cost_usd_estimated:.4f} |",
+        f"| Exact-cost calls | {state.claude_exact_cost_calls} |",
+        f"| Estimated-cost calls | {state.claude_estimated_cost_calls} |",
+        "",
+    ])
+
+    if state.claude_model_usage:
+        lines.append("### Claude Model Breakdown\n")
+        lines.append("| Model | Calls | In | Out | Cache Write | Cache Read | Cost Exact (USD) | Cost Est (USD) |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
+        for model, metrics in sorted(state.claude_model_usage.items()):
+            if not isinstance(metrics, dict):
+                continue
+            lines.append(
+                f"| {model} | {metrics.get('calls', 0)} | "
+                f"{metrics.get('input_tokens', 0)} | {metrics.get('output_tokens', 0)} | "
+                f"{metrics.get('cache_creation_input_tokens', 0)} | {metrics.get('cache_read_input_tokens', 0)} | "
+                f"{float(metrics.get('cost_usd_exact', 0.0) or 0.0):.4f} | "
+                f"{float(metrics.get('cost_usd_estimated', 0.0) or 0.0):.4f} |"
+            )
+        lines.append("")
 
     # Issue breakdown
     if state.issues:
@@ -88,8 +128,8 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     # Validation
     if state.validation_cycles > 0:
         lines.append("## Validation Summary\n")
-        lines.append(f"| Metric | Value |")
-        lines.append(f"|---|---|")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
         lines.append(f"| Validation cycles | {state.validation_cycles} |")
         lines.append(f"| Fix issues created | {state.validation_issues_created} |")
         for result in state.validation_test_results:
@@ -132,6 +172,10 @@ def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
 - **Implementation cycles**: {state.implementation_cycles}
 - **Issues implemented**: {state.issues_implemented}
 - **Current issue**: {state.current_issue_id or 'none'}
+- **Claude calls**: {state.claude_calls_total} total ({state.claude_calls_succeeded} ok, {state.claude_calls_failed} failed, {state.claude_retries_total} retries)
+- **Claude tokens**: in={state.claude_input_tokens}, out={state.claude_output_tokens}, cache_write={state.claude_cache_creation_input_tokens}, cache_read={state.claude_cache_read_input_tokens}, total={state.claude_total_tokens}
+- **Claude tool requests**: web_search={state.claude_web_search_requests}, web_fetch={state.claude_web_fetch_requests}
+- **Claude cost (USD)**: exact={state.claude_cost_usd_exact:.4f}, estimated={state.claude_cost_usd_estimated:.4f}
 """
     cp_path.write_text(content)
     return cp_path

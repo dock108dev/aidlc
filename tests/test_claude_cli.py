@@ -1,6 +1,7 @@
 """Tests for aidlc.claude_cli module."""
 
 import logging
+import json
 import itertools
 import subprocess
 import pytest
@@ -112,12 +113,15 @@ class TestDryRun:
 class TestExecutePrompt:
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_success(self, mock_popen, base_config, logger, tmp_path):
-        mock_popen.return_value = _mock_popen_success("output text")
+        payload = {"result": "output text", "usage": {"input_tokens": 12, "output_tokens": 6}}
+        mock_popen.return_value = _mock_popen_success(json.dumps(payload))
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
         assert result["success"] is True
         assert result["output"] == "output text"
         assert result["failure_type"] is None
+        assert result["usage"]["input_tokens"] == 12
+        assert result["usage"]["output_tokens"] == 6
 
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_allow_edits_flag(self, mock_popen, base_config, logger, tmp_path):
@@ -164,6 +168,44 @@ class TestExecutePrompt:
         assert "--model" in cmd
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "sonnet"
+        assert "--output-format" in cmd
+        assert cmd[cmd.index("--output-format") + 1] == "json"
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_extracts_cost_model_and_tool_usage(self, mock_popen, base_config, logger, tmp_path):
+        payload = {
+            "result": "done",
+            "model": "claude-sonnet-4-6",
+            "total_cost_usd": 0.1234,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "cache_creation_input_tokens": 40,
+                "cache_read_input_tokens": 200,
+                "server_tool_use": {
+                    "web_search_requests": 2,
+                    "web_fetch_requests": 1,
+                },
+            },
+        }
+        mock_popen.return_value = _mock_popen_success(json.dumps(payload))
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["total_cost_usd"] == pytest.approx(0.1234)
+        assert result["model_used"] == "claude-sonnet-4-6"
+        assert result["usage"]["cache_creation_input_tokens"] == 40
+        assert result["usage"]["cache_read_input_tokens"] == 200
+        assert result["usage"]["web_search_requests"] == 2
+        assert result["usage"]["web_fetch_requests"] == 1
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_falls_back_to_raw_output_when_json_parse_fails(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("non-json response")
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        assert result["output"] == "non-json response"
+        assert result["usage"] == {}
+        assert result["total_cost_usd"] is None
 
     @patch("aidlc.claude_cli.time.sleep")
     @patch("aidlc.claude_cli.time.time")

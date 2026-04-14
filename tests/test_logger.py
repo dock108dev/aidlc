@@ -1,8 +1,6 @@
 """Tests for aidlc.logger module."""
 
 import logging
-import pytest
-from pathlib import Path
 
 from aidlc.logger import setup_logger, log_checkpoint
 
@@ -63,8 +61,24 @@ class TestLogCheckpoint:
             "implementation_cycles": 3,
             "issues_implemented": 2,
             "issues_verified": 1,
+            "claude_calls_total": 12,
+            "claude_calls_succeeded": 10,
+            "claude_calls_failed": 2,
+            "claude_retries_total": 4,
+            "claude_input_tokens": 1000,
+            "claude_output_tokens": 400,
+            "claude_cache_creation_input_tokens": 300,
+            "claude_cache_read_input_tokens": 700,
+            "claude_total_tokens": 2400,
+            "claude_web_search_requests": 3,
+            "claude_web_fetch_requests": 1,
+            "claude_cost_usd_exact": 1.23,
+            "claude_cost_usd_estimated": 1.11,
         }
         log_checkpoint(logger, state_dict)
         content = (tmp_path / "cp_test.log").read_text()
         assert "CHECKPOINT" in content
         assert "implementing" in content
+        assert "Claude calls" in content
+        assert "Claude tokens" in content
+        assert "Claude cost (USD)" in content

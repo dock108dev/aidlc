@@ -39,11 +39,19 @@ Canonical defaults live in `aidlc/config.py`.
 | `claude_long_run_warn_seconds` | `300` |
 | `claude_hard_timeout_seconds` | `1800` (30 minutes) |
 | `claude_timeout_grace_seconds` | `30` |
+| `telemetry_cost_mode` | `"auto"` |
+| `telemetry_model_pricing_usd_per_million_tokens` | `{"default": {"input": 3.0, "output": 15.0, "cache_creation_input": 3.75, "cache_read_input": 0.30}, "sonnet": {...}, "opus": {...}, "haiku": {...}}` |
 | `retry_max_attempts` | `2` |
 | `retry_base_delay_seconds` | `30` |
 | `retry_max_delay_seconds` | `300` |
 | `retry_backoff_factor` | `2.0` |
 | `claude_service_outage_max_wait_seconds` | `7200` (2 hours) |
+
+`telemetry_cost_mode` values:
+
+- `auto`: use exact CLI cost metadata when available, estimate otherwise
+- `exact_only`: track only exact cost metadata (no fallback estimates)
+- `estimate_only`: always estimate using pricing table and token counts
 
 ### Planning and Context
 
@@ -74,9 +82,9 @@ Canonical defaults live in `aidlc/config.py`.
 |---|---|
 | `max_implementation_attempts` | `3` |
 | `implementation_escalate_on_retry` | `true` |
-| `implementation_complexity_acceptance_criteria_threshold` | `6` |
-| `implementation_complexity_dependencies_threshold` | `3` |
-| `implementation_complexity_description_chars_threshold` | `2500` |
+| `implementation_complexity_acceptance_criteria_threshold` | `12` |
+| `implementation_complexity_dependencies_threshold` | `5` |
+| `implementation_complexity_description_chars_threshold` | `5000` |
 | `implementation_complexity_labels` | `["architecture", "security", "migration", "refactor-core", "cross-cutting"]` |
 | `run_tests_command` | `null` |
 | `test_timeout_seconds` | `300` |

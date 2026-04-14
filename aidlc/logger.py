@@ -56,4 +56,29 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
     logger.info(f"  Implementation cycles: {state_dict.get('implementation_cycles', 0)}")
     logger.info(f"  Issues implemented: {state_dict.get('issues_implemented', 0)}")
     logger.info(f"  Issues verified: {state_dict.get('issues_verified', 0)}")
+    logger.info(
+        "  Claude calls: "
+        f"{state_dict.get('claude_calls_total', 0)} total, "
+        f"{state_dict.get('claude_calls_succeeded', 0)} ok, "
+        f"{state_dict.get('claude_calls_failed', 0)} failed, "
+        f"{state_dict.get('claude_retries_total', 0)} retries"
+    )
+    logger.info(
+        "  Claude tokens: "
+        f"in={state_dict.get('claude_input_tokens', 0)}, "
+        f"out={state_dict.get('claude_output_tokens', 0)}, "
+        f"cache_write={state_dict.get('claude_cache_creation_input_tokens', 0)}, "
+        f"cache_read={state_dict.get('claude_cache_read_input_tokens', 0)}, "
+        f"total={state_dict.get('claude_total_tokens', 0)}"
+    )
+    logger.info(
+        "  Claude tool requests: "
+        f"web_search={state_dict.get('claude_web_search_requests', 0)}, "
+        f"web_fetch={state_dict.get('claude_web_fetch_requests', 0)}"
+    )
+    logger.info(
+        "  Claude cost (USD): "
+        f"exact={state_dict.get('claude_cost_usd_exact', 0.0):.4f}, "
+        f"estimated={state_dict.get('claude_cost_usd_estimated', 0.0):.4f}"
+    )
     logger.info("=" * 60)

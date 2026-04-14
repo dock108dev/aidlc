@@ -423,6 +423,7 @@ def execute_research(planner, action) -> None:
     result = planner.cli.execute_prompt(
         prompt, planner.project_root, model_override=research_model
     )
+    planner.state.record_claude_result(result, planner.config)
     duration = time.time() - start_time
     planner.state.plan_elapsed_seconds += duration
     planner.state.elapsed_seconds += duration
@@ -452,6 +453,7 @@ def execute_research(planner, action) -> None:
             planner.project_root,
             model_override=research_model,
         )
+        planner.state.record_claude_result(retry_result, planner.config)
         retry_duration = time.time() - retry_start
         planner.state.plan_elapsed_seconds += retry_duration
         planner.state.elapsed_seconds += retry_duration

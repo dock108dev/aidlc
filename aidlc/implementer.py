@@ -213,6 +213,7 @@ class Implementer:
             allow_edits=True,
             model_override=model_override,
         )
+        self.state.record_claude_result(result, self.config)
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration
 

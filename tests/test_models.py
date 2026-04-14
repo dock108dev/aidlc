@@ -195,6 +195,9 @@ class TestRunState:
         state.elapsed_seconds = 123.4
         state.planning_cycles = 5
         state.issues_created = 3
+        state.claude_calls_total = 4
+        state.claude_cost_usd_exact = 1.25
+        state.claude_model_usage = {"sonnet": {"calls": 4}}
         state.issues = [
             {"id": "ISSUE-001", "title": "T", "status": "pending"},
         ]
@@ -204,4 +207,61 @@ class TestRunState:
         assert restored.status == RunStatus.RUNNING
         assert restored.phase == RunPhase.IMPLEMENTING
         assert restored.elapsed_seconds == 123.4
+        assert restored.claude_calls_total == 4
+        assert restored.claude_cost_usd_exact == 1.25
+        assert restored.claude_model_usage["sonnet"]["calls"] == 4
         assert len(restored.issues) == 1
+
+    def test_record_claude_result_uses_exact_cost_when_available(self):
+        state = RunState(run_id="t", config_name="c")
+        result = {
+            "success": True,
+            "retries": 1,
+            "model_used": "sonnet",
+            "total_cost_usd": 0.42,
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 20,
+                "cache_read_input_tokens": 30,
+                "web_search_requests": 2,
+                "web_fetch_requests": 1,
+            },
+        }
+        state.record_claude_result(result, {"telemetry_cost_mode": "auto"})
+        assert state.claude_calls_total == 1
+        assert state.claude_calls_succeeded == 1
+        assert state.claude_retries_total == 1
+        assert state.claude_total_input_tokens == 150
+        assert state.claude_total_tokens == 200
+        assert state.claude_web_search_requests == 2
+        assert state.claude_web_fetch_requests == 1
+        assert state.claude_cost_usd_exact == pytest.approx(0.42)
+        assert state.claude_cost_usd_estimated == pytest.approx(0.0)
+
+    def test_record_claude_result_estimates_cost_without_exact(self):
+        state = RunState(run_id="t", config_name="c")
+        result = {
+            "success": False,
+            "retries": 0,
+            "model_used": "sonnet",
+            "usage": {
+                "input_tokens": 1_000_000,
+                "output_tokens": 1_000_000,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        }
+        state.record_claude_result(
+            result,
+            {
+                "telemetry_cost_mode": "auto",
+                "telemetry_model_pricing_usd_per_million_tokens": {
+                    "sonnet": {"input": 2.0, "output": 8.0}
+                },
+            },
+        )
+        assert state.claude_calls_total == 1
+        assert state.claude_calls_failed == 1
+        assert state.claude_cost_usd_exact == pytest.approx(0.0)
+        assert state.claude_cost_usd_estimated == pytest.approx(10.0)

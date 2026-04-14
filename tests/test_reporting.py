@@ -1,8 +1,5 @@
 """Tests for aidlc.reporting module."""
 
-import pytest
-from pathlib import Path
-
 from aidlc.reporting import generate_run_report, generate_checkpoint_summary
 from aidlc.models import RunState, RunStatus, RunPhase
 
@@ -22,12 +19,17 @@ class TestGenerateRunReport:
         state.issues_implemented = 2
         state.issues_verified = 2
         state.issues_failed = 1
+        state.claude_calls_total = 6
+        state.claude_cost_usd_exact = 0.55
+        state.claude_model_usage = {"sonnet": {"calls": 6, "input_tokens": 100, "output_tokens": 50}}
 
         path = generate_run_report(state, tmp_path)
         assert path.exists()
         content = path.read_text()
         assert "test_report" in content
         assert "complete" in content
+        assert "Claude Telemetry" in content
+        assert "Model Breakdown" in content
 
     def test_includes_issue_table(self, tmp_path):
         state = RunState(run_id="test_report", config_name="default")
@@ -81,6 +83,11 @@ class TestGenerateCheckpointSummary:
         state.implementation_cycles = 3
         state.issues_implemented = 2
         state.current_issue_id = "ISSUE-005"
+        state.claude_calls_total = 9
+        state.claude_calls_succeeded = 8
+        state.claude_calls_failed = 1
+        state.claude_retries_total = 2
+        state.claude_total_tokens = 1234
 
         path = generate_checkpoint_summary(state, tmp_path)
         assert path.exists()
@@ -88,3 +95,4 @@ class TestGenerateCheckpointSummary:
         assert "Checkpoint 3" in content
         assert "implementing" in content
         assert "ISSUE-005" in content
+        assert "Claude calls" in content

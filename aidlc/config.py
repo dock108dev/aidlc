@@ -23,6 +23,39 @@ DEFAULTS = {
     "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
     "claude_hard_timeout_seconds": 1800,    # default 30-minute escape hatch for stuck runs
     "claude_timeout_grace_seconds": 30,     # wait for graceful Claude shutdown before force-kill
+    # Telemetry/cost tracking:
+    # - auto: use exact CLI-reported cost when available, otherwise estimate from token rates
+    # - exact_only: track only exact cost values from CLI metadata
+    # - estimate_only: always estimate from token rates
+    "telemetry_cost_mode": "auto",
+    # Estimated USD per million tokens for fallback cost tracking.
+    # These are budgeting estimates only and may differ from provider billing.
+    "telemetry_model_pricing_usd_per_million_tokens": {
+        "default": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_creation_input": 3.75,
+            "cache_read_input": 0.30,
+        },
+        "sonnet": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_creation_input": 3.75,
+            "cache_read_input": 0.30,
+        },
+        "opus": {
+            "input": 15.0,
+            "output": 75.0,
+            "cache_creation_input": 18.75,
+            "cache_read_input": 1.50,
+        },
+        "haiku": {
+            "input": 0.8,
+            "output": 4.0,
+            "cache_creation_input": 1.0,
+            "cache_read_input": 0.08,
+        },
+    },
     "retry_max_attempts": 2,
     "retry_base_delay_seconds": 30,
     "retry_max_delay_seconds": 300,
@@ -35,9 +68,9 @@ DEFAULTS = {
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
     "implementation_escalate_on_retry": True,  # escalate retries to complex implementation model
-    "implementation_complexity_acceptance_criteria_threshold": 6,
-    "implementation_complexity_dependencies_threshold": 3,
-    "implementation_complexity_description_chars_threshold": 2500,
+    "implementation_complexity_acceptance_criteria_threshold": 12,
+    "implementation_complexity_dependencies_threshold": 5,
+    "implementation_complexity_description_chars_threshold": 5000,
     "implementation_complexity_labels": [  # labels that force complex implementation model
         "architecture",
         "security",

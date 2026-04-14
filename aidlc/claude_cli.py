@@ -3,6 +3,7 @@
 Shells out to `claude` CLI. The CLI must be installed and authenticated.
 """
 
+import json
 import re
 import signal
 import subprocess
@@ -79,10 +80,21 @@ class ClaudeCLI:
                 "failure_type": None,
                 "duration_seconds": 0.0,
                 "retries": 0,
+                "usage": {},
+                "total_cost_usd": None,
+                "model_used": model_override or self.model,
+                "usage_source": "dry_run",
             }
 
         model = model_override or self.model
-        cmd = [self.cli_command, "--print", "--model", model]
+        cmd = [
+            self.cli_command,
+            "--print",
+            "--model",
+            model,
+            "--output-format",
+            "json",
+        ]
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
 
@@ -193,17 +205,24 @@ class ClaudeCLI:
                         self.logger.info(
                             "Claude CLI exited cleanly after timeout stop request; accepting output."
                         )
+                    output_text, usage, total_cost_usd, model_used, usage_source = (
+                        self._extract_cli_metadata(stdout, model)
+                    )
                     self.logger.debug(
                         "Claude CLI completed successfully "
                         f"(duration={duration:.1f}s, stdout_chars={len(stdout)}, retries={retries})"
                     )
                     return {
                         "success": True,
-                        "output": stdout,
+                        "output": output_text,
                         "error": None,
                         "failure_type": None,
                         "duration_seconds": duration,
                         "retries": retries,
+                        "usage": usage,
+                        "total_cost_usd": total_cost_usd,
+                        "model_used": model_used,
+                        "usage_source": usage_source,
                     }
                 else:
                     stderr_text = stderr or ""
@@ -289,6 +308,10 @@ class ClaudeCLI:
                 "failure_type": "service_down",
                 "duration_seconds": last_duration,
                 "retries": retries,
+                "usage": {},
+                "total_cost_usd": None,
+                "model_used": model,
+                "usage_source": "none",
             }
         return {
             "success": False,
@@ -298,7 +321,107 @@ class ClaudeCLI:
             "failure_type": last_failure_type or "transient",
             "duration_seconds": last_duration,
             "retries": retries,
+            "usage": {},
+            "total_cost_usd": None,
+            "model_used": model,
+            "usage_source": "none",
         }
+
+    @staticmethod
+    def _extract_cli_metadata(
+        stdout: str,
+        fallback_model: str,
+    ) -> tuple[str, dict, float | None, str, str]:
+        """Parse Claude CLI JSON output, returning text + usage metadata."""
+        text = stdout or ""
+        usage = {}
+        total_cost_usd = None
+        model_used = fallback_model
+        usage_source = "none"
+
+        if not text.strip():
+            return text, usage, total_cost_usd, model_used, usage_source
+
+        parsed = None
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+
+        if not isinstance(parsed, dict):
+            return text, usage, total_cost_usd, model_used, usage_source
+
+        usage_source = "claude_cli_json"
+        result_text = parsed.get("result")
+        if not isinstance(result_text, str):
+            message = parsed.get("message")
+            if isinstance(message, dict):
+                result_text = ClaudeCLI._extract_text_from_message(message)
+            else:
+                result_text = text
+
+        parsed_usage = parsed.get("usage")
+        if not isinstance(parsed_usage, dict):
+            message = parsed.get("message")
+            if isinstance(message, dict):
+                parsed_usage = message.get("usage")
+        if isinstance(parsed_usage, dict):
+            usage = {
+                "input_tokens": int(parsed_usage.get("input_tokens", 0) or 0),
+                "output_tokens": int(parsed_usage.get("output_tokens", 0) or 0),
+                "cache_creation_input_tokens": int(
+                    parsed_usage.get("cache_creation_input_tokens", 0) or 0
+                ),
+                "cache_read_input_tokens": int(
+                    parsed_usage.get("cache_read_input_tokens", 0) or 0
+                ),
+                "web_search_requests": int(
+                    (
+                        (parsed_usage.get("server_tool_use") or {}).get("web_search_requests", 0)
+                        if isinstance(parsed_usage.get("server_tool_use"), dict)
+                        else parsed_usage.get("web_search_requests", 0)
+                    )
+                    or 0
+                ),
+                "web_fetch_requests": int(
+                    (
+                        (parsed_usage.get("server_tool_use") or {}).get("web_fetch_requests", 0)
+                        if isinstance(parsed_usage.get("server_tool_use"), dict)
+                        else parsed_usage.get("web_fetch_requests", 0)
+                    )
+                    or 0
+                ),
+            }
+
+        raw_cost = parsed.get("total_cost_usd")
+        if raw_cost is None and isinstance(parsed.get("message"), dict):
+            raw_cost = parsed["message"].get("total_cost_usd")
+        try:
+            total_cost_usd = float(raw_cost) if raw_cost is not None else None
+        except (TypeError, ValueError):
+            total_cost_usd = None
+
+        raw_model = parsed.get("model")
+        if raw_model is None and isinstance(parsed.get("message"), dict):
+            raw_model = parsed["message"].get("model")
+        if isinstance(raw_model, str) and raw_model.strip():
+            model_used = raw_model
+
+        return result_text, usage, total_cost_usd, model_used, usage_source
+
+    @staticmethod
+    def _extract_text_from_message(message: dict) -> str:
+        """Extract concatenated text blocks from a Claude message object."""
+        content = message.get("content")
+        if not isinstance(content, list):
+            return ""
+        chunks = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and isinstance(block.get("text"), str):
+                chunks.append(block["text"])
+        return "".join(chunks)
 
     @staticmethod
     def _request_graceful_stop(proc: subprocess.Popen) -> None:
