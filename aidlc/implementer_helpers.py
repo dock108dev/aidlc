@@ -2,58 +2,37 @@
 
 import json
 import subprocess
+import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .schemas import IMPLEMENTATION_SCHEMA_DESCRIPTION
+from .timing import add_console_time
+
+if TYPE_CHECKING:
+    from .models import RunState
 
 
 def implementation_instructions(test_command: str | None) -> str:
-    """Return implementation instruction block."""
-    test_instruction = ""
+    """Return implementation instruction block (dense; same rules, fewer tokens)."""
+    test_line = ""
     if test_command:
-        test_instruction = f"""
-- Run tests with: `{test_command}`
-- All tests must pass before marking as complete
-- If tests fail, fix the issues"""
+        test_line = f"\n- Tests: `{test_command}` — must pass before success."
 
-    return f"""## Instructions — Implementation
+    return f"""## Instructions — Implementation (v2)
 
-You are implementing this issue. Your goal is to write production-ready code that will
-survive automated quality audits after implementation completes.
+Ship production-ready code; post-run audits apply.
 
-**Requirements:**
-- Implement exactly what the issue describes — no more, no less
-- Follow the project's existing code style and patterns
-- Write clean, well-structured code
-- Add appropriate error handling
-- Create or update tests for the changes{test_instruction}
-- Do NOT modify files unrelated to this issue
-- Do NOT introduce breaking changes to existing functionality
+**Must:** Match issue scope exactly; follow repo style; handle errors; add/update tests{test_line}
+**Must not:** Touch unrelated files; break existing behavior; leave dead code; bare `except`; hardcode secrets.
 
-**Code quality standards (enforced by post-implementation audits):**
-- **File size**: Keep files under 500 lines. Split into modules if needed.
-- **Single responsibility**: Each file/class/function does one thing well.
-- **No dead code**: Don't leave commented-out code, unused imports, or stale experiments.
-- **No duplicate logic**: Extract shared utilities. Don't copy-paste.
-- **Explicit error handling**: No bare excepts, no silent failures, no swallowed errors.
-  Log errors with context. Fail loudly on unexpected states.
-- **Test coverage**: Write tests alongside implementation. Test the happy path AND
-  edge cases. If a test framework exists, use it.
-- **No hardcoded secrets**: Use config/environment for API keys, credentials, URLs.
-- **Input validation**: Validate at system boundaries. Don't trust external input.
-- **Consistent naming**: Follow the project's naming conventions. No abbreviations
-  without precedent in the codebase.
-- **Documentation**: Add comments only where intent isn't obvious (why, not what).
-  Update docstrings for public APIs.
+**Quality:** Files <500 lines where practical; single responsibility; DRY; validate external input; docstrings on public APIs; comments only for non-obvious *why*.
 
-**Acceptance criteria must ALL be met.** Check each one.
-
-After implementation, output the structured JSON result.
-If you cannot fully implement the issue, set success to false and explain why in notes."""
+Meet **all** acceptance criteria. End with **only** the JSON block (see schema below). If blocked, `success`: false and short `notes`."""
 
 
 def build_implementation_prompt(impl, issue) -> str:
-    """Build prompt for implementing an issue."""
+    """Build prompt: static instructions + schema first (cache-friendly), then volatile context."""
     issue_file = Path(impl.config["_issues_dir"]) / f"{issue.id}.md"
     issue_content = issue_file.read_text() if issue_file.exists() else ""
 
@@ -62,45 +41,51 @@ def build_implementation_prompt(impl, issue) -> str:
         for data in impl.state.issues
         if data.get("status") in ("implemented", "verified")
     ]
+    cap_done = max(1, int(impl.config.get("implementation_completed_issues_max", 12)))
 
-    sections = [
+    static_sections = [
+        implementation_instructions(impl.test_command),
+        IMPLEMENTATION_SCHEMA_DESCRIPTION,
+    ]
+
+    volatile_sections = [
         "# Implementation Task\n",
-        f"You are implementing issue **{issue.id}** for this project.",
+        f"Issue **{issue.id}** — read full spec in `.aidlc/issues/{issue.id}.md` when present.",
         "",
         "## Project Context\n",
         impl.project_context[: impl.max_impl_context_chars],
         "",
-        f"## Issue: {issue.id} — {issue.title}\n",
-        f"**Priority**: {issue.priority}",
-        f"**Labels**: {', '.join(issue.labels) if issue.labels else 'none'}",
-        f"**Dependencies**: {', '.join(issue.dependencies) if issue.dependencies else 'none'}",
+        f"## Issue header: {issue.id} — {issue.title}\n",
+        f"- priority: {issue.priority} | labels: {', '.join(issue.labels) if issue.labels else 'none'}",
+        f"- dependencies: {', '.join(issue.dependencies) if issue.dependencies else 'none'}",
         "",
     ]
 
     if issue_content:
-        sections.extend(["### Full Issue Specification\n", issue_content])
+        volatile_sections.extend(["### Issue file content\n", issue_content])
     else:
-        sections.extend(["### Description\n", issue.description, "\n### Acceptance Criteria\n"])
+        volatile_sections.extend(["### Description\n", issue.description, "\n### Acceptance Criteria\n"])
         for criterion in issue.acceptance_criteria:
-            sections.append(f"- {criterion}")
+            volatile_sections.append(f"- {criterion}")
 
     if issue.attempt_count > 1:
-        sections.extend(
+        volatile_sections.extend(
             [
-                "\n### Previous Attempt Notes\n",
+                "\n### Previous attempt notes\n",
                 issue.implementation_notes,
-                "\n**Fix the issues from the previous attempt.**",
+                "\nAddress failures above.",
             ]
         )
 
     if completed:
-        sections.append(f"\n## Already Implemented ({len(completed)} issues)\n")
-        for data in completed[:20]:
-            sections.append(f"- {data['id']}: {data['title']}")
+        tail = completed[-cap_done:]
+        volatile_sections.append(
+            f"\n## Recently completed (last {len(tail)}/{len(completed)}; others on disk)\n"
+        )
+        for data in tail:
+            volatile_sections.append(f"- {data['id']}: {data['title']}")
 
-    sections.append(implementation_instructions(impl.test_command))
-    sections.append(IMPLEMENTATION_SCHEMA_DESCRIPTION)
-    return "\n\n".join(sections)
+    return "\n\n".join(static_sections + volatile_sections)
 
 
 def detect_test_command(project_root: Path) -> str | None:
@@ -138,7 +123,12 @@ def detect_test_command(project_root: Path) -> str | None:
     return None
 
 
-def ensure_test_deps(project_root: Path, test_command: str | None, logger) -> None:
+def ensure_test_deps(
+    project_root: Path,
+    test_command: str | None,
+    logger,
+    state: "RunState | None" = None,
+) -> None:
     """Install or verify test dependencies when safe and possible."""
     install_commands = {
         "pytest": "pip install pytest",
@@ -174,6 +164,7 @@ def ensure_test_deps(project_root: Path, test_command: str | None, logger) -> No
                 continue
 
             logger.info(f"Installing project dependencies: {command}")
+            t0 = time.time()
             try:
                 subprocess.run(
                     command,
@@ -184,28 +175,41 @@ def ensure_test_deps(project_root: Path, test_command: str | None, logger) -> No
                 )
             except (subprocess.TimeoutExpired, OSError) as exc:
                 logger.warning(f"Dependency install failed: {exc}")
+            finally:
+                if state is not None:
+                    add_console_time(state, t0)
             break
 
     for tool_name, install_cmd in install_commands.items():
         if install_cmd and tool_name in (test_command or ""):
             check_cmd = f"which {tool_name.split()[0]} || npx {tool_name.split()[0]} --version"
             try:
-                result = subprocess.run(
-                    check_cmd,
-                    shell=True,
-                    capture_output=True,
-                    cwd=str(project_root),
-                    timeout=10,
-                )
+                t0 = time.time()
+                try:
+                    result = subprocess.run(
+                        check_cmd,
+                        shell=True,
+                        capture_output=True,
+                        cwd=str(project_root),
+                        timeout=10,
+                    )
+                finally:
+                    if state is not None:
+                        add_console_time(state, t0)
                 if result.returncode != 0:
                     logger.info(f"Installing test tool: {install_cmd}")
-                    subprocess.run(
-                        install_cmd,
-                        shell=True,
-                        cwd=str(project_root),
-                        capture_output=True,
-                        timeout=120,
-                    )
+                    t1 = time.time()
+                    try:
+                        subprocess.run(
+                            install_cmd,
+                            shell=True,
+                            cwd=str(project_root),
+                            capture_output=True,
+                            timeout=120,
+                        )
+                    finally:
+                        if state is not None:
+                            add_console_time(state, t1)
             except (subprocess.TimeoutExpired, OSError):
                 logger.warning(
                     f"Unable to verify/install test tool '{tool_name}' automatically."

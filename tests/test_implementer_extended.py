@@ -497,7 +497,7 @@ class TestPreviousAttemptInPrompt:
         issue.attempt_count = 2
         issue.implementation_notes = "Previous attempt failed: syntax error"
         prompt = impl._build_implementation_prompt(issue)
-        assert "Previous Attempt" in prompt
+        assert "Previous attempt" in prompt
         assert "syntax error" in prompt
 
 

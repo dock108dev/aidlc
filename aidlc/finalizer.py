@@ -29,6 +29,7 @@ from .finalize_prompts import (
 )
 from .models import RunState, RunPhase
 from .state_manager import save_state
+from .timing import add_console_time
 
 
 PASS_PROMPTS = {
@@ -59,6 +60,20 @@ class Finalizer:
         self.project_context = project_context
         self.logger = logger
         self.project_root = Path(config["_project_root"])
+
+    def _project_context_for_finalize(self) -> str:
+        """Cap project_context for finalize prompts (avoids CLI 'Prompt is too long')."""
+        raw = self.project_context
+        max_c = max(4000, int(self.config.get("finalize_project_context_max_chars", 22000)))
+        if len(raw) <= max_c:
+            return raw
+        head = int(max_c * 0.65)
+        tail = max(0, max_c - head - 200)
+        sep = (
+            "\n\n... [truncated for finalize prompt — read README.md, ARCHITECTURE.md, "
+            "DESIGN.md, and repo files in full] ...\n\n"
+        )
+        return raw[:head] + sep + raw[-tail:]
 
     def run(self, passes: list[str] | None = None) -> None:
         """Run selected finalization passes."""
@@ -105,7 +120,7 @@ class Finalizer:
         diff_summary = self._get_diff_summary() if pass_name in ("ssot", "cleanup") else ""
 
         prompt = prompt_template.format(
-            project_context=self.project_context,
+            project_context=self._project_context_for_finalize(),
             diff_summary=diff_summary or "(no diff available — working on main branch)",
         )
 
@@ -154,22 +169,30 @@ class Finalizer:
         try:
             # Try to get diff against main/master
             for base in ("origin/main", "origin/master", "main", "master"):
-                result = subprocess.run(
-                    ["git", "diff", "--stat", f"{base}...HEAD"],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(self.project_root),
-                    timeout=30,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    # Also get the full diff (capped)
-                    full_diff = subprocess.run(
-                        ["git", "diff", f"{base}...HEAD"],
+                t0 = time.time()
+                try:
+                    result = subprocess.run(
+                        ["git", "diff", "--stat", f"{base}...HEAD"],
                         capture_output=True,
                         text=True,
                         cwd=str(self.project_root),
                         timeout=30,
                     )
+                finally:
+                    add_console_time(self.state, t0)
+                if result.returncode == 0 and result.stdout.strip():
+                    # Also get the full diff (capped)
+                    t1 = time.time()
+                    try:
+                        full_diff = subprocess.run(
+                            ["git", "diff", f"{base}...HEAD"],
+                            capture_output=True,
+                            text=True,
+                            cwd=str(self.project_root),
+                            timeout=30,
+                        )
+                    finally:
+                        add_console_time(self.state, t1)
                     diff_text = full_diff.stdout[:30000] if full_diff.returncode == 0 else ""
                     return f"### Diff Stats\n```\n{result.stdout}\n```\n\n### Diff Detail\n```\n{diff_text}\n```"
         except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -189,11 +212,15 @@ class Finalizer:
         # Get current branch
         branch = "unknown"
         try:
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True, text=True,
-                cwd=str(self.project_root), timeout=10,
-            )
+            t0 = time.time()
+            try:
+                result = subprocess.run(
+                    ["git", "branch", "--show-current"],
+                    capture_output=True, text=True,
+                    cwd=str(self.project_root), timeout=10,
+                )
+            finally:
+                add_console_time(self.state, t0)
             if result.returncode == 0:
                 branch = result.stdout.strip() or "HEAD"
         except (subprocess.TimeoutExpired, FileNotFoundError):

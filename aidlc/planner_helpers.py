@@ -109,13 +109,19 @@ def _render_existing_issues_section(planner) -> list[str]:
                 "(still available in .aidlc/issues/)"
             )
 
+    # Stable order → fewer cache-breaking diffs when the same set is selected.
+    selected = sorted(selected, key=lambda x: _issue_number(x.get("id", "")))
+
     for issue in selected:
         title = (issue.get("title", "") or "").strip()
         if len(title) > 120:
             title = f"{title[:117]}..."
+        deps = issue.get("dependencies") or []
+        dep_s = ",".join(deps) if deps else "-"
         lines.append(
             f"- {issue.get('id', 'UNKNOWN')}: {title} "
-            f"[{issue.get('priority', 'medium')}/{issue.get('status', 'pending')}]"
+            f"[{issue.get('priority', 'medium')}/{issue.get('status', 'pending')}] "
+            f"deps:{dep_s}"
         )
     return lines
 
@@ -253,21 +259,24 @@ def write_planning_index(planner) -> Path:
 
 
 def build_prompt(planner, is_finalization: bool) -> str:
-    """Build planning prompt using current planner state."""
+    """Build planning prompt: static instructions + schema first (cache-friendly), volatile last."""
     write_planning_index(planner)
 
-    sections = [
+    # Static prefix — identical across cycles when phase and completion-offer flag unchanged.
+    static_parts: list[str] = []
+    if is_finalization:
+        static_parts.append(planner._finalization_instructions())
+    else:
+        static_parts.append(planner._planning_instructions())
+    if getattr(planner, "_offer_completion", False):
+        static_parts.append(planner._completion_offer_instructions())
+    static_parts.append(PLANNING_SCHEMA_DESCRIPTION)
+
+    volatile_parts: list[str] = [
         "# Planning Task\n",
         (
-            "You are planning implementation work for this project. "
-            "You have FULL FILE ACCESS — read any project file you need.\n\n"
-            "**Start by reading these files:**\n"
-            "1. **README.md** (if present) — product intent and usage expectations\n"
-            "2. **ARCHITECTURE.md** — system structure\n"
-            "3. **DESIGN.md** — patterns and conventions\n"
-            "4. **.aidlc/planning_index.md** — index of all docs, research, and existing issues\n"
-            "5. **ROADMAP.md** (optional) — milestone hints only, not authoritative\n\n"
-            "Read them NOW before creating any issues."
+            "Read: `README.md`, `ARCHITECTURE.md`, `DESIGN.md`, `.aidlc/planning_index.md`, "
+            "`.aidlc/issues/*.md`; `ROADMAP.md` optional. Full file access — do not ask for pastes."
         ),
     ]
 
@@ -275,55 +284,36 @@ def build_prompt(planner, is_finalization: bool) -> str:
         max_prev_notes = max(
             100, int(planner.config.get("planning_last_cycle_notes_max_chars", 500))
         )
-        sections.append("\n## Previous Cycle\n")
-        sections.append(planner._last_cycle_notes[:max_prev_notes])
+        volatile_parts.append("\n## Previous Cycle\n")
+        volatile_parts.append(planner._last_cycle_notes[:max_prev_notes])
 
-    sections.extend(_render_existing_issues_section(planner))
+    volatile_parts.extend(_render_existing_issues_section(planner))
 
     if planner.doc_gaps:
         critical_gaps = [g for g in planner.doc_gaps if g.severity == "critical"]
         if critical_gaps:
-            sections.append("\n## Critical Doc Gaps\n")
+            volatile_parts.append("\n## Critical Doc Gaps\n")
             for gap in critical_gaps[:5]:
-                sections.append(f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}")
+                volatile_parts.append(f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}")
+        non_crit = [g for g in planner.doc_gaps if g.severity != "critical"]
+        if non_crit:
+            volatile_parts.append(
+                f"\n## Doc gaps (non-critical): {len(non_crit)} — scan repo / planning_index for details\n"
+            )
 
-    sections.append("\n## Planning Foundation Status\n")
-    sections.append(render_planning_foundation(planner))
-
-    sections.append("\n## Available Files\n")
-    sections.append(
-        "You have full read access to the project. Use it:\n"
-        "- **README.md** — product intent, constraints, and usage context\n"
-        "- **ARCHITECTURE.md** — system structure\n"
-        "- **DESIGN.md** — patterns and conventions\n"
-        "- **ROADMAP.md** (optional) — milestone guidance if maintained\n"
-        "- **.aidlc/planning_index.md** — full issue ledger (status/category/completion) plus docs index\n"
-        "- **.aidlc/issues/*.md** — full specs of existing issues\n"
-        "- **docs/research/*.md** — completed research (do NOT re-request)\n\n"
-        "Read specific files when you need detail. Do NOT ask for content to be "
-        "pasted — just read the files directly."
-    )
+    volatile_parts.append("\n## Planning Foundation Status\n")
+    volatile_parts.append(render_planning_foundation(planner))
 
     plan_h = planner.state.plan_elapsed_seconds / 3600
     budget_h = planner.state.plan_budget_seconds / 3600
-    sections.append("\n## Run State\n")
-    sections.append(f"- Phase: {planner.state.phase.value}")
-    sections.append(f"- Planning cycle: {planner.state.planning_cycles}")
-    sections.append(f"- Elapsed: {plan_h:.1f}h / {budget_h:.0f}h budget")
-    sections.append(f"- Issues created: {planner.state.issues_created}")
-    sections.append(f"- Docs created: {planner.state.files_created}")
+    volatile_parts.append("\n## Run State\n")
+    volatile_parts.append(f"- phase: {planner.state.phase.value}")
+    volatile_parts.append(f"- planning_cycle: {planner.state.planning_cycles}")
+    volatile_parts.append(f"- elapsed/budget: {plan_h:.1f}h / {budget_h:.0f}h")
+    volatile_parts.append(f"- issues_created: {planner.state.issues_created}")
+    volatile_parts.append(f"- docs_created: {planner.state.files_created}")
 
-    if is_finalization:
-        sections.append(planner._finalization_instructions())
-    else:
-        sections.append(planner._planning_instructions())
-
-    sections.append(PLANNING_SCHEMA_DESCRIPTION)
-
-    if getattr(planner, "_offer_completion", False):
-        sections.append(planner._completion_offer_instructions())
-
-    prompt = "\n\n".join(sections)
+    prompt = "\n\n".join(static_parts + volatile_parts)
     planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt)//4:,} tokens)")
     return prompt
 

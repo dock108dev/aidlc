@@ -12,7 +12,7 @@ class TestGenerateRunReport:
         state.plan_budget_seconds = 3600
         state.plan_elapsed_seconds = 1800
         state.elapsed_seconds = 2000
-        state.wall_clock_seconds = 2500
+        state.console_seconds = 2500
         state.planning_cycles = 5
         state.issues_created = 3
         state.total_issues = 3

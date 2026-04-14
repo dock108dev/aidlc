@@ -5,6 +5,7 @@ generates fix issues, and loops until stable or max iterations reached.
 """
 
 import subprocess
+import time
 from pathlib import Path
 
 from .claude_cli import ClaudeCLI
@@ -14,6 +15,7 @@ from .test_parser import parse_test_failures, TestFailure
 from .test_profiles import detect_test_profile
 from .validation_issues import create_fix_issues
 from .context_utils import parse_project_type
+from .timing import add_console_time
 
 
 class Validator:
@@ -192,6 +194,7 @@ class Validator:
 
     def _run_command(self, command: str) -> tuple[bool, str]:
         """Run a test command and return (passed, output)."""
+        t0 = time.time()
         try:
             result = subprocess.run(
                 command,
@@ -209,6 +212,8 @@ class Validator:
         except FileNotFoundError:
             self.logger.warning(f"Test command not found: {command}")
             return False, ""
+        finally:
+            add_console_time(self.state, t0)
 
     def _implement_fixes(self, issues: list[Issue]):
         """Implement fix issues using the same implementer pattern."""

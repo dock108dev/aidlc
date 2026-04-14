@@ -4,6 +4,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from .timing import add_console_time
+
 from .models import RunState, RunPhase, Issue, IssueStatus
 from .schemas import (
     ImplementationResult, parse_implementation_result,
@@ -86,7 +88,6 @@ class Implementer:
         last_checkpoint_time = time.time()
         max_consecutive_failures = self.config.get("max_consecutive_failures", 3)
         consecutive_failures = 0
-        wall_start = time.time()
 
         # Detect test command if not configured
         if not self.test_command:
@@ -154,8 +155,6 @@ class Implementer:
             success = self._implement_issue(issue)
 
             self.state.implementation_cycles += 1
-            self.state.wall_clock_seconds += time.time() - wall_start
-            wall_start = time.time()
 
             if success:
                 consecutive_failures = 0
@@ -392,7 +391,7 @@ class Implementer:
         return selected
 
     def _ensure_test_deps(self):
-        ensure_test_deps(self.project_root, self.test_command, self.logger)
+        ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
 
     def _run_tests(self, capture_output: bool = False) -> bool | str:
         """Run the project's test suite.
@@ -405,6 +404,7 @@ class Implementer:
         if self.config.get("dry_run"):
             return True if not capture_output else "[DRY RUN] Tests passed"
 
+        t0 = time.time()
         try:
             proc = subprocess.run(
                 self.test_command,
@@ -427,6 +427,8 @@ class Implementer:
             if capture_output:
                 return f"Failed to run tests: {e}"
             return False
+        finally:
+            add_console_time(self.state, t0)
 
     def _verification_pass(self) -> bool:
         """Final pass to verify all implemented issues.
@@ -524,6 +526,8 @@ class Implementer:
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
         detection_ok = True
+        proc = None
+        t0 = time.time()
         try:
             proc = subprocess.run(
                 ["git", "diff", "--name-only", "HEAD"],
@@ -532,13 +536,17 @@ class Implementer:
                 text=True,
                 timeout=30,
             )
-            if proc.returncode == 0 and proc.stdout.strip():
-                files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-                return (files, True) if with_status else files
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             detection_ok = False
             self.logger.warning(f"Unable to run git diff for change detection: {e}")
+        finally:
+            add_console_time(self.state, t0)
+        if proc and proc.returncode == 0 and proc.stdout.strip():
+            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
+            return (files, True) if with_status else files
         # Also check untracked files
+        proc = None
+        t0 = time.time()
         try:
             proc = subprocess.run(
                 ["git", "ls-files", "--others", "--exclude-standard"],
@@ -547,12 +555,14 @@ class Implementer:
                 text=True,
                 timeout=30,
             )
-            if proc.returncode == 0 and proc.stdout.strip():
-                files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-                return (files, True) if with_status else files
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             detection_ok = False
             self.logger.warning(f"Unable to run git ls-files for change detection: {e}")
+        finally:
+            add_console_time(self.state, t0)
+        if proc and proc.returncode == 0 and proc.stdout.strip():
+            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
+            return (files, True) if with_status else files
         return ([], detection_ok) if with_status else []
 
     def _detect_test_command(self) -> str | None:

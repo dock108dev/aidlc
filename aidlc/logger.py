@@ -43,14 +43,14 @@ def setup_logger(run_id: str, log_dir: Path, verbose: bool = False) -> logging.L
 
 
 def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
-    elapsed_h = state_dict.get("elapsed_seconds", 0) / 3600
-    wall_h = state_dict.get("wall_clock_seconds", 0) / 3600
+    claude_h = state_dict.get("elapsed_seconds", 0) / 3600
+    console_h = state_dict.get("console_seconds", 0) / 3600
     phase = state_dict.get("phase", "?")
     logger.info("=" * 60)
     logger.info("CHECKPOINT")
     logger.info(f"  Phase: {phase}")
-    logger.info(f"  Elapsed (Claude): {elapsed_h:.1f}h")
-    logger.info(f"  Elapsed (wall):   {wall_h:.1f}h")
+    logger.info(f"  Claude (CLI) time:   {claude_h:.1f}h")
+    logger.info(f"  Console (local) time: {console_h:.1f}h")
     logger.info(f"  Planning cycles: {state_dict.get('planning_cycles', 0)}")
     logger.info(f"  Issues created: {state_dict.get('issues_created', 0)}")
     logger.info(f"  Implementation cycles: {state_dict.get('implementation_cycles', 0)}")

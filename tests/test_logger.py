@@ -54,7 +54,7 @@ class TestLogCheckpoint:
         logger = setup_logger("cp_test", tmp_path)
         state_dict = {
             "elapsed_seconds": 7200,
-            "wall_clock_seconds": 8000,
+            "console_seconds": 800,
             "phase": "implementing",
             "planning_cycles": 10,
             "issues_created": 5,

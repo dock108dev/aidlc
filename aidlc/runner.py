@@ -17,7 +17,6 @@ Usage:
 
 import json
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -153,7 +152,6 @@ def run_full(
             lock.release()
             sys.exit(1)
 
-    wall_start = time.time()
     state.status = RunStatus.RUNNING
 
     try:
@@ -309,7 +307,6 @@ def run_full(
         state.stop_reason = f"Error: {e}"
 
     finally:
-        state.wall_clock_seconds += time.time() - wall_start
         save_state(state, run_dir)
         report_dir = get_reports_dir(config, state.run_id)
         generate_run_report(state, report_dir)

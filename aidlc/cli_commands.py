@@ -437,6 +437,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     plan_h = state.plan_elapsed_seconds / 3600
     plan_budget_h = state.plan_budget_seconds / 3600
     elapsed_h = state.elapsed_seconds / 3600
+    console_h = state.console_seconds / 3600
 
     status_str = state.status.value
     if state.status.value == "complete":
@@ -452,7 +453,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     print(f"  {_bold('Status:')}    {status_str}")
     print(f"  {_bold('Phase:')}     {state.phase.value}")
     print(f"  {_bold('Planning:')}  {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
-    print(f"  {_bold('Elapsed:')}   {elapsed_h:.1f}h")
+    print(f"  {_bold('Time:')}      {elapsed_h:.1f}h Claude CLI, {console_h:.1f}h console")
     print(f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed")
 
     if state.audit_depth != "none":

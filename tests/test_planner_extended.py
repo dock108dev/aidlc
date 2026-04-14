@@ -232,8 +232,8 @@ class TestBuildPrompt:
         run_dir.mkdir()
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         prompt = planner._build_prompt(is_finalization=True)
-        assert "FINALIZATION" in prompt
-        assert "MUST NOT" in prompt
+        assert "Planning Finalization" in prompt
+        assert "Do not:" in prompt or "do not" in prompt.lower()
 
     def test_normal_prompt_includes_instructions(self, config, logger, tmp_path):
         state = RunState(run_id="test", config_name="default")
@@ -241,8 +241,8 @@ class TestBuildPrompt:
         run_dir.mkdir()
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         prompt = planner._build_prompt(is_finalization=False)
-        assert "Planning Mode" in prompt
-        assert "acceptance criteria" in prompt.lower()
+        assert "Planning (" in prompt
+        assert "acceptance" in prompt.lower()
 
     def test_issue_context_is_bounded_for_large_backlog(self, config, logger, tmp_path):
         state = RunState(run_id="test", config_name="default")

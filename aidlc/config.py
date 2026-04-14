@@ -163,6 +163,10 @@ DEFAULTS = {
     "strict_change_detection": False,       # if True, impl success requires verifiable changes
     "finalize_passes": None,                # None = all; or ["ssot", "docs"]
     "finalize_timeout_seconds": 900,        # 15 min per pass
+    # Finalize prompts: full project_context can exceed CLI limits — cap with head+tail preserve
+    "finalize_project_context_max_chars": 22000,
+    # Implementation prompt: max prior completed issues listed (titles only); rest on disk
+    "implementation_completed_issues_max": 12,
     "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
 }
 

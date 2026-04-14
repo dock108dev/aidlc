@@ -12,7 +12,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     plan_h = state.plan_elapsed_seconds / 3600
     plan_budget_h = state.plan_budget_seconds / 3600
     elapsed_h = state.elapsed_seconds / 3600
-    wall_h = state.wall_clock_seconds / 3600
+    console_h = state.console_seconds / 3600
 
     lines = [
         f"# AIDLC Run Report: {state.run_id}\n",
@@ -22,8 +22,8 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         f"**Started**: {state.started_at or 'N/A'}",
         f"**Last Updated**: {state.last_updated}",
         f"**Planning time**: {plan_h:.1f}h / {plan_budget_h:.0f}h budget",
-        f"**Total elapsed (Claude)**: {elapsed_h:.1f}h",
-        f"**Total elapsed (wall)**: {wall_h:.1f}h",
+        f"**Claude (CLI) time**: {elapsed_h:.1f}h",
+        f"**Console (local) time**: {console_h:.1f}h",
         f"**Stop Reason**: {state.stop_reason or 'N/A'}",
         "",
     ]
@@ -160,13 +160,15 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
 
 def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
     cp_path = report_dir / f"checkpoint_{state.checkpoint_count:04d}.md"
-    elapsed = state.elapsed_seconds / 3600
+    claude_h = state.elapsed_seconds / 3600
+    console_h = state.console_seconds / 3600
 
     content = f"""# Checkpoint {state.checkpoint_count}
 
 - **Time**: {datetime.now(timezone.utc).isoformat()}
 - **Phase**: {state.phase.value}
-- **Elapsed**: {elapsed:.1f}h
+- **Claude (CLI) time**: {claude_h:.1f}h
+- **Console (local) time**: {console_h:.1f}h
 - **Planning cycles**: {state.planning_cycles}
 - **Issues created**: {state.issues_created}
 - **Implementation cycles**: {state.implementation_cycles}

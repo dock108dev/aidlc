@@ -239,72 +239,43 @@ def parse_implementation_result(raw_text: str) -> ImplementationResult:
 # --- SCHEMA DESCRIPTIONS FOR PROMPTS ---
 
 PLANNING_SCHEMA_DESCRIPTION = """\
-You MUST output your planning actions as a single JSON block wrapped in ```json``` markers.
+Output **one** ```json``` block only (no extra prose outside JSON).
+
+Fields:
+- `frontier_assessment`: ≤400 chars — what you checked and why these actions.
+- `cycle_notes`: ≤300 chars — notes for the next cycle.
+- `actions[]`: 1–15 items. Each needs `action_type`, `rationale` (≤200 chars).
+
+`create_issue`: `issue_id` (ISSUE-NNN), `title`, `description`, `priority`, `labels`, `dependencies`, `acceptance_criteria` (testable bullets), `critical_gap` (finalization only).
+`update_issue` / `create_doc` / `update_doc` / `research`: per schema in examples below.
 
 ```
 {
-  "frontier_assessment": "Summary of what you assessed and why you chose these actions",
-  "actions": [
-    {
-      "action_type": "create_issue | update_issue | create_doc | update_doc | research",
-      "rationale": "Why this action is needed",
-
-      // For create_issue:
-      "issue_id": "ISSUE-001",
-      "title": "Short descriptive title",
-      "description": "Full description of what needs to be built/changed",
-      "priority": "high | medium | low",
-      "critical_gap": false,  // set true only for critical gap issues during finalization
-      "labels": ["feature", "backend"],
-      "dependencies": ["ISSUE-000"],  // IDs of issues that must be done first
-      "acceptance_criteria": [
-        "Criterion 1 — specific and testable",
-        "Criterion 2"
-      ],
-
-      // For update_issue:
-      "issue_id": "ISSUE-001",
-      "description": "Updated description",
-      "acceptance_criteria": ["Updated criteria"],
-
-      // For create_doc / update_doc:
-      "file_path": "docs/design/feature-x.md",
-      "content": "Full document content",
-
-      // For research (investigate before creating issues):
-      "research_topic": "scoring-algorithm",
-      "research_question": "What formula should we use for score calculation?",
-      "research_scope": ["src/scoring.py", "docs/requirements.md"]
-    }
-  ],
-  "cycle_notes": "Observations about planning state or suggestions for next cycle"
+  "frontier_assessment": "...",
+  "actions": [{"action_type": "create_issue", "rationale": "...", "issue_id": "ISSUE-001",
+    "title": "...", "description": "...", "priority": "high", "critical_gap": false,
+    "labels": [], "dependencies": [], "acceptance_criteria": ["..."]}],
+  "cycle_notes": "..."
 }
 ```
 
-Rules:
-- Issue IDs must use the format ISSUE-NNN (e.g., ISSUE-001, ISSUE-042)
-- Each issue MUST have acceptance_criteria with specific, testable requirements
-- Dependencies must reference existing issue IDs
-- Produce 1-15 high-quality actions per cycle. Quality over quantity.
-- For create_doc, file_path must be relative to the project root
-- Every action must have a rationale explaining why it's needed
-- During finalization, create_issue is allowed only when critical_gap=true and priority=high
-- Use "research" when you need to investigate source code, derive formulas, explore
-  design options, or resolve knowledge gaps BEFORE creating issues. Research results
-  are written to docs/research/ and available in subsequent planning cycles.
+Rules: ISSUE-NNN format; deps must exist; finalization `create_issue` only if `critical_gap`+`high`; `research` writes docs/research/ for later cycles; create_doc paths relative to repo root.
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\
-After implementing the issue, output a JSON result block wrapped in ```json``` markers:
+After coding, output **only** a ```json``` block (minimal prose outside it).
+
+- `summary`: ≤500 chars — what changed and where.
+- `notes`: ≤400 chars — caveats/follow-ups (empty string if none).
 
 ```
 {
   "issue_id": "ISSUE-001",
   "success": true,
-  "summary": "What was implemented and how",
+  "summary": "...",
   "files_changed": ["src/auth.py", "tests/test_auth.py"],
   "tests_passed": true,
-  "notes": "Any caveats or follow-up items"
+  "notes": ""
 }
 ```
 """

@@ -102,9 +102,9 @@ class RunState:
     started_at: Optional[str] = None
     last_updated: Optional[str] = None
 
-    # Time tracking
+    # Time tracking — elapsed_seconds = Claude CLI subprocess (execute_prompt); console_seconds = local shells
     elapsed_seconds: float = 0.0
-    wall_clock_seconds: float = 0.0
+    console_seconds: float = 0.0
     plan_budget_seconds: float = 14400.0  # 4 hours default
     plan_elapsed_seconds: float = 0.0
 
@@ -228,7 +228,7 @@ class RunState:
             "started_at": self.started_at,
             "last_updated": self.last_updated,
             "elapsed_seconds": self.elapsed_seconds,
-            "wall_clock_seconds": self.wall_clock_seconds,
+            "console_seconds": self.console_seconds,
             "plan_budget_seconds": self.plan_budget_seconds,
             "plan_elapsed_seconds": self.plan_elapsed_seconds,
             "claude_calls_total": self.claude_calls_total,
@@ -288,7 +288,7 @@ class RunState:
         state.started_at = data.get("started_at")
         state.last_updated = data.get("last_updated")
         state.elapsed_seconds = data.get("elapsed_seconds", 0.0)
-        state.wall_clock_seconds = data.get("wall_clock_seconds", 0.0)
+        state.console_seconds = data.get("console_seconds", 0.0)
         state.plan_budget_seconds = data.get("plan_budget_seconds", 14400.0)
         state.plan_elapsed_seconds = data.get("plan_elapsed_seconds", 0.0)
         state.claude_calls_total = data.get("claude_calls_total", 0)
