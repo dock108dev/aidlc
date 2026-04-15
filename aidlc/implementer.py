@@ -203,6 +203,10 @@ class Implementer:
         prompt = self._build_implementation_prompt(issue)
         self.logger.debug(f"Implementation prompt: {len(prompt)} chars")
         model_override = self._select_implementation_model(issue)
+        # Signal complexity to router so it can apply phase-aware model selection
+        if hasattr(self.cli, "set_complexity"):
+            complexity = "complex" if model_override == self.implementation_complex_model else "normal"
+            self.cli.set_complexity(complexity)
 
         # Execute Claude with file edit permissions
         start_time = time.time()
@@ -212,7 +216,7 @@ class Implementer:
             allow_edits=True,
             model_override=model_override,
         )
-        self.state.record_claude_result(result, self.config)
+        self.state.record_provider_result(result, self.config, phase="implementation")
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration
 

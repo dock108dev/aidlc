@@ -24,7 +24,7 @@ from .config import load_config, get_run_dir, get_reports_dir, get_issues_dir
 from .models import RunState, RunStatus, RunPhase
 from .state_manager import generate_run_id, save_state, load_state, checkpoint, find_latest_run, RunLock
 from .logger import setup_logger
-from .claude_cli import ClaudeCLI
+from .routing import ProviderRouter
 from .scanner import ProjectScanner
 from .planner import Planner
 from .implementer import Implementer
@@ -143,12 +143,12 @@ def run_full(
     logger.info(f"Plan budget: {state.plan_budget_seconds / 3600:.1f}h")
     logger.info(f"Dry run: {config.get('dry_run', False)}")
 
-    # Init Claude CLI
-    cli = ClaudeCLI(config, logger)
+    # Init provider router (drop-in replacement for ClaudeCLI)
+    cli = ProviderRouter(config, logger)
     if not cli.check_available():
-        logger.warning("Claude CLI not available.")
+        logger.warning("No AI provider available.")
         if not config.get("dry_run"):
-            logger.error("Install Claude CLI or use --dry-run. Exiting.")
+            logger.error("Install a provider CLI (claude, gh copilot, codex) or use --dry-run. Exiting.")
             lock.release()
             sys.exit(1)
 
@@ -161,6 +161,7 @@ def run_full(
                 from .auditor import CodeAuditor
 
                 state.phase = RunPhase.AUDITING
+                cli.set_phase("audit")
                 state.audit_depth = audit
                 logger.info(f"Running {audit} code audit...")
 
@@ -207,6 +208,7 @@ def run_full(
         # PLAN
         if not implement_only:
             if state.phase in (RunPhase.INIT, RunPhase.SCANNING, RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION):
+                cli.set_phase("planning")
                 planner = Planner(
                     state, run_dir, config, cli, project_context, logger,
                     doc_gaps=doc_gaps,
@@ -222,6 +224,7 @@ def run_full(
         else:
             # IMPLEMENT
             if state.issues:
+                cli.set_phase("implementation")
                 implementer = Implementer(state, run_dir, config, cli, project_context, logger)
                 verification_ok = implementer.run()
                 save_state(state, run_dir)

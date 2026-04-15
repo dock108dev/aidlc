@@ -1,12 +1,11 @@
 """CLI command handlers and display helpers."""
 
 import argparse
-import json
 import shutil
 import sys
 from pathlib import Path
 
-from .config import load_config
+from .config import load_config, write_default_config
 from .state_manager import find_latest_run, load_state
 
 _USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
@@ -159,27 +158,10 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
         return
 
     if not aidlc_dir.exists():
-        aidlc_dir.mkdir()
-        (aidlc_dir / "issues").mkdir()
-        (aidlc_dir / "runs").mkdir()
-        (aidlc_dir / "reports").mkdir()
-
         from .config_detect import detect_config, describe_detected
 
-        default_config = {
-            "plan_budget_hours": 4,
-            "checkpoint_interval_minutes": 15,
-            "claude_model": "opus",
-            "max_implementation_attempts": 3,
-            "run_tests_command": None,
-        }
         detected = detect_config(project_root)
-        for key, value in detected.items():
-            if not key.startswith("_") and value is not None:
-                default_config[key] = value
-
-        with open(aidlc_dir / "config.json", "w") as config_file:
-            json.dump(default_config, config_file, indent=2)
+        write_default_config(aidlc_dir, detected_overrides=detected)
 
         desc = describe_detected(detected)
         if desc:
@@ -251,7 +233,7 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
     """Run standalone code audit."""
     from .auditor import CodeAuditor
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .routing import ProviderRouter
 
     project_root = Path(args.project or ".").resolve()
     config = load_config(config_path=getattr(args, "config", None), project_root=str(project_root))
@@ -266,7 +248,7 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
 
     cli = None
     if depth == "full":
-        cli = ClaudeCLI(config, logger)
+        cli = ProviderRouter(config, logger)
         if not cli.check_available():
             print(f"{_red('x')} Claude CLI not available.")
             print("  Use quick scan (without --full) or install Claude CLI.")
@@ -306,7 +288,7 @@ def cmd_improve(args: argparse.Namespace, version: str) -> None:
     """Run targeted improvement cycle."""
     from .improve import ImprovementCycle
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .routing import ProviderRouter
     from .scanner import ProjectScanner
 
     project_root = Path(args.project or ".").resolve()
@@ -328,7 +310,7 @@ def cmd_improve(args: argparse.Namespace, version: str) -> None:
 
     (project_root / ".aidlc").mkdir(exist_ok=True)
     logger = setup_logger("improve", project_root / ".aidlc", verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -348,7 +330,7 @@ def cmd_plan(args: argparse.Namespace, version: str) -> None:
     """Run interactive planning session."""
     from .plan_session import PlanSession
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .routing import ProviderRouter
 
     project_root = Path(args.project or ".").resolve()
     config = load_config(config_path=getattr(args, "config", None), project_root=str(project_root))
@@ -356,7 +338,7 @@ def cmd_plan(args: argparse.Namespace, version: str) -> None:
 
     (project_root / ".aidlc").mkdir(exist_ok=True)
     logger = setup_logger("plan", project_root / ".aidlc", verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -373,7 +355,6 @@ def cmd_finalize(args: argparse.Namespace, version: str) -> None:
     """Run finalization passes standalone."""
     from .finalizer import Finalizer
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
     from .scanner import ProjectScanner
     from .state_manager import save_state as _save
 
@@ -392,7 +373,8 @@ def cmd_finalize(args: argparse.Namespace, version: str) -> None:
 
     state = load_state(run_dir)
     logger = setup_logger(state.run_id, run_dir, verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    from .routing import ProviderRouter
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -478,3 +460,264 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
             icon = icon_map.get(status, "?")
             title = issue.get("title", "untitled")
             print(f"    [{icon}] {issue['id']}: {title} {_dim(f'({status})')}")
+
+
+# ---------------------------------------------------------------------------
+# Accounts commands
+# ---------------------------------------------------------------------------
+
+def cmd_accounts(args: argparse.Namespace, version: str) -> None:
+    """Manage provider accounts."""
+    subcmd = getattr(args, "accounts_cmd", "list")
+    _print_banner(version)
+
+    from .accounts import AccountManager
+    manager = AccountManager()
+
+    if subcmd == "list":
+        _cmd_accounts_list(manager)
+    elif subcmd == "add":
+        _cmd_accounts_add(args, manager)
+    elif subcmd == "remove":
+        _cmd_accounts_remove(args, manager)
+    elif subcmd == "validate":
+        _cmd_accounts_validate(args, manager, args)
+    else:
+        print(f"Unknown accounts subcommand: {subcmd}")
+        sys.exit(1)
+
+
+def _cmd_accounts_list(manager) -> None:
+    accounts = manager.list()
+    if not accounts:
+        print("  No accounts registered.")
+        print()
+        print(f"  Add one with: {_cyan('aidlc accounts add --provider claude --id my-account')}")
+        return
+
+    print(f"  {_bold('Registered Accounts')} ({len(accounts)} total)")
+    print()
+    for acc in accounts:
+        health_icon = (
+            _green("●") if acc.health_status == "healthy"
+            else _yellow("●") if acc.health_status in ("limited", "rate_limited", "unknown", "unchecked")
+            else _red("●")
+        )
+        auth_label = acc.auth_state.value if hasattr(acc.auth_state, "value") else str(acc.auth_state)
+        enabled_label = _green("enabled") if acc.enabled else _dim("disabled")
+        tier = acc.membership_tier.value if hasattr(acc.membership_tier, "value") else str(acc.membership_tier)
+        tags = ", ".join(acc.role_tags) if acc.role_tags else _dim("no tags")
+        print(f"  {health_icon} {_bold(acc.account_id)}")
+        print(f"     Provider:  {acc.provider_id}")
+        print(f"     Name:      {acc.display_name or _dim('(unnamed)')}")
+        print(f"     Status:    {enabled_label}  auth={auth_label}  health={acc.health_status}")
+        print(f"     Tier:      {tier}")
+        print(f"     Tags:      {tags}")
+        if acc.last_validated:
+            print(f"     Validated: {acc.last_validated[:19]}")
+        print()
+
+
+def _cmd_accounts_add(args, manager) -> None:
+    from .accounts import Account, AuthState, MembershipTier
+
+    account_id = getattr(args, "id", None)
+    provider_id = getattr(args, "provider", None)
+    if not account_id or not provider_id:
+        print(f"{_red('x')} --id and --provider are required.")
+        sys.exit(1)
+
+    tier_str = getattr(args, "tier", "unknown") or "unknown"
+    try:
+        tier = MembershipTier(tier_str)
+    except ValueError:
+        print(f"{_yellow('!')} Unknown tier '{tier_str}'. Using 'unknown'.")
+        tier = MembershipTier.UNKNOWN
+
+    tags_str = getattr(args, "tags", "") or ""
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else ["primary"]
+
+    account = Account(
+        account_id=account_id,
+        provider_id=provider_id,
+        display_name=getattr(args, "name", "") or f"{provider_id} ({account_id})",
+        membership_tier=tier,
+        role_tags=tags,
+        auth_state=AuthState.UNKNOWN,
+    )
+    try:
+        manager.add(account)
+        print(f"{_green('+')} Account '{account_id}' added ({provider_id}, tier={tier_str})")
+        print(f"  Run {_cyan(f'aidlc accounts validate --id {account_id}')} to check health.")
+    except ValueError as e:
+        print(f"{_red('x')} {e}")
+        sys.exit(1)
+
+
+def _cmd_accounts_remove(args, manager) -> None:
+    account_id = getattr(args, "id", None)
+    if not account_id:
+        print(f"{_red('x')} --id is required.")
+        sys.exit(1)
+    removed = manager.remove(account_id, remove_credentials=True)
+    if removed:
+        print(f"{_green('-')} Account '{account_id}' removed.")
+    else:
+        print(f"{_yellow('!')} Account '{account_id}' not found.")
+
+
+def _cmd_accounts_validate(args, manager, full_args) -> None:
+    from .routing import ProviderRouter
+    from .config import load_config
+
+    account_id = getattr(args, "id", None)
+    project_root = Path(getattr(full_args, "project", None) or ".").resolve()
+    config = load_config(project_root=str(project_root))
+    import logging
+    logger = logging.getLogger("aidlc.accounts.validate")
+
+    router = ProviderRouter(config, logger)
+
+    if account_id:
+        account = manager.get(account_id)
+        if not account:
+            print(f"{_red('x')} Account '{account_id}' not found.")
+            sys.exit(1)
+        adapter = router._adapters.get(account.provider_id)
+        updated = manager.validate(account_id, adapter=adapter)
+        health_label = (
+            _green(updated.health_status) if updated.health_status == "healthy"
+            else _yellow(updated.health_status) if updated.health_status in ("limited", "unknown")
+            else _red(updated.health_status)
+        )
+        print(f"  {_bold(account_id)}: {health_label}  auth={updated.auth_state.value}")
+    else:
+        # Validate all accounts
+        accounts = manager.list()
+        if not accounts:
+            print("  No accounts to validate.")
+            return
+        print(f"  Validating {len(accounts)} account(s)...")
+        print()
+        for acc in accounts:
+            adapter = router._adapters.get(acc.provider_id)
+            updated = manager.validate(acc.account_id, adapter=adapter)
+            icon = _green("v") if updated.health_status == "healthy" else _yellow("!")
+            print(f"  [{icon}] {acc.account_id} ({acc.provider_id}): {updated.health_status}")
+
+
+# ---------------------------------------------------------------------------
+# Config show / effective runtime preview
+# ---------------------------------------------------------------------------
+
+def cmd_config_show(args: argparse.Namespace, version: str) -> None:
+    """Show effective runtime config and routing preview."""
+    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    config = load_config(
+        config_path=getattr(args, "config", None),
+        project_root=str(project_root),
+    )
+    _print_banner(version)
+
+    effective = getattr(args, "effective", False)
+
+    if effective:
+        _print_effective_preview(config, project_root)
+    else:
+        _print_config_summary(config)
+
+
+def _print_config_summary(config: dict) -> None:
+    """Print key config values."""
+    print(f"  {_bold('Active Configuration')}")
+    print()
+    print(f"  {_bold('Runtime profile:')}    {config.get('runtime_profile', 'standard')}")
+    print(f"  {_bold('Routing strategy:')}   {_cyan(config.get('routing_strategy', 'balanced'))}")
+    print(f"  {_bold('Plan budget:')}        {config.get('plan_budget_hours', 4)}h")
+    print(f"  {_bold('Dry run:')}            {config.get('dry_run', False)}")
+    print()
+
+    providers = config.get("providers", {})
+    if providers:
+        print(f"  {_bold('Providers:')}")
+        for pid, pcfg in providers.items():
+            if not isinstance(pcfg, dict):
+                continue
+            enabled = _green("enabled") if pcfg.get("enabled", False) else _dim("disabled")
+            print(f"    {pid}: {enabled}  cmd={pcfg.get('cli_command', '?')}  default_model={pcfg.get('default_model', '?')}")
+        print()
+
+    print(f"  {_bold('Models (legacy keys):')}")
+    print(f"    claude_model:                   {config.get('claude_model', '?')}")
+    print(f"    claude_model_planning:          {config.get('claude_model_planning', '?')}")
+    print(f"    claude_model_implementation:    {config.get('claude_model_implementation', '?')}")
+    print(f"    claude_model_implementation_complex: {config.get('claude_model_implementation_complex', '?')}")
+    print(f"    claude_model_finalization:      {config.get('claude_model_finalization', '?')}")
+    print()
+    print(f"  Tip: run {_cyan('aidlc config show --effective')} for a full routing preview.")
+
+
+def _print_effective_preview(config: dict, project_root: Path) -> None:
+    """Print a plain-English effective runtime preview."""
+    import logging
+    from .routing import ProviderRouter
+    from .accounts import AccountManager
+
+    logger = logging.getLogger("aidlc.config.preview")
+    router = ProviderRouter(config, logger)
+
+    # Wire in account manager if available
+    try:
+        manager = AccountManager()
+        router.set_account_manager(manager)
+    except Exception:
+        manager = None
+
+    print(f"  {_bold('Effective Runtime Preview')}")
+    print(f"  Project: {_cyan(str(project_root))}")
+    print(f"  Strategy: {_cyan(config.get('routing_strategy', 'balanced'))}")
+    print()
+
+    # Provider health summary
+    print(f"  {_bold('Provider Health:')}")
+    providers_cfg = config.get("providers", {})
+    for provider_id, pcfg in (providers_cfg.items() if isinstance(providers_cfg, dict) else []):
+        if not isinstance(pcfg, dict):
+            continue
+        adapter = router._adapters.get(provider_id)
+        if adapter:
+            health = adapter.validate_health()
+            health_icon = _green("●") if health.is_usable else _red("●")
+            print(f"    {health_icon} {provider_id}: {health.status.value} — {health.message[:60]}")
+        else:
+            print(f"    {_dim('○')} {provider_id}: {_dim('not loaded')}")
+    print()
+
+    # Per-phase routing preview
+    preview = router.resolve_preview()
+    print(f"  {_bold('Phase Routing (what will run):')}")
+    print(f"  {'Phase':<28} {'Provider':<10} {'Account':<20} {'Model':<25}")
+    print(f"  {'-'*28} {'-'*10} {'-'*20} {'-'*25}")
+    for phase, decision in preview.items():
+        account_label = decision.account_id or _dim("(default auth)")
+        fallback_marker = _yellow(" [fallback]") if decision.fallback else ""
+        print(
+            f"  {phase:<28} {decision.provider_id:<10} {account_label:<20} "
+            f"{decision.model:<25}{fallback_marker}"
+        )
+    print()
+
+    # Accounts summary
+    if manager:
+        accounts = manager.list()
+        if accounts:
+            print(f"  {_bold('Accounts:')}")
+            for acc in accounts:
+                icon = _green("v") if acc.health_status == "healthy" else _yellow("-")
+                premium_tag = _yellow(" [premium]") if acc.is_premium else ""
+                print(
+                    f"    [{icon}] {acc.account_id} ({acc.provider_id}) "
+                    f"tier={acc.membership_tier.value}{premium_tag}"
+                )
+            print()
+

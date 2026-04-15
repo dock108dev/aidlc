@@ -133,7 +133,7 @@ class Finalizer:
             allow_edits=True,
             model_override=finalize_model,
         )
-        self.state.record_claude_result(result, self.config)
+        self.state.record_provider_result(result, self.config, phase="finalization")
         duration = time.time() - start
 
         self.state.elapsed_seconds += duration

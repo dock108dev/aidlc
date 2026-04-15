@@ -10,6 +10,34 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 # Default configuration values
 DEFAULTS = {
     "runtime_profile": "standard",          # standard | production
+    "routing_strategy": "balanced",         # balanced | cheapest | best_quality | custom
+    "providers": {                          # provider enable/model configuration
+        "claude": {
+            "enabled": True,
+            "cli_command": "claude",
+            "default_model": "sonnet",
+            "phase_models": {
+                "planning": "sonnet",
+                "research": "sonnet",
+                "implementation": "sonnet",
+                "implementation_complex": "opus",
+                "finalization": "sonnet",
+                "audit": "sonnet",
+            },
+        },
+        "copilot": {
+            "enabled": False,
+            "cli_command": "gh",
+            "default_model": "claude-sonnet-4-6",
+            "phase_models": {},
+        },
+        "openai": {
+            "enabled": False,
+            "cli_command": "codex",
+            "default_model": "gpt-4o",
+            "phase_models": {},
+        },
+    },
     "plan_budget_hours": 4,
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
@@ -169,6 +197,83 @@ DEFAULTS = {
     "implementation_completed_issues_max": 12,
     "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
 }
+
+
+def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None) -> Path:
+    """Write a default .aidlc/config.json using the canonical defaults.
+
+    This is the single authoritative place that writes the initial project config,
+    replacing the two independent writers that previously existed in precheck.py
+    and cli_commands.py.
+
+    Args:
+        aidlc_dir: The .aidlc/ directory path (will be created if missing).
+        detected_overrides: Optional dict of auto-detected values to merge in
+                           (e.g., from config_detect.detect_config()).
+
+    Returns:
+        Path to the written config file.
+    """
+    aidlc_dir.mkdir(parents=True, exist_ok=True)
+    for subdir in ("issues", "runs", "reports"):
+        (aidlc_dir / subdir).mkdir(exist_ok=True)
+
+    config_path = aidlc_dir / "config.json"
+    if not config_path.exists():
+        default_config: dict = {
+            "plan_budget_hours": 4,
+            "checkpoint_interval_minutes": 15,
+            "routing_strategy": "balanced",
+            "providers": {
+                "claude": {
+                    "enabled": True,
+                    "cli_command": "claude",
+                    "accounts": [
+                        {
+                            "id": "default",
+                            "display_name": "Claude (default)",
+                            "tier": "unknown",
+                            "role_tags": ["primary"],
+                            "enabled": True,
+                        }
+                    ],
+                },
+                "copilot": {
+                    "enabled": False,
+                    "cli_command": "gh",
+                    "default_model": "claude-sonnet-4-6",
+                    "accounts": [],
+                },
+                "openai": {
+                    "enabled": False,
+                    "cli_command": "codex",
+                    "default_model": "gpt-4o",
+                    "accounts": [],
+                },
+            },
+            "max_implementation_attempts": 3,
+            "run_tests_command": None,
+        }
+        if detected_overrides:
+            for key, value in detected_overrides.items():
+                if not key.startswith("_") and value is not None:
+                    default_config[key] = value
+        with open(config_path, "w") as f:
+            json.dump(default_config, f, indent=2)
+
+    # Add .gitignore entries
+    project_root = aidlc_dir.parent
+    gitignore = project_root / ".gitignore"
+    ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if ".aidlc/" not in content:
+            with open(gitignore, "a") as f:
+                f.write(ignore_entry)
+    else:
+        gitignore.write_text(ignore_entry.lstrip())
+
+    return config_path
 
 
 def load_config(config_path: str | None = None, project_root: str | None = None) -> dict:

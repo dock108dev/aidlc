@@ -119,4 +119,41 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     )
     status_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
 
+    # --- accounts subcommand ---
+    accounts_parser = subparsers.add_parser(
+        "accounts",
+        help="Manage provider accounts",
+        description="Connect, list, validate, and remove provider accounts (Claude, Copilot, OpenAI).",
+    )
+    accounts_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    accounts_subparsers = accounts_parser.add_subparsers(dest="accounts_cmd", help="Accounts action")
+    accounts_subparsers.add_parser("list", help="List all registered accounts")
+    accounts_add = accounts_subparsers.add_parser("add", help="Register a new account")
+    accounts_add.add_argument("--provider", required=True, help="Provider ID: claude | copilot | openai")
+    accounts_add.add_argument("--id", required=True, help="Unique account identifier")
+    accounts_add.add_argument("--name", help="Display name")
+    accounts_add.add_argument("--tier", default="unknown",
+                              help="Membership tier: free | standard | pro | premium | api")
+    accounts_add.add_argument("--tags", default="",
+                              help="Comma-separated role tags: primary,backup,premium,reserve,cheap")
+    accounts_remove = accounts_subparsers.add_parser("remove", help="Remove an account")
+    accounts_remove.add_argument("--id", required=True, help="Account ID to remove")
+    accounts_validate = accounts_subparsers.add_parser("validate", help="Run health check on account(s)")
+    accounts_validate.add_argument("--id", help="Account ID to validate (default: all)")
+
+    # --- config subcommand ---
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Show and manage configuration",
+        description="Inspect active configuration and view effective runtime routing preview.",
+    )
+    config_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    config_parser.add_argument("--config", "-c", help="Config file path")
+    config_subparsers = config_parser.add_subparsers(dest="config_cmd", help="Config action")
+    config_show = config_subparsers.add_parser("show", help="Show active config and routing preview")
+    config_show.add_argument("--effective", action="store_true",
+                             help="Show full effective runtime preview (provider health, per-phase routing)")
+    config_show.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    config_show.add_argument("--config", "-c", help="Config file path")
+
     return parser

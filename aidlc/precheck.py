@@ -5,7 +5,6 @@ to run a productive planning session. Auto-creates .aidlc/ with defaults
 if missing.
 """
 
-import json
 from pathlib import Path
 
 # Document tiers with descriptions and suggestions
@@ -177,31 +176,5 @@ def run_precheck(project_root: Path, auto_init: bool = True) -> PrecheckResult:
 
 def _auto_init_aidlc(project_root: Path):
     """Create .aidlc/ directory with default config."""
-    aidlc_dir = project_root / ".aidlc"
-    aidlc_dir.mkdir(exist_ok=True)
-    (aidlc_dir / "issues").mkdir(exist_ok=True)
-    (aidlc_dir / "runs").mkdir(exist_ok=True)
-    (aidlc_dir / "reports").mkdir(exist_ok=True)
-
-    config_path = aidlc_dir / "config.json"
-    if not config_path.exists():
-        default_config = {
-            "plan_budget_hours": 4,
-            "checkpoint_interval_minutes": 15,
-            "claude_model": "opus",
-            "max_implementation_attempts": 3,
-            "run_tests_command": None,
-        }
-        with open(config_path, "w") as f:
-            json.dump(default_config, f, indent=2)
-
-    # Add to .gitignore
-    gitignore = project_root / ".gitignore"
-    ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if ".aidlc/" not in content:
-            with open(gitignore, "a") as f:
-                f.write(ignore_entry)
-    elif not gitignore.exists():
-        gitignore.write_text(ignore_entry.lstrip())
+    from .config import write_default_config
+    write_default_config(project_root / ".aidlc")

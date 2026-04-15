@@ -127,6 +127,14 @@ class RunState:
     claude_exact_cost_calls: int = 0
     claude_model_usage: dict = field(default_factory=dict)
 
+    # Multi-provider telemetry (Phase 1+)
+    # provider_account_usage: {provider_id: {account_id: {calls, tokens, cost_usd_exact, cost_usd_estimated}}}
+    provider_account_usage: dict = field(default_factory=dict)
+    # phase_usage: {phase_name: {provider_id, account_id, model, calls, input_tokens, output_tokens, cost_usd_exact, cost_usd_estimated}}
+    phase_usage: dict = field(default_factory=dict)
+    # routing_decisions: list of {phase, provider_id, account_id, model, reasoning, strategy, fallback}
+    routing_decisions: list = field(default_factory=list)
+
     # Planning stats
     planning_cycles: int = 0
     issues_created: int = 0
@@ -248,6 +256,9 @@ class RunState:
             "claude_estimated_cost_calls": self.claude_estimated_cost_calls,
             "claude_exact_cost_calls": self.claude_exact_cost_calls,
             "claude_model_usage": self.claude_model_usage,
+            "provider_account_usage": self.provider_account_usage,
+            "phase_usage": self.phase_usage,
+            "routing_decisions": self.routing_decisions,
             "planning_cycles": self.planning_cycles,
             "issues_created": self.issues_created,
             "docs_scanned": self.docs_scanned,
@@ -312,6 +323,9 @@ class RunState:
         state.claude_estimated_cost_calls = data.get("claude_estimated_cost_calls", 0)
         state.claude_exact_cost_calls = data.get("claude_exact_cost_calls", 0)
         state.claude_model_usage = data.get("claude_model_usage", {})
+        state.provider_account_usage = data.get("provider_account_usage", {})
+        state.phase_usage = data.get("phase_usage", {})
+        state.routing_decisions = data.get("routing_decisions", [])
         state.planning_cycles = data.get("planning_cycles", 0)
         state.issues_created = data.get("issues_created", 0)
         state.docs_scanned = data.get("docs_scanned", 0)
@@ -339,6 +353,76 @@ class RunState:
         state.notes = data.get("notes", "")
         state.validation_results = data.get("validation_results", [])
         return state
+
+    def record_provider_result(
+        self,
+        result: dict,
+        config: dict | None = None,
+        phase: str | None = None,
+    ) -> None:
+        """Accumulate telemetry from any provider result payload.
+
+        Extends record_claude_result with per-provider, per-account, and
+        per-phase tracking. Falls through to record_claude_result for
+        backward-compatible aggregate counters.
+        """
+        self.record_claude_result(result, config)
+
+        provider_id = str(result.get("provider_id") or "claude")
+        account_id = str(result.get("account_id") or "default")
+
+        # Per-provider/account usage
+        prov_map = self.provider_account_usage.setdefault(provider_id, {})
+        acc_map = prov_map.setdefault(account_id, {
+            "calls": 0,
+            "calls_succeeded": 0,
+            "calls_failed": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd_exact": 0.0,
+            "cost_usd_estimated": 0.0,
+        })
+        acc_map["calls"] += 1
+        acc_map["calls_succeeded"] += 1 if result.get("success") else 0
+        acc_map["calls_failed"] += 0 if result.get("success") else 1
+        usage = result.get("usage") or {}
+        acc_map["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+        acc_map["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+        acc_map["total_tokens"] += (
+            acc_map["input_tokens"] + acc_map["output_tokens"]
+        )
+        cost_exact = result.get("total_cost_usd")
+        if cost_exact is not None:
+            try:
+                acc_map["cost_usd_exact"] += float(cost_exact)
+            except (TypeError, ValueError):
+                pass
+
+        # Per-phase usage
+        if phase:
+            phase_entry = self.phase_usage.setdefault(phase, {
+                "provider_id": provider_id,
+                "account_id": account_id,
+                "model": str(result.get("model_used") or "unknown"),
+                "calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd_exact": 0.0,
+            })
+            phase_entry["calls"] += 1
+            phase_entry["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+            phase_entry["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+            if cost_exact is not None:
+                try:
+                    phase_entry["cost_usd_exact"] += float(cost_exact)
+                except (TypeError, ValueError):
+                    pass
+
+        # Record routing decision if present
+        routing = result.get("routing_decision")
+        if isinstance(routing, dict):
+            self.routing_decisions.append(routing)
 
     def record_claude_result(self, result: dict, config: dict | None = None) -> None:
         """Accumulate telemetry from a Claude CLI result payload."""

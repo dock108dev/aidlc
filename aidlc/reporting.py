@@ -64,7 +64,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     ])
 
     lines.extend([
-        "## Claude Telemetry",
+        "## AI Provider Telemetry",
         "",
         "| Metric | Value |",
         "|---|---|",
@@ -88,7 +88,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     ])
 
     if state.claude_model_usage:
-        lines.append("### Claude Model Breakdown\n")
+        lines.append("### Model Breakdown\n")
         lines.append("| Model | Calls | In | Out | Cache Write | Cache Read | Cost Exact (USD) | Cost Est (USD) |")
         lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
         for model, metrics in sorted(state.claude_model_usage.items()):
@@ -102,6 +102,56 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
                 f"{float(metrics.get('cost_usd_estimated', 0.0) or 0.0):.4f} |"
             )
         lines.append("")
+
+    # Per-provider/account breakdown (multi-provider telemetry)
+    if state.provider_account_usage:
+        lines.append("### Provider & Account Breakdown\n")
+        lines.append("| Provider | Account | Calls | Succeeded | Failed | In Tokens | Out Tokens | Cost Exact (USD) |")
+        lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
+        for provider_id, accounts in sorted(state.provider_account_usage.items()):
+            for account_id, metrics in sorted(accounts.items()):
+                if not isinstance(metrics, dict):
+                    continue
+                lines.append(
+                    f"| {provider_id} | {account_id} | "
+                    f"{metrics.get('calls', 0)} | {metrics.get('calls_succeeded', 0)} | "
+                    f"{metrics.get('calls_failed', 0)} | "
+                    f"{metrics.get('input_tokens', 0)} | {metrics.get('output_tokens', 0)} | "
+                    f"{float(metrics.get('cost_usd_exact', 0.0) or 0.0):.4f} |"
+                )
+        lines.append("")
+
+    # Per-phase cost attribution
+    if state.phase_usage:
+        lines.append("### Phase Cost Attribution\n")
+        lines.append("| Phase | Provider | Account | Model | Calls | In Tokens | Out Tokens | Cost Exact (USD) |")
+        lines.append("|---|---|---|---|---:|---:|---:|---:|")
+        for phase_name, metrics in sorted(state.phase_usage.items()):
+            if not isinstance(metrics, dict):
+                continue
+            lines.append(
+                f"| {phase_name} | {metrics.get('provider_id', '?')} | "
+                f"{metrics.get('account_id', '?')} | {metrics.get('model', '?')} | "
+                f"{metrics.get('calls', 0)} | "
+                f"{metrics.get('input_tokens', 0)} | {metrics.get('output_tokens', 0)} | "
+                f"{float(metrics.get('cost_usd_exact', 0.0) or 0.0):.4f} |"
+            )
+        lines.append("")
+
+    # Routing decisions summary
+    if state.routing_decisions:
+        fallbacks = [d for d in state.routing_decisions if d.get("fallback")]
+        if fallbacks:
+            lines.append("### Routing Fallbacks\n")
+            lines.append("| Phase | Provider | Account | Model | Reason |")
+            lines.append("|---|---|---|---|---|")
+            for d in fallbacks:
+                lines.append(
+                    f"| {d.get('phase', '?')} | {d.get('provider_id', '?')} | "
+                    f"{d.get('account_id', '?')} | {d.get('model', '?')} | "
+                    f"{d.get('reasoning', '?')[:60]} |"
+                )
+            lines.append("")
 
     # Issue breakdown
     if state.issues:

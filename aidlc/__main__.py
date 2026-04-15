@@ -10,7 +10,9 @@ from .cli_commands import (
     _print_banner,
     _print_precheck,
     _red,
+    cmd_accounts as _cmd_accounts,
     cmd_audit as _cmd_audit,
+    cmd_config_show as _cmd_config_show,
     cmd_finalize as _cmd_finalize,
     cmd_improve as _cmd_improve,
     cmd_init as _cmd_init,
@@ -60,6 +62,13 @@ def cmd_finalize(args: argparse.Namespace) -> None:
 def cmd_status(args: argparse.Namespace) -> None:
     _cmd_status(args, __version__)
 
+
+def cmd_accounts(args: argparse.Namespace) -> None:
+    _cmd_accounts(args, __version__)
+
+
+def cmd_config_show(args: argparse.Namespace) -> None:
+    _cmd_config_show(args, __version__)
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
@@ -176,6 +185,11 @@ def main() -> None:
         cmd_finalize(args)
     elif args.command == "status":
         cmd_status(args)
+    elif args.command == "accounts":
+        cmd_accounts(args)
+    elif args.command == "config":
+        # config show (and future config subcommands)
+        cmd_config_show(args)
     else:
         parser.print_help()
         print()

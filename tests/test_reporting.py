@@ -28,7 +28,7 @@ class TestGenerateRunReport:
         content = path.read_text()
         assert "test_report" in content
         assert "complete" in content
-        assert "Claude Telemetry" in content
+        assert "AI Provider Telemetry" in content
         assert "Model Breakdown" in content
 
     def test_includes_issue_table(self, tmp_path):
