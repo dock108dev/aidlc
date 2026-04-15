@@ -558,15 +558,28 @@ class ProviderRouter:
                     fallback=True,
                 )
 
-        # Absolute last resort: ClaudeCLI even if not available (will fail gracefully)
-        adapter = self._adapters.get("claude") or ClaudeCLIAdapter(self.config, self.logger)
+        # Absolute last resort: use first registered adapter even if unavailable (will fail gracefully)
+        if self._adapters:
+            provider_id, adapter = next(iter(self._adapters.items()))
+            model = model_override or adapter.get_default_model(phase)
+            return RouteDecision(
+                provider_id=provider_id,
+                account_id=None,
+                adapter=adapter,
+                model=model,
+                reasoning="emergency fallback: all providers unavailable",
+                strategy_used="fallback",
+                fallback=True,
+            )
+        # No adapters registered at all — construct Claude as absolute last resort
+        adapter = ClaudeCLIAdapter(self.config, self.logger)
         model = model_override or adapter.get_default_model(phase)
         return RouteDecision(
             provider_id="claude",
             account_id=None,
             adapter=adapter,
             model=model,
-            reasoning="emergency fallback: all providers unavailable",
+            reasoning="emergency fallback: no adapters registered",
             strategy_used="fallback",
             fallback=True,
         )
@@ -576,15 +589,17 @@ class ProviderRouter:
         providers_cfg = self.config.get("providers", {})
         adapters: dict[str, ProviderAdapter] = {}
 
-        # Always register Claude (primary/legacy provider)
-        adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
-
-        # Register additional providers if enabled in config
         if isinstance(providers_cfg, dict):
+            # Respect enabled flag for all providers; Claude defaults to True for backwards compat
+            if providers_cfg.get("claude", {}).get("enabled", True):
+                adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
             if providers_cfg.get("copilot", {}).get("enabled", False):
                 adapters["copilot"] = CopilotAdapter(self.config, self.logger)
             if providers_cfg.get("openai", {}).get("enabled", False):
                 adapters["openai"] = OpenAIAdapter(self.config, self.logger)
+        else:
+            # No providers config at all — fall back to Claude only (legacy behaviour)
+            adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
 
         return adapters
 

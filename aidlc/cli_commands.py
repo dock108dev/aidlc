@@ -607,6 +607,89 @@ def _cmd_accounts_validate(args, manager, full_args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Provider enable / disable commands
+# ---------------------------------------------------------------------------
+
+_KNOWN_PROVIDERS = {"claude", "copilot", "openai"}
+
+
+def cmd_provider(args: argparse.Namespace, version: str) -> None:
+    """Enable or disable a provider in the project config."""
+    subcmd = getattr(args, "provider_cmd", "list")
+    _print_banner(version)
+
+    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    config_path = project_root / ".aidlc" / "config.json"
+
+    if subcmd == "list" or subcmd is None:
+        _cmd_provider_list(config_path)
+    elif subcmd in ("enable", "disable"):
+        name = getattr(args, "name", None)
+        _cmd_provider_toggle(config_path, name, enabled=(subcmd == "enable"))
+    else:
+        print(f"Unknown provider subcommand: {subcmd}")
+        sys.exit(1)
+
+
+def _cmd_provider_list(config_path: Path) -> None:
+    import json
+
+    if not config_path.exists():
+        print(f"  {_yellow('!')} No .aidlc/config.json found. Run {_cyan('aidlc init')} first.")
+        return
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    providers = config.get("providers", {})
+    if not providers:
+        print("  No provider config found.")
+        return
+
+    print(f"  {_bold('Providers')}")
+    print()
+    for pname, cfg in providers.items():
+        enabled = cfg.get("enabled", True)
+        status = _green("enabled") if enabled else _dim("disabled")
+        model = cfg.get("default_model", "?")
+        bullet = "●" if enabled else "○"
+        print(f"  {bullet} {_bold(pname):<20}  {status}  (model: {model})")
+    print()
+    print(
+        f"  Toggle: {_cyan('aidlc provider enable <name>')} / {_cyan('aidlc provider disable <name>')}"
+    )
+
+
+def _cmd_provider_toggle(config_path: Path, name: str, enabled: bool) -> None:
+    import json
+
+    if not name:
+        print(f"{_red('x')} Provider name is required.")
+        sys.exit(1)
+
+    if name not in _KNOWN_PROVIDERS:
+        print(f"{_yellow('!')} Unknown provider '{name}'. Known: {', '.join(sorted(_KNOWN_PROVIDERS))}")
+        sys.exit(1)
+
+    if not config_path.exists():
+        print(f"  {_yellow('!')} No .aidlc/config.json found. Run {_cyan('aidlc init')} first.")
+        sys.exit(1)
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    config.setdefault("providers", {}).setdefault(name, {})["enabled"] = enabled
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+    action = _green("enabled") if enabled else _dim("disabled")
+    icon = _green("+") if enabled else "-"
+    print(f"  {icon} Provider '{_bold(name)}' {action}")
+    print(f"  Config: {_cyan(str(config_path))}")
+
+
+# ---------------------------------------------------------------------------
 # Config show / effective runtime preview
 # ---------------------------------------------------------------------------
 

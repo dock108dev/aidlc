@@ -18,6 +18,7 @@ from .cli_commands import (
     cmd_init as _cmd_init,
     cmd_plan as _cmd_plan,
     cmd_precheck as _cmd_precheck,
+    cmd_provider as _cmd_provider,
     cmd_status as _cmd_status,
 )
 from .cli_parser import build_parser
@@ -65,6 +66,10 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 def cmd_accounts(args: argparse.Namespace) -> None:
     _cmd_accounts(args, __version__)
+
+
+def cmd_provider(args: argparse.Namespace) -> None:
+    _cmd_provider(args, __version__)
 
 
 def cmd_config_show(args: argparse.Namespace) -> None:
@@ -187,6 +192,8 @@ def main() -> None:
         cmd_status(args)
     elif args.command == "accounts":
         cmd_accounts(args)
+    elif args.command == "provider":
+        cmd_provider(args)
     elif args.command == "config":
         # config show (and future config subcommands)
         cmd_config_show(args)

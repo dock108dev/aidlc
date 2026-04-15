@@ -45,22 +45,20 @@ class OpenAIAdapter(ProviderAdapter):
 
         model = model_override or self.default_model
 
-        # Build codex CLI command
-        # codex --model gpt-4o --quiet < prompt_stdin
-        cmd = self._build_command(model, allow_edits)
+        # Build codex CLI command: codex exec --model <model> [--full-auto] <prompt>
+        cmd = self._build_command(model, allow_edits, prompt)
 
         start = time.time()
         try:
             proc = subprocess.Popen(
                 cmd,
-                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=str(working_dir),
             )
             try:
-                stdout, stderr = proc.communicate(input=prompt, timeout=self.hard_timeout)
+                stdout, stderr = proc.communicate(timeout=self.hard_timeout)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
@@ -105,11 +103,12 @@ class OpenAIAdapter(ProviderAdapter):
                 failure_type="provider_error",
             )
 
-    def _build_command(self, model: str, allow_edits: bool) -> list[str]:
-        """Build the codex CLI command."""
-        cmd = [self.cli_command, "--model", model, "--quiet"]
+    def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
+        """Build the codex exec CLI command."""
+        cmd = [self.cli_command, "exec", "--model", model]
         if allow_edits:
             cmd.append("--full-auto")
+        cmd.append(prompt)
         return cmd
 
     def check_available(self) -> bool:

@@ -141,6 +141,20 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     accounts_validate = accounts_subparsers.add_parser("validate", help="Run health check on account(s)")
     accounts_validate.add_argument("--id", help="Account ID to validate (default: all)")
 
+    # --- provider subcommand ---
+    provider_parser = subparsers.add_parser(
+        "provider",
+        help="Enable or disable AI providers",
+        description="Enable or disable AI providers (claude, copilot, openai) in the project config.",
+    )
+    provider_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    provider_subparsers = provider_parser.add_subparsers(dest="provider_cmd", help="Provider action")
+    provider_subparsers.add_parser("list", help="Show provider enable/disable status")
+    provider_enable = provider_subparsers.add_parser("enable", help="Enable a provider")
+    provider_enable.add_argument("name", help="Provider name: claude | copilot | openai")
+    provider_disable = provider_subparsers.add_parser("disable", help="Disable a provider")
+    provider_disable.add_argument("name", help="Provider name: claude | copilot | openai")
+
     # --- config subcommand ---
     config_parser = subparsers.add_parser(
         "config",
