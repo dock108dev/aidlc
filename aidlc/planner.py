@@ -301,10 +301,15 @@ class Planner:
         # within-batch dependencies are allowed (e.g., ISSUE-018 depends on
         # ISSUE-016, both created in the same cycle).
         # Include existing issues from previous runs so dependencies to them are valid.
+        # existing_issues are {"path": "...", "content": "..."} dicts — extract the
+        # issue ID from the filename stem (e.g. ".aidlc/issues/ISSUE-020.md" → "ISSUE-020").
+        from pathlib import Path as _Path
         known_ids = {
             d["id"] for d in self.state.issues
         } | {
-            e.get("id") for e in self.existing_issues if e.get("id")
+            _Path(e["path"]).stem
+            for e in self.existing_issues
+            if e.get("path") and _Path(e["path"]).stem.upper().startswith("ISSUE")
         }
         batch_new_ids = {
             a.issue_id for a in planning_output.actions
