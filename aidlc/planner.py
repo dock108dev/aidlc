@@ -49,6 +49,7 @@ class Planner:
         logger,
         doc_gaps: list | None = None,
         doc_files: list | None = None,
+        existing_issues: list | None = None,
     ):
         self.state = state
         self.run_dir = run_dir
@@ -57,6 +58,7 @@ class Planner:
         self.project_context = project_context
         self.doc_gaps = doc_gaps or []
         self.doc_files = doc_files or []
+        self.existing_issues = existing_issues or []
         self._research_count = 0
         self._last_cycle_notes = load_last_cycle_notes(self.run_dir)
         self.logger = logger
@@ -297,8 +299,13 @@ class Planner:
 
         # Validate — pre-register new issue IDs from this batch so
         # within-batch dependencies are allowed (e.g., ISSUE-018 depends on
-        # ISSUE-016, both created in the same cycle)
-        known_ids = {d["id"] for d in self.state.issues}
+        # ISSUE-016, both created in the same cycle).
+        # Include existing issues from previous runs so dependencies to them are valid.
+        known_ids = {
+            d["id"] for d in self.state.issues
+        } | {
+            e.get("id") for e in self.existing_issues if e.get("id")
+        }
         batch_new_ids = {
             a.issue_id for a in planning_output.actions
             if a.action_type == "create_issue" and a.issue_id

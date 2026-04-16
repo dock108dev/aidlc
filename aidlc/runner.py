@@ -213,6 +213,7 @@ def run_full(
                     state, run_dir, config, cli, project_context, logger,
                     doc_gaps=doc_gaps,
                     doc_files=scan_result.get("doc_files", []),
+                    existing_issues=scan_result.get("existing_issues", []),
                 )
                 planner.run()
                 save_state(state, run_dir)
