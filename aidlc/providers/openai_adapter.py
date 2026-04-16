@@ -150,13 +150,6 @@ class OpenAIAdapter(ProviderAdapter):
                 message="OpenAI CLI check timed out.",
             )
 
-        import os
-        if not os.environ.get("OPENAI_API_KEY"):
-            return HealthResult(
-                status=HealthStatus.NOT_AUTHENTICATED,
-                message="OPENAI_API_KEY environment variable not set.",
-            )
-
         version = result.stdout.strip().splitlines()[0] if result.stdout else ""
         return HealthResult(
             status=HealthStatus.HEALTHY,

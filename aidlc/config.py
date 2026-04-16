@@ -27,15 +27,29 @@ DEFAULTS = {
         },
         "copilot": {
             "enabled": False,
-            "cli_command": "gh",
+            "cli_command": "copilot",
             "default_model": "claude-sonnet-4-6",
-            "phase_models": {},
+            "phase_models": {
+                "planning": "claude-sonnet-4-6",
+                "research": "claude-sonnet-4-6",
+                "implementation": "claude-sonnet-4-6",
+                "implementation_complex": "claude-sonnet-4-6",
+                "finalization": "claude-sonnet-4-6",
+                "audit": "claude-sonnet-4-6",
+            },
         },
         "openai": {
             "enabled": False,
             "cli_command": "codex",
-            "default_model": "gpt-4o",
-            "phase_models": {},
+            "default_model": "gpt-5.4",
+            "phase_models": {
+                "planning": "gpt-5.4-mini",
+                "research": "gpt-5.4-mini",
+                "implementation": "gpt-5.4",
+                "implementation_complex": "gpt-5.3-codex",
+                "finalization": "gpt-5.4-mini",
+                "audit": "gpt-5.4-mini",
+            },
         },
     },
     "plan_budget_hours": 4,
@@ -82,6 +96,50 @@ DEFAULTS = {
             "output": 4.0,
             "cache_creation_input": 1.0,
             "cache_read_input": 0.08,
+        },
+        "claude-sonnet-4-6": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_creation_input": 3.75,
+            "cache_read_input": 0.30,
+        },
+        # OpenAI GPT-5 family (current as of April 2026)
+        "gpt-5.4": {
+            "input": 2.50,
+            "output": 15.0,
+            "cache_creation_input": 2.50,
+            "cache_read_input": 0.25,
+        },
+        "gpt-5.4-mini": {
+            "input": 0.75,
+            "output": 4.50,
+            "cache_creation_input": 0.75,
+            "cache_read_input": 0.075,
+        },
+        "gpt-5.4-nano": {
+            "input": 0.20,
+            "output": 1.25,
+            "cache_creation_input": 0.20,
+            "cache_read_input": 0.02,
+        },
+        "gpt-5.3-codex": {
+            "input": 1.75,
+            "output": 14.0,
+            "cache_creation_input": 1.75,
+            "cache_read_input": 0.175,
+        },
+        # Legacy OpenAI models (kept for backward compat with existing run state)
+        "gpt-4o": {
+            "input": 2.5,
+            "output": 10.0,
+            "cache_creation_input": 2.5,
+            "cache_read_input": 1.25,
+        },
+        "gpt-4o-mini": {
+            "input": 0.15,
+            "output": 0.6,
+            "cache_creation_input": 0.15,
+            "cache_read_input": 0.075,
         },
     },
     "retry_max_attempts": 2,
@@ -199,6 +257,36 @@ DEFAULTS = {
 }
 
 
+def _merge_user_config(config: dict, user_config: dict) -> None:
+    """Merge user config into config dict, deep-merging the providers sub-dict.
+
+    A shallow config.update() would replace the entire 'providers' dict, losing
+    defaults for any provider the user didn't fully specify (e.g. cli_command,
+    default_model, phase_models).  This function merges top-level keys normally
+    but deep-merges each per-provider dict so that only the user-specified keys
+    are overwritten.
+    """
+    for key, value in user_config.items():
+        if key == "providers" and isinstance(value, dict) and isinstance(config.get("providers"), dict):
+            for provider_id, provider_cfg in value.items():
+                if isinstance(provider_cfg, dict) and isinstance(config["providers"].get(provider_id), dict):
+                    # Deep-merge: user values override defaults, but missing keys keep defaults
+                    merged = dict(config["providers"][provider_id])
+                    # Also deep-merge phase_models if both sides have it
+                    if "phase_models" in provider_cfg and isinstance(provider_cfg["phase_models"], dict):
+                        base_phases = dict(merged.get("phase_models") or {})
+                        base_phases.update(provider_cfg["phase_models"])
+                        merged.update(provider_cfg)
+                        merged["phase_models"] = base_phases
+                    else:
+                        merged.update(provider_cfg)
+                    config["providers"][provider_id] = merged
+                else:
+                    config["providers"][provider_id] = provider_cfg
+        else:
+            config[key] = value
+
+
 def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None) -> Path:
     """Write a default .aidlc/config.json using the canonical defaults.
 
@@ -228,6 +316,7 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "claude": {
                     "enabled": True,
                     "cli_command": "claude",
+                    "default_model": "sonnet",
                     "accounts": [
                         {
                             "id": "default",
@@ -298,7 +387,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
         if path.exists():
             with open(path) as f:
                 user_config = json.load(f)
-            config.update(user_config)
+            _merge_user_config(config, user_config)
             user_keys.update(user_config.keys())
         else:
             raise FileNotFoundError(f"Config not found: {path}")
@@ -309,7 +398,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
             if project_config.exists():
                 with open(project_config) as f:
                     user_config = json.load(f)
-                config.update(user_config)
+                _merge_user_config(config, user_config)
                 user_keys.update(user_config.keys())
 
     # Resolve project root

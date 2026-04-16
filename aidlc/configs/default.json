@@ -28,16 +28,30 @@
     },
     "copilot": {
       "enabled": false,
-      "cli_command": "gh",
+      "cli_command": "copilot",
       "default_model": "claude-sonnet-4-6",
-      "phase_models": {},
+      "phase_models": {
+        "planning": "claude-sonnet-4-6",
+        "research": "claude-sonnet-4-6",
+        "implementation": "claude-sonnet-4-6",
+        "implementation_complex": "claude-sonnet-4-6",
+        "finalization": "claude-sonnet-4-6",
+        "audit": "claude-sonnet-4-6"
+      },
       "accounts": []
     },
     "openai": {
       "enabled": false,
       "cli_command": "codex",
-      "default_model": "gpt-4o",
-      "phase_models": {},
+      "default_model": "gpt-5.4",
+      "phase_models": {
+        "planning": "gpt-5.4-mini",
+        "research": "gpt-5.4-mini",
+        "implementation": "gpt-5.4",
+        "implementation_complex": "gpt-5.3-codex",
+        "finalization": "gpt-5.4-mini",
+        "audit": "gpt-5.4-mini"
+      },
       "accounts": []
     }
   },
@@ -80,6 +94,30 @@
       "output": 15.0,
       "cache_creation_input": 3.75,
       "cache_read_input": 0.3
+    },
+    "gpt-5.4": {
+      "input": 2.50,
+      "output": 15.0,
+      "cache_creation_input": 2.50,
+      "cache_read_input": 0.25
+    },
+    "gpt-5.4-mini": {
+      "input": 0.75,
+      "output": 4.50,
+      "cache_creation_input": 0.75,
+      "cache_read_input": 0.075
+    },
+    "gpt-5.4-nano": {
+      "input": 0.20,
+      "output": 1.25,
+      "cache_creation_input": 0.20,
+      "cache_read_input": 0.02
+    },
+    "gpt-5.3-codex": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_creation_input": 1.75,
+      "cache_read_input": 0.175
     },
     "gpt-4o": {
       "input": 2.5,
