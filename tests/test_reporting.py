@@ -96,3 +96,27 @@ class TestGenerateCheckpointSummary:
         assert "implementing" in content
         assert "ISSUE-005" in content
         assert "Provider calls" in content
+        assert "All providers (totals) tokens" in content
+        assert "no breakdown recorded" in content
+
+    def test_checkpoint_includes_provider_table(self, tmp_path):
+        state = RunState(run_id="test_cp2", config_name="default")
+        state.checkpoint_count = 1
+        state.provider_account_usage = {
+            "copilot": {
+                "primary": {
+                    "calls": 2,
+                    "calls_succeeded": 2,
+                    "calls_failed": 0,
+                    "input_tokens": 50,
+                    "output_tokens": 25,
+                    "total_tokens": 75,
+                    "cost_usd_exact": 0.0,
+                    "cost_usd_estimated": 0.01,
+                }
+            }
+        }
+        path = generate_checkpoint_summary(state, tmp_path)
+        content = path.read_text()
+        assert "| copilot | primary |" in content
+        assert "| 2 | 2 | 0 |" in content

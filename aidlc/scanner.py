@@ -5,7 +5,6 @@ design docs, etc. to build project context for planning.
 """
 
 import fnmatch
-import os
 import re
 from pathlib import Path
 
@@ -403,9 +402,29 @@ class ProjectScanner:
         # Existing issues
         if scan_result["existing_issues"]:
             sections.append(f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n")
+            max_issue_lines = 25
+            shown = 0
             for issue in scan_result["existing_issues"]:
-                sections.append(f"### {issue['path']}\n")
-                sections.append(issue["content"])
-                sections.append("")
+                if shown >= max_issue_lines:
+                    break
+                parsed = issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
+                issue_id = parsed.get("id") or Path(issue.get("path", "")).stem
+                title = (parsed.get("title") or "").strip()
+                if len(title) > 90:
+                    title = f"{title[:87]}..."
+                status = parsed.get("status", "unknown")
+                priority = parsed.get("priority", "unknown")
+                if title:
+                    sections.append(
+                        f"- {issue_id} [{priority}/{status}] — {title} (file: {issue.get('path', 'unknown')})"
+                    )
+                else:
+                    sections.append(
+                        f"- {issue_id} [{priority}/{status}] (file: {issue.get('path', 'unknown')})"
+                    )
+                shown += 1
+            omitted = len(scan_result["existing_issues"]) - shown
+            if omitted > 0:
+                sections.append(f"- ... and {omitted} more issues (read .aidlc/issues/*.md as needed)")
 
         return "\n".join(sections)

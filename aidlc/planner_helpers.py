@@ -63,11 +63,13 @@ def _render_existing_issues_section(planner) -> list[str]:
         lines.append(f"- Status totals: {status_summary}")
 
         high_priority_pending = [
-            issue for issue in issues
-            if (
-                issue.get("priority") == "high"
-                and issue.get("status", "pending")
-                in ("pending", "in_progress", "blocked", "failed")
+            issue
+            for issue in issues
+            if issue.get("priority") == "high" and issue.get("status", "pending") in (
+                "pending",
+                "in_progress",
+                "blocked",
+                "failed",
             )
         ]
         high_priority_pending.sort(
@@ -114,8 +116,8 @@ def _render_existing_issues_section(planner) -> list[str]:
 
     for issue in selected:
         title = (issue.get("title", "") or "").strip()
-        if len(title) > 120:
-            title = f"{title[:117]}..."
+        if len(title) > 90:
+            title = f"{title[:87]}..."
         deps = issue.get("dependencies") or []
         dep_s = ",".join(deps) if deps else "-"
         lines.append(
@@ -124,6 +126,39 @@ def _render_existing_issues_section(planner) -> list[str]:
             f"deps:{dep_s}"
         )
     return lines
+
+
+def _enforce_prompt_budget(prompt: str, planner) -> str:
+    """Shrink planning prompt to configured budget while preserving key instructions."""
+    max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
+    if len(prompt) <= max_chars:
+        return prompt
+
+    planner.logger.warning(
+        f"Planning prompt exceeded budget ({len(prompt):,} > {max_chars:,}); shrinking context"
+    )
+
+    shrunk = re.sub(
+        r"\n## Existing Issues[\s\S]*?(?=\n## |\Z)",
+        "\n## Existing Issues\nUse .aidlc/planning_index.md and .aidlc/issues/*.md for full backlog details.",
+        prompt,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    shrunk = re.sub(
+        r"\n## Previous Cycle[\s\S]*?(?=\n## |\Z)",
+        "\n## Previous Cycle\nSee prior cycle notes in this run's planning outputs.",
+        shrunk,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    marker = "\n\n[planning prompt truncated to fit max_planning_prompt_chars]\n"
+    keep = max(1000, max_chars - len(marker))
+    return shrunk[:keep] + marker
 
 
 def write_planning_index(planner) -> Path:
@@ -192,10 +227,10 @@ def write_planning_index(planner) -> Path:
             f"- Priority totals: high={priority_counts['high']}, "
             f"medium={priority_counts['medium']}, low={priority_counts['low']}"
         )
-        lines.append(
-            "- Status totals: "
-            + ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+        status_totals = ", ".join(
+            f"{status}={count}" for status, count in sorted(status_counts.items())
         )
+        lines.append(f"- Status totals: {status_totals}")
         lines.append("")
 
         if label_counts:
@@ -314,7 +349,8 @@ def build_prompt(planner, is_finalization: bool) -> str:
     volatile_parts.append(f"- docs_created: {planner.state.files_created}")
 
     prompt = "\n\n".join(static_parts + volatile_parts)
-    planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt)//4:,} tokens)")
+    prompt = _enforce_prompt_budget(prompt, planner)
+    planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
     return prompt
 
 

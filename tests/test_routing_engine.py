@@ -262,3 +262,31 @@ def test_balanced_budget_routing_uses_pressure_not_single_provider(tmp_path):
     assert second["success"] is True
     assert first["provider_id"] == "openai"
     assert second["provider_id"] == "copilot"
+
+
+def test_usage_limit_phrase_is_treated_as_rate_limited():
+    result = {
+        "success": False,
+        "error": (
+            "You've hit your usage limit. Upgrade to Pro, visit settings/usage "
+            "to purchase more credits or try again at 8:55 PM."
+        ),
+        "output": None,
+        "failure_type": "issue",
+    }
+
+    assert ProviderRouter._is_rate_limited_result(result) is True
+
+
+def test_restore_time_parses_try_again_at_clock_time():
+    result = {
+        "success": False,
+        "error": "You've hit your usage limit. Please try again at 8:55 PM.",
+        "output": None,
+        "failure_type": "issue",
+    }
+
+    restore = ProviderRouter._extract_restore_time_epoch(result)
+
+    assert restore is not None
+    assert restore > 0

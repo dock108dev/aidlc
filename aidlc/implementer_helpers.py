@@ -49,12 +49,26 @@ def build_implementation_prompt(impl, issue) -> str:
         IMPLEMENTATION_SCHEMA_DESCRIPTION,
     ]
 
+    context_cap = max(1, int(impl.max_impl_context_chars or 12000))
+    project_context = impl.project_context
+    if len(project_context) > context_cap:
+        head = int(context_cap * 0.7)
+        tail = max(0, context_cap - head - 140)
+        tail_text = project_context[-tail:] if tail else ""
+        project_context = "".join(
+            [
+                project_context[:head],
+                "\n\n... [context truncated; read repository files directly when needed] ...\n\n",
+                tail_text,
+            ]
+        )
+
     volatile_sections = [
         "# Implementation Task\n",
         f"Issue **{issue.id}** — read full spec in `.aidlc/issues/{issue.id}.md` when present.",
         "",
         "## Project Context\n",
-        impl.project_context[: impl.max_impl_context_chars],
+        project_context,
         "",
         f"## Issue header: {issue.id} — {issue.title}\n",
         f"- priority: {issue.priority} | labels: {', '.join(issue.labels) if issue.labels else 'none'}",

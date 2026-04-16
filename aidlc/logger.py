@@ -42,6 +42,31 @@ def setup_logger(run_id: str, log_dir: Path, verbose: bool = False) -> logging.L
     return logger
 
 
+def _log_provider_account_usage(logger: logging.Logger, provider_account_usage: object) -> None:
+    """Log per-provider/account token and call stats from state.provider_account_usage."""
+    if not isinstance(provider_account_usage, dict) or not provider_account_usage:
+        logger.info("  Per provider: (no breakdown recorded)")
+        return
+    logger.info("  Per provider:")
+    for provider_id, accounts in sorted(provider_account_usage.items()):
+        if not isinstance(accounts, dict):
+            continue
+        for account_id, metrics in sorted(accounts.items()):
+            if not isinstance(metrics, dict):
+                continue
+            cost_ex = float(metrics.get("cost_usd_exact", 0.0) or 0.0)
+            cost_est = float(metrics.get("cost_usd_estimated", 0.0) or 0.0)
+            total_tok = int(metrics.get("total_tokens", 0) or 0)
+            logger.info(
+                f"    {provider_id}/{account_id}: "
+                f"calls={metrics.get('calls', 0)} ok={metrics.get('calls_succeeded', 0)} "
+                f"fail={metrics.get('calls_failed', 0)} "
+                f"in={metrics.get('input_tokens', 0)} out={metrics.get('output_tokens', 0)} "
+                f"total={total_tok} "
+                f"cost_exact={cost_ex:.4f} cost_est={cost_est:.4f}"
+            )
+
+
 def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
     provider_h = state_dict.get("elapsed_seconds", 0) / 3600
     console_h = state_dict.get("console_seconds", 0) / 3600
@@ -64,13 +89,14 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
         f"{state_dict.get('claude_retries_total', 0)} retries"
     )
     logger.info(
-        "  Provider tokens: "
+        "  All providers (totals) tokens: "
         f"in={state_dict.get('claude_input_tokens', 0)}, "
         f"out={state_dict.get('claude_output_tokens', 0)}, "
         f"cache_write={state_dict.get('claude_cache_creation_input_tokens', 0)}, "
         f"cache_read={state_dict.get('claude_cache_read_input_tokens', 0)}, "
         f"total={state_dict.get('claude_total_tokens', 0)}"
     )
+    _log_provider_account_usage(logger, state_dict.get("provider_account_usage"))
     logger.info(
         "  Provider tool requests: "
         f"web_search={state_dict.get('claude_web_search_requests', 0)}, "

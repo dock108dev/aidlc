@@ -157,8 +157,8 @@ DEFAULTS = {
     "run_tests_command": None,       # auto-detected if not set
     "test_timeout_seconds": 300,
     "max_doc_chars": 10000,
-    "max_context_chars": 80000,
-    "max_implementation_context_chars": 30000,
+    "max_context_chars": 40000,
+    "max_implementation_context_chars": 12000,
     "doc_scan_patterns": [
         "**/*.md",
         "**/*.txt",
@@ -216,9 +216,9 @@ DEFAULTS = {
     "project_brief_max_chars": 20000,       # max size of generated project brief
     "phase_context_max_chars": 20000,       # max chars for phase-focused docs per cycle
     "max_planning_prompt_chars": 60000,     # total prompt budget per planning cycle
-    "planning_issue_index_max_items": 40,   # max issues listed inline in planning prompt
-    "planning_issue_index_include_all_until": 30,  # list all issues until this count
-    "planning_last_cycle_notes_max_chars": 500,    # max chars from previous-cycle notes
+    "planning_issue_index_max_items": 15,   # max issues listed inline in planning prompt
+    "planning_issue_index_include_all_until": 12,  # list all issues until this count
+    "planning_last_cycle_notes_max_chars": 300,    # max chars from previous-cycle notes
 
     # Validation loop
     "validation_enabled": True,

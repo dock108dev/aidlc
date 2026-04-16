@@ -208,12 +208,37 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
     return report_path
 
 
+def _checkpoint_provider_markdown(provider_account_usage: dict) -> str:
+    if not provider_account_usage:
+        return "\n### Per provider\n\n_(no breakdown recorded)_\n"
+    rows = [
+        "\n### Per provider\n",
+        "| Provider | Account | Calls | Succeeded | Failed | In | Out | Total | Cost exact (USD) | Cost est (USD) |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for provider_id, accounts in sorted(provider_account_usage.items()):
+        if not isinstance(accounts, dict):
+            continue
+        for account_id, m in sorted(accounts.items()):
+            if not isinstance(m, dict):
+                continue
+            rows.append(
+                f"| {provider_id} | {account_id} | "
+                f"{m.get('calls', 0)} | {m.get('calls_succeeded', 0)} | {m.get('calls_failed', 0)} | "
+                f"{m.get('input_tokens', 0)} | {m.get('output_tokens', 0)} | {m.get('total_tokens', 0)} | "
+                f"{float(m.get('cost_usd_exact', 0.0) or 0.0):.4f} | "
+                f"{float(m.get('cost_usd_estimated', 0.0) or 0.0):.4f} |"
+            )
+    rows.append("")
+    return "\n".join(rows)
+
+
 def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
     cp_path = report_dir / f"checkpoint_{state.checkpoint_count:04d}.md"
     provider_h = state.elapsed_seconds / 3600
     console_h = state.console_seconds / 3600
 
-    content = f"""# Checkpoint {state.checkpoint_count}
+    header = f"""# Checkpoint {state.checkpoint_count}
 
 - **Time**: {datetime.now(timezone.utc).isoformat()}
 - **Phase**: {state.phase.value}
@@ -225,9 +250,12 @@ def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
 - **Issues implemented**: {state.issues_implemented}
 - **Current issue**: {state.current_issue_id or 'none'}
 - **Provider calls**: {state.claude_calls_total} total ({state.claude_calls_succeeded} ok, {state.claude_calls_failed} failed, {state.claude_retries_total} retries)
-- **Provider tokens**: in={state.claude_input_tokens}, out={state.claude_output_tokens}, cache_write={state.claude_cache_creation_input_tokens}, cache_read={state.claude_cache_read_input_tokens}, total={state.claude_total_tokens}
+- **All providers (totals) tokens**: in={state.claude_input_tokens}, out={state.claude_output_tokens}, cache_write={state.claude_cache_creation_input_tokens}, cache_read={state.claude_cache_read_input_tokens}, total={state.claude_total_tokens}
 - **Provider tool requests**: web_search={state.claude_web_search_requests}, web_fetch={state.claude_web_fetch_requests}
 - **Provider cost (USD)**: exact={state.claude_cost_usd_exact:.4f}, estimated={state.claude_cost_usd_estimated:.4f}
 """
+    content = header + _checkpoint_provider_markdown(
+        state.provider_account_usage if isinstance(state.provider_account_usage, dict) else {}
+    )
     cp_path.write_text(content)
     return cp_path
