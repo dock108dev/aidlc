@@ -150,14 +150,7 @@ class OpenAIAdapter(ProviderAdapter):
                 message="OpenAI CLI check timed out.",
             )
 
-        version = result.stdout.strip().splitlines()[0] if result.stdout else ""
-        return HealthResult(
-            status=HealthStatus.HEALTHY,
-            message=f"OpenAI CLI available ({version})",
-            details={"version": version},
-        )
-
-    def get_default_model(self, phase: str | None = None) -> str:
+        get_default_model(self, phase: str | None = None) -> str:
         provider_cfg = self._provider_config()
         phase_models = provider_cfg.get("phase_models", {})
         if phase and phase in phase_models:

@@ -114,8 +114,7 @@ class CopilotAdapter(ProviderAdapter):
         --allow-all grants all tool permissions for autonomous execution.
         -s (--silent) suppresses usage stats, outputs only the agent response.
         """
-        cmd = [self.cli_command, "-p", prompt, "--allow-all", "-s", "--model", model]
-        return cmd
+        return [self.cli_command, "-p", prompt, "--allow-all", "-s", "--model", model]
 
     def check_available(self) -> bool:
         if self.dry_run:
@@ -132,7 +131,7 @@ class CopilotAdapter(ProviderAdapter):
             return False
 
     def validate_health(self, account_id: str | None = None) -> HealthResult:
-        """Check Copilot CLI installation and GitHub auth."""
+        """Check Copilot CLI installation and auth."""
         try:
             result = subprocess.run(
                 [self.cli_command, "version"],
@@ -156,17 +155,14 @@ class CopilotAdapter(ProviderAdapter):
                 message="Copilot CLI check timed out.",
             )
 
-        # Check auth status via copilot login --status or by checking stored credentials
-        # The copilot CLI exits non-zero when not authenticated on version check in some builds;
-        # we do a lightweight auth probe by running a no-op to check login state.
+        # Auth failures surface at prompt execution time; version check is sufficient for install probe.
         try:
-            auth_result = subprocess.run(
+            subprocess.run(
                 [self.cli_command, "--help"],
                 capture_output=True,
                 text=True,
                 timeout=10,
             )
-            # If binary runs at all, it is installed. Auth failures surface at prompt execution time.
         except Exception:
             pass
 
