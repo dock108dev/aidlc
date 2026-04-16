@@ -48,6 +48,8 @@ class RouteDecision:
     reasoning: str
     strategy_used: str = "balanced"
     fallback: bool = False           # True if this is a fallback from the preferred route
+    tier: str = "budget"             # "premium" | "budget" | "fallback"
+    quality_note: Optional[str] = None  # Human-readable quality/cost tradeoff note, logged to user
 
 
 @dataclass
@@ -92,6 +94,13 @@ _BALANCED_PROVIDER_ORDER = ["claude", "copilot", "openai"]
 # Phases where we prefer higher-quality models in BALANCED mode
 _QUALITY_SENSITIVE_PHASES = {"planning", "implementation_complex", "finalization", "audit"}
 
+# Phases routed to the premium tier (Claude) when available.
+# Everything else goes to the budget tier (copilot/openai, randomly balanced).
+_PREMIUM_PHASES = {"implementation_complex"}
+
+# Budget provider pair that we round-robin between runs for even token distribution.
+_BUDGET_PROVIDERS = ["copilot", "openai"]
+
 
 class ProviderRouter:
     """Drop-in replacement for ClaudeCLI that routes calls across providers/accounts.
@@ -122,6 +131,22 @@ class ProviderRouter:
 
         # Legacy compat: expose .model like ClaudeCLI does
         self.model = config.get("claude_model", "sonnet")
+
+        # Session-level budget provider selection.
+        # Randomly pick copilot or openai at router init so a full run uses one
+        # provider consistently, but across runs they alternate to equalize
+        # monthly token usage.  Uses a random seed derived from current minute
+        # so the choice is stable within a single run but varies across runs.
+        import random as _random
+        import time as _time
+        _rng = _random.Random(int(_time.time() / 60))  # changes each minute
+        enabled_budget = [
+            p for p in _BUDGET_PROVIDERS
+            if p in self._adapters
+        ]
+        self._session_budget_provider: str | None = (
+            _rng.choice(enabled_budget) if enabled_budget else None
+        )
 
     # ------------------------------------------------------------------
     # ClaudeCLI-compatible interface
@@ -155,6 +180,7 @@ class ProviderRouter:
             f"→ provider={decision.provider_id} account={decision.account_id} "
             f"model={decision.model} [{decision.reasoning}]"
         )
+        self._log_routing_note(decision, effective_phase)
 
         result = decision.adapter.execute_prompt(
             prompt=prompt,
@@ -175,6 +201,8 @@ class ProviderRouter:
             "strategy": decision.strategy_used,
             "phase": effective_phase,
             "fallback": decision.fallback,
+            "tier": decision.tier,
+            "quality_note": decision.quality_note,
         }
 
         # Track usage pressure for Balanced mode
@@ -253,38 +281,40 @@ class ProviderRouter:
         complexity_level: str,
         model_override: str | None,
     ) -> RouteDecision:
-        """Balanced strategy: intelligent cost/quality/pressure balance.
+        """Balanced strategy: intelligent 3-tier cost/quality routing.
 
-        Decision logic:
-        1. Try preferred provider for this phase (from providers config or legacy keys)
-        2. Within that provider, pick the account with lowest usage pressure
-           that is healthy and has sufficient tier for the task
-        3. For complex/quality-sensitive phases, allow higher-tier accounts
-        4. For routine phases, protect premium/reserve accounts
-        5. Fall back to the next available provider if preferred is unhealthy
+        Tier design:
+          Premium tier  — Claude ($200/mo max plan)
+            Used for: implementation_complex
+            Fallback: session budget provider
+
+          Budget tier   — Copilot or OpenAI ($20/mo each)
+            Used for: all other phases
+            Selection: session_budget_provider (randomised at init so token
+            counts balance week-to-week; stable within a single run)
+            Fallback: whichever budget provider is healthy
+
+        Within a tier the account with lowest call count is preferred.
         """
         is_complex = complexity_level == "complex"
         is_quality_phase = phase in _QUALITY_SENSITIVE_PHASES or is_complex
+        is_premium_phase = phase in _PREMIUM_PHASES or (phase == "implementation" and is_complex)
 
-        # Determine preferred provider order for this phase
-        provider_order = self._preferred_provider_order(phase)
+        # Build candidate list: premium first for premium phases, budget first otherwise
+        provider_order = self._tier_aware_provider_order(phase, is_premium_phase)
 
         for provider_id in provider_order:
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
 
-            # Get accounts for this provider (from AccountManager if available)
             accounts = self._get_accounts_for_provider(provider_id)
-
-            # Select best account
             account_id, account_reasoning = self._select_account(
                 accounts=accounts,
                 provider_id=provider_id,
                 is_quality_phase=is_quality_phase,
             )
 
-            # Resolve model
             if model_override:
                 model = model_override
                 model_reason = f"explicit model_override={model_override}"
@@ -296,10 +326,25 @@ class ProviderRouter:
                 )
                 model_reason = f"phase={phase} complexity={complexity_level}"
 
+            tier_label = "premium" if is_premium_phase else "budget"
             reasoning = (
-                f"balanced: provider={provider_id}, {account_reasoning}, "
+                f"balanced/{tier_label}: provider={provider_id}, {account_reasoning}, "
                 f"model={model} ({model_reason})"
             )
+
+            # Build quality note for user-visible logging
+            quality_note: str | None = None
+            if is_premium_phase and provider_id == "claude":
+                quality_note = f"premium tier (Claude/{model}) for {phase} — using $200 plan"
+            elif is_premium_phase and provider_id != "claude":
+                quality_note = (
+                    f"Claude unavailable for {phase} (premium phase), "
+                    f"quality reduced: falling back to {provider_id}/{model}"
+                )
+            elif not is_premium_phase and provider_id in _BUDGET_PROVIDERS:
+                # Only note model upgrades within the budget tier
+                if model not in ("gpt-5.4-mini", "claude-sonnet-4-6", "claude-haiku-3-5"):
+                    quality_note = f"model upgraded to {model} for {phase} (complexity)"
 
             return RouteDecision(
                 provider_id=provider_id,
@@ -308,9 +353,10 @@ class ProviderRouter:
                 model=model,
                 reasoning=reasoning,
                 strategy_used="balanced",
+                tier=tier_label,
+                quality_note=quality_note,
             )
 
-        # Last resort: use first available adapter with no account
         return self._fallback_decision(phase, complexity_level, model_override)
 
     def _resolve_cheapest(
@@ -337,7 +383,7 @@ class ProviderRouter:
                 model = model_override
             else:
                 # Use cheapest available model for this provider
-                cheapest_models = {"claude": "haiku", "copilot": "claude-haiku-3-5", "openai": "gpt-4o-mini"}
+                cheapest_models = {"claude": "haiku", "copilot": "claude-haiku-3-5", "openai": "gpt-5.4-nano"}
                 model = cheapest_models.get(provider_id, adapter.get_default_model(phase))
 
             return RouteDecision(
@@ -382,7 +428,7 @@ class ProviderRouter:
             if model_override:
                 model = model_override
             else:
-                quality_models = {"claude": "opus", "copilot": "claude-sonnet-4-6", "openai": "gpt-4o"}
+                quality_models = {"claude": "opus", "copilot": "claude-sonnet-4-6", "openai": "gpt-5.4"}
                 model = quality_models.get(best_provider, adapter.get_default_model(phase))
 
             return RouteDecision(
@@ -435,24 +481,63 @@ class ProviderRouter:
     # ------------------------------------------------------------------
 
     def _preferred_provider_order(self, phase: str) -> list[str]:
-        """Return provider IDs in preference order for a phase."""
+        """Return provider IDs in preference order for a phase (simple fallback)."""
         providers_cfg = self.config.get("providers", {})
         if isinstance(providers_cfg, dict):
-            # Respect explicit enable/disable flags
             enabled = [
                 pid for pid, pcfg in providers_cfg.items()
                 if isinstance(pcfg, dict) and pcfg.get("enabled", True)
             ]
             if enabled:
-                # Put any explicitly preferred provider for this phase first
                 ordered = list(_BALANCED_PROVIDER_ORDER)
                 for pid in enabled:
                     if pid not in ordered:
                         ordered.append(pid)
-                # Filter to only enabled providers
                 return [p for p in ordered if p in enabled]
-
         return list(_BALANCED_PROVIDER_ORDER)
+
+    def _tier_aware_provider_order(self, phase: str, is_premium_phase: bool) -> list[str]:
+        """Return provider IDs ordered by tier appropriateness.
+
+        Premium phases: [claude, session_budget, other_budget]
+        Budget phases:  [session_budget, other_budget, claude (last-resort fallback)]
+        """
+        providers_cfg = self.config.get("providers", {})
+        enabled = set()
+        if isinstance(providers_cfg, dict):
+            enabled = {
+                pid for pid, pcfg in providers_cfg.items()
+                if isinstance(pcfg, dict) and pcfg.get("enabled", True)
+            }
+        if not enabled:
+            enabled = set(self._adapters.keys())
+
+        session_budget = self._session_budget_provider
+        other_budget = [p for p in _BUDGET_PROVIDERS if p != session_budget and p in enabled]
+
+        if is_premium_phase:
+            # Premium → budget fallback order
+            candidates = ["claude"]
+            if session_budget and session_budget in enabled:
+                candidates.append(session_budget)
+            candidates.extend(other_budget)
+            # Append any remaining enabled providers not yet listed
+            for p in _BALANCED_PROVIDER_ORDER:
+                if p not in candidates and p in enabled:
+                    candidates.append(p)
+        else:
+            # Budget-first order; claude only as last-resort
+            candidates = []
+            if session_budget and session_budget in enabled:
+                candidates.append(session_budget)
+            candidates.extend(other_budget)
+            if "claude" in enabled:
+                candidates.append("claude")
+            for p in _BALANCED_PROVIDER_ORDER:
+                if p not in candidates and p in enabled:
+                    candidates.append(p)
+
+        return candidates
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
         """Return Account objects for a provider if AccountManager is available."""
@@ -602,6 +687,19 @@ class ProviderRouter:
             adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
 
         return adapters
+
+    def _log_routing_note(self, decision: RouteDecision, phase: str) -> None:
+        """Emit a user-facing log line when routing affects quality or cost."""
+        if decision.fallback:
+            self.logger.warning(
+                f"[routing] {phase}: FALLBACK — preferred provider unavailable, "
+                f"using {decision.provider_id}/{decision.model}"
+            )
+        elif decision.quality_note:
+            if "reduced" in decision.quality_note or "unavailable" in decision.quality_note:
+                self.logger.warning(f"[routing] {decision.quality_note}")
+            else:
+                self.logger.info(f"[routing] {decision.quality_note}")
 
     def set_account_manager(self, manager) -> None:
         """Inject an AccountManager for per-account routing decisions."""

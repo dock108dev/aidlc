@@ -811,7 +811,7 @@ _PROVIDER_AUTH_COMMANDS: dict[str, tuple[list[str], str]] = {
     ),
     "openai": (
         ["codex", "login"],
-        "R
+        "Run: codex login",
     ),
 }
 
@@ -1105,27 +1105,6 @@ def _print_config_summary(config: dict) -> None:
 
     if display_providers:
         print(f"  {_bold('Phase Models:')}")
-        for pid, pcfg in display_providers.items():
-            if not isinstance(pcfg, dict):
-                continue
-            phase_models = pcfg.get("phase_models") or {}
-            default_model = pcfg.get("default_model", "?")
-            print(f"    {_cyan(pid)}  (default: {default_model})")
-            phases = ["planning", "research", "implementation", "implementation_complex", "finalization", "audit"]
-            for phase in phases:
-                model = phase_models.get(phase, default_model)
-                print(f"      {phase:<30} {model}")
-        print()
-    elif not providers:
-        # Legacy fallback: no providers config at all
-        print(f"  {_bold('Models (legacy keys):')}")
-        print(f"    claude_model:                   {config.get('claude_model', '?')}")
-        print(f"    claude_model_planning:          {config.get('claude_model_planning', '?')}")
-        print(f"    claude_model_implementation:    {config.get('claude_model_implementation', '?')}")
-        print(f"    claude_model_implementation_complex: {config.get('claude_model_implementation_complex', '?')}")
-        print(f"    claude_model_finalization:      {config.get('claude_model_finalization', '?')}")
-        print()
-nt(f"  {_bold('Phase Models:')}")
         for pid, pcfg in display_providers.items():
             if not isinstance(pcfg, dict):
                 continue
