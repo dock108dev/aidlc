@@ -7,125 +7,17 @@ from pathlib import Path
 
 from .config import load_config, write_default_config
 from .state_manager import find_latest_run, load_state
-
-_USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
-
-
-def _bold(text: str) -> str:
-    return f"\033[1m{text}\033[0m" if _USE_COLOR else text
-
-
-def _green(text: str) -> str:
-    return f"\033[32m{text}\033[0m" if _USE_COLOR else text
-
-
-def _yellow(text: str) -> str:
-    return f"\033[33m{text}\033[0m" if _USE_COLOR else text
-
-
-def _red(text: str) -> str:
-    return f"\033[31m{text}\033[0m" if _USE_COLOR else text
-
-
-def _dim(text: str) -> str:
-    return f"\033[2m{text}\033[0m" if _USE_COLOR else text
-
-
-def _cyan(text: str) -> str:
-    return f"\033[36m{text}\033[0m" if _USE_COLOR else text
-
-
-def _get_template_dir() -> Path:
-    """Return bundled project_template directory path."""
-    pkg_template = Path(__file__).parent / "project_template"
-    if pkg_template.exists():
-        return pkg_template
-    repo_template = Path(__file__).parent.parent / "project_template"
-    if repo_template.exists():
-        return repo_template
-    raise FileNotFoundError("project_template directory not found")
-
-
-def _print_banner(version: str):
-    print(_bold("AIDLC") + _dim(f" v{version}") + " — AI Development Life Cycle")
-    print()
-
-
-def _print_precheck(result, project_root: Path, verbose: bool = False) -> None:
-    """Print precheck results to console."""
-    from .precheck import REQUIRED_DOCS, RECOMMENDED_DOCS, OPTIONAL_DOCS
-
-    if result.config_created:
-        print(f"  {_green('+')} Auto-created {_cyan('.aidlc/')} with default config")
-        print(f"    Config: {_dim(str(project_root / '.aidlc' / 'config.json'))}")
-        print("    Edit to set plan_budget_hours, run_tests_command, etc.")
-        print()
-
-    if result.has_source_code:
-        print(f"  {_bold('Project:')} {result.project_type} {_dim('(source code detected)')}")
-        if "STATUS.md" not in [
-            *result.optional_found,
-            *result.recommended_found,
-            *result.required_found,
-        ]:
-            print(
-                f"    Tip: run {_cyan('aidlc audit')} to auto-generate STATUS.md + ARCHITECTURE.md"
-            )
-    else:
-        print(f"  {_bold('Project:')} {_dim('no source code detected (new project?)')}")
-    print()
-
-    print(f"  {_bold('Required')}")
-    for doc in REQUIRED_DOCS:
-        if doc in result.required_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = REQUIRED_DOCS[doc]
-            print(f"    {_red('x')} {doc} — {info['purpose']}")
-            for line in info["suggestion"].split("\n"):
-                print(f"      {_dim(line)}")
-    print()
-
-    print(f"  {_bold('Recommended')}")
-    for doc in RECOMMENDED_DOCS:
-        if doc in result.recommended_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = RECOMMENDED_DOCS[doc]
-            print(f"    {_yellow('-')} {doc} — {info['purpose']}")
-            if verbose:
-                for line in info["suggestion"].split("\n"):
-                    print(f"      {_dim(line)}")
-    print()
-
-    print(f"  {_bold('Optional')}")
-    for doc in OPTIONAL_DOCS:
-        if doc in result.optional_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = OPTIONAL_DOCS[doc]
-            print(f"    {_dim('-')} {doc} — {info['purpose']}")
-    print()
-
-    found = sum(
-        [len(result.required_found), len(result.recommended_found), len(result.optional_found)]
-    )
-    total = len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
-    score = result.score
-
-    if score == "not ready":
-        print(f"  {_bold('Readiness:')} {_red('NOT READY')} — missing required doc(s)")
-        print(
-            f"    Create the required files above, then run {_cyan('aidlc precheck')} again."
-        )
-    elif score == "excellent":
-        print(f"  {_bold('Readiness:')} {_green('EXCELLENT')} ({found}/{total} docs) — ready to run")
-    elif score == "good":
-        print(f"  {_bold('Readiness:')} {_green('GOOD')} ({found}/{total} docs) — ready to run")
-    else:
-        print(
-            f"  {_bold('Readiness:')} {_yellow('MINIMAL')} ({found}/{total} docs) — can run, but more docs = better plans"
-        )
+from .cli.display import (
+    bold as _bold,
+    green as _green,
+    yellow as _yellow,
+    red as _red,
+    dim as _dim,
+    cyan as _cyan,
+    print_banner as _print_banner,
+    print_precheck as _print_precheck,
+    get_template_dir as _get_template_dir,
+)
 
 
 def cmd_precheck(args: argparse.Namespace, version: str) -> None:
@@ -513,147 +405,13 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Accounts commands
+# Accounts commands (moved to cli.accounts)
 # ---------------------------------------------------------------------------
 
 def cmd_accounts(args: argparse.Namespace, version: str) -> None:
     """Manage provider accounts."""
-    subcmd = getattr(args, "accounts_cmd", "list")
-    _print_banner(version)
-
-    from .accounts import AccountManager
-    manager = AccountManager()
-
-    if subcmd == "list":
-        _cmd_accounts_list(manager)
-    elif subcmd == "add":
-        _cmd_accounts_add(args, manager)
-    elif subcmd == "remove":
-        _cmd_accounts_remove(args, manager)
-    elif subcmd == "validate":
-        _cmd_accounts_validate(args, manager, args)
-    else:
-        print(f"Unknown accounts subcommand: {subcmd}")
-        sys.exit(1)
-
-
-def _cmd_accounts_list(manager) -> None:
-    accounts = manager.list()
-    if not accounts:
-        print("  No accounts registered.")
-        print()
-        print(f"  Add one with: {_cyan('aidlc accounts add --provider claude --id my-account')}")
-        return
-
-    print(f"  {_bold('Registered Accounts')} ({len(accounts)} total)")
-    print()
-    for acc in accounts:
-        health_icon = (
-            _green("●") if acc.health_status == "healthy"
-            else _yellow("●") if acc.health_status in ("limited", "rate_limited", "unknown", "unchecked")
-            else _red("●")
-        )
-        auth_label = acc.auth_state.value if hasattr(acc.auth_state, "value") else str(acc.auth_state)
-        enabled_label = _green("enabled") if acc.enabled else _dim("disabled")
-        tier = acc.membership_tier.value if hasattr(acc.membership_tier, "value") else str(acc.membership_tier)
-        tags = ", ".join(acc.role_tags) if acc.role_tags else _dim("no tags")
-        print(f"  {health_icon} {_bold(acc.account_id)}")
-        print(f"     Provider:  {acc.provider_id}")
-        print(f"     Name:      {acc.display_name or _dim('(unnamed)')}")
-        print(f"     Status:    {enabled_label}  auth={auth_label}  health={acc.health_status}")
-        print(f"     Tier:      {tier}")
-        print(f"     Tags:      {tags}")
-        if acc.last_validated:
-            print(f"     Validated: {acc.last_validated[:19]}")
-        print()
-
-
-def _cmd_accounts_add(args, manager) -> None:
-    from .accounts import Account, AuthState, MembershipTier
-
-    account_id = getattr(args, "id", None)
-    provider_id = getattr(args, "provider", None)
-    if not account_id or not provider_id:
-        print(f"{_red('x')} --id and --provider are required.")
-        sys.exit(1)
-
-    tier_str = getattr(args, "tier", "unknown") or "unknown"
-    try:
-        tier = MembershipTier(tier_str)
-    except ValueError:
-        print(f"{_yellow('!')} Unknown tier '{tier_str}'. Using 'unknown'.")
-        tier = MembershipTier.UNKNOWN
-
-    tags_str = getattr(args, "tags", "") or ""
-    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else ["primary"]
-
-    account = Account(
-        account_id=account_id,
-        provider_id=provider_id,
-        display_name=getattr(args, "name", "") or f"{provider_id} ({account_id})",
-        membership_tier=tier,
-        role_tags=tags,
-        auth_state=AuthState.UNKNOWN,
-    )
-    try:
-        manager.add(account)
-        print(f"{_green('+')} Account '{account_id}' added ({provider_id}, tier={tier_str})")
-        print(f"  Run {_cyan(f'aidlc accounts validate --id {account_id}')} to check health.")
-    except ValueError as e:
-        print(f"{_red('x')} {e}")
-        sys.exit(1)
-
-
-def _cmd_accounts_remove(args, manager) -> None:
-    account_id = getattr(args, "id", None)
-    if not account_id:
-        print(f"{_red('x')} --id is required.")
-        sys.exit(1)
-    removed = manager.remove(account_id, remove_credentials=True)
-    if removed:
-        print(f"{_green('-')} Account '{account_id}' removed.")
-    else:
-        print(f"{_yellow('!')} Account '{account_id}' not found.")
-
-
-def _cmd_accounts_validate(args, manager, full_args) -> None:
-    from .routing import ProviderRouter
-    from .config import load_config
-
-    account_id = getattr(args, "id", None)
-    project_root = Path(getattr(full_args, "project", None) or ".").resolve()
-    config = load_config(project_root=str(project_root))
-    import logging
-    logger = logging.getLogger("aidlc.accounts.validate")
-
-    router = ProviderRouter(config, logger)
-
-    if account_id:
-        account = manager.get(account_id)
-        if not account:
-            print(f"{_red('x')} Account '{account_id}' not found.")
-            sys.exit(1)
-        adapter = router._adapters.get(account.provider_id)
-        updated = manager.validate(account_id, adapter=adapter)
-        health_label = (
-            _green(updated.health_status) if updated.health_status == "healthy"
-            else _yellow(updated.health_status) if updated.health_status in ("limited", "unknown")
-            else _red(updated.health_status)
-        )
-        print(f"  {_bold(account_id)}: {health_label}  auth={updated.auth_state.value}")
-    else:
-        # Validate all accounts
-        accounts = manager.list()
-        if not accounts:
-            print("  No accounts to validate.")
-            return
-        print(f"  Validating {len(accounts)} account(s)...")
-        print()
-        for acc in accounts:
-            adapter = router._adapters.get(acc.provider_id)
-            updated = manager.validate(acc.account_id, adapter=adapter)
-            icon = _green("v") if updated.health_status == "healthy" else _yellow("!")
-            print(f"  [{icon}] {acc.account_id} ({acc.provider_id}): {updated.health_status}")
+    from .cli.accounts import cmd_accounts as _cmd_accounts
+    return _cmd_accounts(args, version)
 
 
 # ---------------------------------------------------------------------------
