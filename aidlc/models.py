@@ -477,7 +477,9 @@ class RunState:
         acc_map["calls_failed"] += 0 if result.get("success") else 1
         acc_map["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
         acc_map["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
-        acc_map["total_tokens"] += input_tokens + output_tokens
+        acc_map["total_tokens"] += input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+        if should_track_estimated:
+            acc_map["cost_usd_estimated"] += estimated_cost
         cost_exact = result.get("total_cost_usd")
         if cost_exact is not None:
             try:

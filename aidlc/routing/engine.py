@@ -90,9 +90,14 @@ class ProviderRouter:
     def __init__(self, config: dict, logger: logging.Logger):
         self.config = config
         self.logger = logger
-        self._strategy = RoutingStrategy(
-            config.get("routing_strategy", "balanced")
-        )
+        raw_strategy = config.get("routing_strategy", "balanced")
+        try:
+            self._strategy = RoutingStrategy(raw_strategy)
+        except ValueError:
+            self.logger.warning(
+                f"Unknown routing_strategy '{raw_strategy}' in config; falling back to 'balanced'"
+            )
+            self._strategy = RoutingStrategy.BALANCED
         self._current_phase: str = "default"
         self._complexity: str = "normal"  # "normal" | "complex"
         self._usage = UsagePressure()

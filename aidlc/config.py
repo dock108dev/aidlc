@@ -329,7 +329,7 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 },
                 "copilot": {
                     "enabled": False,
-                    "cli_command": "gh",
+                    "cli_command": "copilot",
                     "default_model": "claude-sonnet-4-6",
                     "accounts": [],
                 },

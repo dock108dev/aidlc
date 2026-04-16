@@ -245,7 +245,7 @@ class TestRunState:
         assert state.claude_cost_usd_exact == pytest.approx(0.42)
         assert state.claude_cost_usd_estimated == pytest.approx(0.0)
         assert state.provider_account_usage["openai"]["acct-1"]["calls"] == 1
-        assert state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 150
+        assert state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 200  # 100+50+20+30
         assert state.phase_usage["planning"]["calls"] == 1
         assert state.phase_usage["planning"]["provider_id"] == "openai"
 
