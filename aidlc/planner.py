@@ -166,7 +166,7 @@ class Planner:
                     # Check if we've had enough empty cycles to trigger winding down
                     if (
                         len(recent_cycles) >= diminishing_returns_threshold
-                        and self.state.issues_created > 0
+                        and len(self.state.issues) > 0
                         and self._planning_foundation.get("ready", False)
                         and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                     ):
@@ -197,7 +197,7 @@ class Planner:
                 # Check for winding down: last N cycles all had 0 new issues
                 if (
                     len(recent_cycles) >= diminishing_returns_threshold
-                    and self.state.issues_created > 0
+                    and len(self.state.issues) > 0
                     and self._planning_foundation.get("ready", False)
                     and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                 ):

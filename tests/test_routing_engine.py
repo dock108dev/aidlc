@@ -209,3 +209,56 @@ def test_all_rate_limited_returns_terminal_failure(tmp_path):
     assert result["success"] is False
     assert result["failure_type"] == "rate_limited_all_models"
     assert "rate limited" in result["error"].lower()
+
+
+def test_balanced_budget_routing_uses_pressure_not_single_provider(tmp_path):
+    router = ProviderRouter(_config(), logging.getLogger("test.router.pressure_balance"))
+    router._adapters = {
+        "openai": FakeAdapter(
+            "openai",
+            [
+                {
+                    "success": True,
+                    "output": "ok-openai-1",
+                    "error": None,
+                    "failure_type": None,
+                    "duration_seconds": 0.0,
+                    "retries": 0,
+                    "usage": {"input_tokens": 100, "output_tokens": 20},
+                    "total_cost_usd": None,
+                    "model_used": "gpt-5.4-mini",
+                    "usage_source": "none",
+                }
+            ],
+            default_model="gpt-5.4-mini",
+        ),
+        "copilot": FakeAdapter(
+            "copilot",
+            [
+                {
+                    "success": True,
+                    "output": "ok-copilot-1",
+                    "error": None,
+                    "failure_type": None,
+                    "duration_seconds": 0.0,
+                    "retries": 0,
+                    "usage": {"input_tokens": 90, "output_tokens": 10},
+                    "total_cost_usd": None,
+                    "model_used": "default",
+                    "usage_source": "none",
+                }
+            ],
+            default_model="",
+        ),
+    }
+    router._session_budget_provider = "openai"
+    router.set_phase("implementation")
+    router.set_complexity("normal")
+
+    first = router.execute_prompt("first", tmp_path)
+    second = router.execute_prompt("second", tmp_path)
+
+    assert first["success"] is True
+    assert second["success"] is True
+    assert first["provider_id"] == "openai"
+    assert second["provider_id"] == "copilot"

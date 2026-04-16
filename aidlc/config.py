@@ -245,7 +245,7 @@ DEFAULTS = {
 
     # Implementation autosync / resilience
     "autosync_enabled": True,
-    "autosync_every_implementation_cycles": 5,
+    "autosync_every_implementation_cycles": 25,
     "autosync_push_remote": True,
     "autosync_commit_message_template": "aidlc: autosync after implementation cycle {cycle}",
     "autosync_issue_status_sync": True,

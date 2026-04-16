@@ -74,7 +74,7 @@ class Implementer:
 
         self.autosync_enabled = bool(config.get("autosync_enabled", True))
         self.autosync_every_cycles = max(
-            1, int(config.get("autosync_every_implementation_cycles", 5) or 5)
+            1, int(config.get("autosync_every_implementation_cycles", 25) or 25)
         )
         self.autosync_push_remote = bool(config.get("autosync_push_remote", True))
         self.autosync_issue_status_sync = bool(config.get("autosync_issue_status_sync", True))

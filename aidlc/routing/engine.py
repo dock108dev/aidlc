@@ -658,8 +658,8 @@ class ProviderRouter:
     def _tier_aware_provider_order(self, phase: str, is_premium_phase: bool) -> list[str]:
         """Return provider IDs ordered by tier appropriateness.
 
-        Premium phases: [claude, session_budget, other_budget]
-        Budget phases:  [session_budget, other_budget, claude (last-resort fallback)]
+        Premium phases: [claude, budget_by_pressure]
+        Budget phases:  [budget_by_pressure, claude (last-resort fallback)]
         """
         providers_cfg = self.config.get("providers", {})
         enabled = set()
@@ -671,25 +671,19 @@ class ProviderRouter:
         if not enabled:
             enabled = set(self._adapters.keys())
 
-        session_budget = self._session_budget_provider
-        other_budget = [p for p in helpers.get_budget_providers() if p != session_budget and p in enabled]
+        budget_order = self._budget_provider_order(enabled)
 
         if is_premium_phase:
             # Premium → budget fallback order
             candidates = ["claude"]
-            if session_budget and session_budget in enabled:
-                candidates.append(session_budget)
-            candidates.extend(other_budget)
+            candidates.extend(budget_order)
             # Append any remaining enabled providers not yet listed
             for p in helpers.get_balanced_provider_order():
                 if p not in candidates and p in enabled:
                     candidates.append(p)
         else:
             # Budget-first order; claude only as last-resort
-            candidates = []
-            if session_budget and session_budget in enabled:
-                candidates.append(session_budget)
-            candidates.extend(other_budget)
+            candidates = list(budget_order)
             if "claude" in enabled:
                 candidates.append("claude")
             for p in helpers.get_balanced_provider_order():
@@ -697,6 +691,28 @@ class ProviderRouter:
                     candidates.append(p)
 
         return candidates
+
+    def _budget_provider_order(self, enabled: set[str]) -> list[str]:
+        """Order budget providers by within-run usage pressure.
+
+        Lower call/token usage is preferred. When usage is tied, keep the
+        session_budget_provider preference as deterministic tie-break.
+        """
+        budget = [p for p in helpers.get_budget_providers() if p in enabled]
+        if not budget:
+            return []
+
+        session_budget = self._session_budget_provider
+
+        def key(provider_id: str) -> tuple[int, int, int, str]:
+            return (
+                self._usage.calls_by_provider.get(provider_id, 0),
+                self._usage.tokens_by_provider.get(provider_id, 0),
+                0 if provider_id == session_budget else 1,
+                provider_id,
+            )
+
+        return sorted(budget, key=key)
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
         """Return Account objects for a provider if AccountManager is available."""

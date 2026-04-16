@@ -464,3 +464,55 @@ class TestPlanner:
         # 3 cycles to detect winding down + offer, then 2 more before force exit = 5
         assert state.planning_cycles == 5
         assert "no new issues" in (state.stop_reason or "").lower()
+
+    def test_diminishing_returns_with_preexisting_issues_and_zero_created(
+        self, state, config, logger, tmp_path
+    ):
+        """Winding-down should work even when this run created no new issues."""
+        cli = MagicMock()
+        update_response = json.dumps({
+            "frontier_assessment": "Minor refinements",
+            "actions": [{
+                "action_type": "update_issue",
+                "rationale": "Polish",
+                "issue_id": "ISSUE-001",
+                "description": "Updated description",
+            }],
+            "cycle_notes": "",
+        })
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{update_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        config["max_planning_cycles"] = 100
+        config["dry_run"] = False
+        config["diminishing_returns_threshold"] = 2
+
+        from aidlc.models import Issue
+        issue = Issue(
+            id="ISSUE-001", title="Existing", description="Exists",
+            acceptance_criteria=["AC1"],
+        )
+        state.update_issue(issue)
+        state.issues_created = 0
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        issues_dir = Path(config["_issues_dir"])
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
+
+        doc_files = [
+            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
+            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
+        planner.run()
+        assert state.planning_cycles == 4
+        assert "no new issues" in (state.stop_reason or "").lower()
