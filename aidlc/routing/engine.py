@@ -29,6 +29,7 @@ from ..providers.base import ProviderAdapter
 from ..providers.claude_adapter import ClaudeCLIAdapter
 from ..providers.copilot_adapter import CopilotAdapter
 from ..providers.openai_adapter import OpenAIAdapter
+from . import helpers
 
 
 class RoutingStrategy(Enum):
@@ -78,40 +79,6 @@ class UsagePressure:
         return self.calls_by_account.get(account_id, 0) / self.total_calls
 
 
-# Claude-specific short-form model aliases that are meaningless to other providers.
-# When a caller passes one of these as model_override but we've routed to a
-# non-Claude provider, we discard the override and use the provider's own
-# phase_models instead (preventing "sonnet is not supported" errors on codex/copilot).
-_CLAUDE_ONLY_ALIASES: frozenset[str] = frozenset({
-    "sonnet", "opus", "haiku",
-    "sonnet-4", "opus-4", "haiku-4",
-    "claude-sonnet", "claude-opus", "claude-haiku",
-})
-
-# Maps phase names to the legacy config keys for backward compatibility
-_PHASE_MODEL_CONFIG_KEYS: dict[str, str] = {
-    "planning": "claude_model_planning",
-    "research": "claude_model_research",
-    "implementation": "claude_model_implementation",
-    "implementation_complex": "claude_model_implementation_complex",
-    "finalization": "claude_model_finalization",
-    "audit": "claude_model_planning",
-}
-
-# Provider priority in BALANCED mode (index = preferred order, lower = better for normal work)
-_BALANCED_PROVIDER_ORDER = ["claude", "copilot", "openai"]
-
-# Phases where we prefer higher-quality models in BALANCED mode
-_QUALITY_SENSITIVE_PHASES = {"planning", "implementation_complex", "finalization", "audit"}
-
-# Phases routed to the premium tier (Claude) when available.
-# Everything else goes to the budget tier (copilot/openai, randomly balanced).
-_PREMIUM_PHASES = {"implementation_complex"}
-
-# Budget provider pair that we round-robin between runs for even token distribution.
-_BUDGET_PROVIDERS = ["copilot", "openai"]
-
-
 class ProviderRouter:
     """Drop-in replacement for ClaudeCLI that routes calls across providers/accounts.
 
@@ -151,7 +118,7 @@ class ProviderRouter:
         import time as _time
         _rng = _random.Random(int(_time.time() / 60))  # changes each minute
         enabled_budget = [
-            p for p in _BUDGET_PROVIDERS
+            p for p in helpers.get_budget_providers()
             if p in self._adapters
         ]
         self._session_budget_provider: str | None = (
@@ -330,8 +297,7 @@ class ProviderRouter:
             # the copilot/openai CLIs and will cause hard errors.
             effective_override = (
                 None
-                if (model_override and provider_id != "claude"
-                    and model_override in _CLAUDE_ONLY_ALIASES)
+                if helpers.should_discard_model_override(provider_id, model_override)
                 else model_override
             )
             if effective_override:
@@ -386,7 +352,7 @@ class ProviderRouter:
     ) -> RouteDecision:
         """Cheapest strategy: prefer lowest-cost provider/model."""
         # For cheapest: prefer haiku/cheap models, non-premium accounts
-        for provider_id in _BALANCED_PROVIDER_ORDER:
+        for provider_id in helpers.get_balanced_provider_order():
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
