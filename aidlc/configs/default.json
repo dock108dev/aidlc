@@ -29,14 +29,14 @@
     "copilot": {
       "enabled": false,
       "cli_command": "copilot",
-      "default_model": "claude-sonnet-4",
+      "default_model": "claude-sonnet-4-6",
       "phase_models": {
-        "planning": "claude-sonnet-4",
-        "research": "claude-sonnet-4",
-        "implementation": "claude-sonnet-4",
-        "implementation_complex": "claude-sonnet-4.5",
-        "finalization": "claude-sonnet-4",
-        "audit": "claude-sonnet-4"
+        "planning": "claude-sonnet-4-6",
+        "research": "claude-sonnet-4-6",
+        "implementation": "claude-sonnet-4-6",
+        "implementation_complex": "claude-sonnet-4-6",
+        "finalization": "claude-sonnet-4-6",
+        "audit": "claude-sonnet-4-6"
       },
       "accounts": []
     },
@@ -90,18 +90,6 @@
       "cache_read_input": 0.08
     },
     "claude-sonnet-4-6": {
-      "input": 3.0,
-      "output": 15.0,
-      "cache_creation_input": 3.75,
-      "cache_read_input": 0.3
-    },
-    "claude-sonnet-4": {
-      "input": 3.0,
-      "output": 15.0,
-      "cache_creation_input": 3.75,
-      "cache_read_input": 0.3
-    },
-    "claude-sonnet-4.5": {
       "input": 3.0,
       "output": 15.0,
       "cache_creation_input": 3.75,

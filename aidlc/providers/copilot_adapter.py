@@ -3,8 +3,7 @@
 Shells out to the `copilot` CLI binary (GitHub Copilot CLI).
 Install: brew install copilot-cli
 Auth: copilot login
-Default model: claude-sonnet-4 (configurable via provider config).
-Supported models: claude-sonnet-4, claude-sonnet-4.5, gpt-4, gpt-5, gpt-5.4, etc.
+Default model: claude-sonnet-4-6 (configurable via provider config).
 """
 
 import subprocess
@@ -14,8 +13,8 @@ import logging
 
 from .base import ProviderAdapter, HealthResult, HealthStatus
 
-# Default model for Copilot provider (must be a valid Copilot CLI model)
-_DEFAULT_COPILOT_MODEL = "claude-sonnet-4"
+# Default model for Copilot provider
+_DEFAULT_COPILOT_MODEL = "claude-sonnet-4-6"
 
 
 class CopilotAdapter(ProviderAdapter):
@@ -175,11 +174,6 @@ class CopilotAdapter(ProviderAdapter):
         )
 
     def get_default_model(self, phase: str | None = None) -> str:
-        """Get default model for Copilot CLI.
-        
-        Uses phase-specific model if available, otherwise returns configured default.
-        Must be a model name recognized by Copilot CLI (e.g., claude-sonnet-4, gpt-4).
-        """
         provider_cfg = self._provider_config()
         phase_models = provider_cfg.get("phase_models", {})
         if phase and phase in phase_models:
