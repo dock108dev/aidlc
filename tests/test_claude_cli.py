@@ -288,6 +288,26 @@ class TestExecutePrompt:
         assert not proc.terminate.called
 
 
+class TestExtractCliMetadataNdjson:
+    def test_picks_jsonl_line_with_usage_when_stdout_not_single_json(self):
+        line1 = json.dumps({"type": "progress", "note": "x"})
+        line2 = json.dumps(
+            {
+                "result": "from line",
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "model": "sonnet",
+            }
+        )
+        blob = f"noise prefix\n{line1}\n{line2}\n"
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata(blob, "opus")
+        assert text == "from line"
+        assert usage["input_tokens"] == 5
+        assert usage["output_tokens"] == 3
+        assert model == "sonnet"
+        assert src == "claude_cli_json"
+        assert cost is None
+
+
 class TestClassifyFailure:
     def test_transient_rate_limit(self):
         assert ClaudeCLI._classify_failure(1, "rate limit exceeded") == "transient"

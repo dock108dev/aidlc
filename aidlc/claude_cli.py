@@ -341,9 +341,30 @@ class ClaudeCLI:
 
         parsed = None
         try:
-            parsed = json.loads(text)
+            parsed = json.loads(text.strip())
         except json.JSONDecodeError:
             parsed = None
+
+        if not isinstance(parsed, dict):
+            usage_candidate = None
+            fallback_line_dict = None
+            for line in text.splitlines():
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    cand = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(cand, dict):
+                    continue
+                fallback_line_dict = cand
+                msg = cand.get("message")
+                if isinstance(cand.get("usage"), dict) or (
+                    isinstance(msg, dict) and isinstance(msg.get("usage"), dict)
+                ):
+                    usage_candidate = cand
+            parsed = usage_candidate or fallback_line_dict
 
         if not isinstance(parsed, dict):
             return text, usage, total_cost_usd, model_used, usage_source

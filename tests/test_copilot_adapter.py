@@ -4,7 +4,11 @@ import logging
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from aidlc.providers.copilot_adapter import CopilotAdapter
+from aidlc.providers.copilot_adapter import (
+    CopilotAdapter,
+    _parse_copilot_usage_blob,
+    _strip_copilot_trailing_stats,
+)
 
 
 def _mock_popen_success(stdout="ok", stderr=""):
@@ -28,7 +32,7 @@ def test_omits_model_flag_when_no_model_is_configured(tmp_path):
     )
 
     cmd = adapter._build_command("", allow_edits=False, prompt="hello")
-    assert cmd == ["copilot", "-p", "hello", "--allow-all", "-s"]
+    assert cmd == ["copilot", "-p", "hello", "--allow-all", "--no-ask-user"]
 
 
 @patch("aidlc.providers.copilot_adapter.subprocess.Popen")
@@ -49,7 +53,9 @@ def test_passes_explicit_model_when_configured(mock_popen, tmp_path):
     result = adapter.execute_prompt("hello", tmp_path)
 
     cmd = mock_popen.call_args[0][0]
-    assert cmd == ["copilot", "-p", "hello", "--allow-all", "-s", "--model", "gpt-4.1"]
+    assert cmd == [
+        "copilot", "-p", "hello", "--allow-all", "--no-ask-user", "--model", "gpt-4.1",
+    ]
     assert result["success"] is True
     assert result["model_used"] == "gpt-4.1"
 
@@ -87,3 +93,39 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
 
     assert result["success"] is True
     logger.info.assert_any_call("Copilot CLI still running (elapsed=0s, model=default)")
+
+
+def test_silent_flag_restores_dash_s():
+    adapter = CopilotAdapter(
+        {
+            "providers": {
+                "copilot": {
+                    "cli_command": "copilot",
+                    "default_model": "",
+                    "silent": True,
+                }
+            }
+        },
+        logging.getLogger("test.copilot"),
+    )
+    cmd = adapter._build_command("", allow_edits=False, prompt="x")
+    assert cmd == ["copilot", "-p", "x", "--allow-all", "--no-ask-user", "-s"]
+
+
+def test_parse_copilot_usage_blob_input_output_pair():
+    blob = "Some banner\nInput tokens: 1,234\nOutput tokens: 567\n"
+    u = _parse_copilot_usage_blob(blob)
+    assert u["input_tokens"] == 1234
+    assert u["output_tokens"] == 567
+
+
+def test_parse_copilot_usage_slash_form():
+    blob = "done\n12,000 in / 400 out\n"
+    u = _parse_copilot_usage_blob(blob)
+    assert u["input_tokens"] == 12000
+    assert u["output_tokens"] == 400
+
+
+def test_strip_copilot_trailing_stats():
+    raw = "Answer line one\nAnswer two\nInput tokens: 10\n"
+    assert _strip_copilot_trailing_stats(raw) == "Answer line one\nAnswer two"

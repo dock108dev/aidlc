@@ -9,15 +9,78 @@ Model selection is optional. If no model is configured, the adapter omits
 when vendor model IDs change.
 """
 
+import logging
+import re
 import subprocess
 from pathlib import Path
-import logging
 
 from .base import ProviderAdapter, HealthResult, HealthStatus
 
 # Default model for Copilot provider.
 # Empty string means "let the Copilot CLI choose its default model".
 _DEFAULT_COPILOT_MODEL = ""
+
+def _parse_int_loose(s: str) -> int:
+    return int(s.replace(",", "").replace("_", "") or 0)
+
+
+def _parse_copilot_usage_blob(blob: str) -> dict:
+    """Best-effort token counts from combined Copilot CLI stdout/stderr."""
+    if not blob or not blob.strip():
+        return {}
+    inp = out = 0
+    m = re.search(
+        r"(?i)(?:input|prompt)\s*tokens?\s*[:=]\s*([\d,_]+).*?(?:output|completion)\s*tokens?\s*[:=]\s*([\d,_]+)",
+        blob,
+        re.DOTALL,
+    )
+    if m:
+        inp = _parse_int_loose(m.group(1))
+        out = _parse_int_loose(m.group(2))
+    else:
+        m2 = re.search(r"(?i)(\d[\d,_]*)\s*(?:input|in)\s*/\s*(\d[\d,_]*)\s*(?:output|out)", blob)
+        if m2:
+            inp = _parse_int_loose(m2.group(1))
+            out = _parse_int_loose(m2.group(2))
+    if inp == 0 and out == 0:
+        nums = re.findall(r"(?i)(?:input|output|total)\s*tokens?\s*[:=]\s*([\d,_]+)", blob)
+        if len(nums) >= 2:
+            inp = _parse_int_loose(nums[0])
+            out = _parse_int_loose(nums[1])
+        elif len(nums) == 1:
+            tot = _parse_int_loose(nums[0])
+            if tot:
+                inp = tot
+    if inp == 0 and out == 0:
+        return {}
+    return {
+        "input_tokens": inp,
+        "output_tokens": out,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+    }
+
+
+def _strip_copilot_trailing_stats(stdout: str) -> str:
+    """Remove trailing decoration / stats lines; keep agent body when possible."""
+    text = stdout or ""
+    lines = text.splitlines()
+    meta_re = re.compile(
+        r"(?i)^(tokens?|usage|session|model\b|cost|usd|\$|────|━|═|╭|╰|│\s*(input|output|token)|\d+\s*→).*$"
+    )
+    while lines:
+        last = lines[-1].strip()
+        if not last:
+            lines.pop()
+            continue
+        if meta_re.match(last) or re.match(r"^[\s│╭╮╰╯─━═]+$", last):
+            lines.pop()
+            continue
+        if re.search(r"(?i)token", last) and re.search(r"\d", last):
+            lines.pop()
+            continue
+        break
+    return "\n".join(lines).strip()
 
 
 class CopilotAdapter(ProviderAdapter):
@@ -33,6 +96,8 @@ class CopilotAdapter(ProviderAdapter):
         self.dry_run = config.get("dry_run", False)
         self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
         self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
+        # False = include CLI stats in output so we can parse token usage (default).
+        self._silent = bool(provider_cfg.get("silent", False))
 
     def _provider_config(self) -> dict:
         providers = self.config.get("providers", {})
@@ -52,11 +117,7 @@ class CopilotAdapter(ProviderAdapter):
 
         model = str(model_override or self.default_model or "")
 
-        # Build command: copilot -p <prompt> --allow-all -s --model <model>
-        # -p / --prompt: execute prompt programmatically (exits after completion)
-        # --allow-all: grant all tool permissions (required for autonomous code gen)
-        # -s / --silent: output only agent response (no usage stats), useful for scripting
-        # --model: specify the AI model
+        # Build command: copilot -p <prompt> --allow-all [--no-ask-user] [-s] [--model ...]
         cmd = self._build_command(model, allow_edits, prompt)
 
         try:
@@ -82,17 +143,23 @@ class CopilotAdapter(ProviderAdapter):
                     failure_type="timeout",
                 )
             if proc.returncode == 0:
+                combined = f"{stdout or ''}\n{stderr or ''}"
+                usage = _parse_copilot_usage_blob(combined)
+                out = stdout or ""
+                if not self._silent:
+                    out = _strip_copilot_trailing_stats(out)
+                usage_source = "copilot_cli"
                 return {
                     "success": True,
-                    "output": stdout,
+                    "output": out,
                     "error": None,
                     "failure_type": None,
                     "duration_seconds": duration,
                     "retries": 0,
-                    "usage": {},
+                    "usage": usage,
                     "total_cost_usd": None,
                     "model_used": model or "default",
-                    "usage_source": "copilot_cli",
+                    "usage_source": usage_source,
                     "provider_id": self.PROVIDER_ID,
                     "account_id": account_id,
                 }
@@ -113,11 +180,12 @@ class CopilotAdapter(ProviderAdapter):
     def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
         """Build the copilot CLI programmatic command.
 
-        Uses: copilot -p <prompt> --allow-all -s [--model <model>]
-        --allow-all grants all tool permissions for autonomous execution.
-        -s (--silent) suppresses usage stats, outputs only the agent response.
+        By default omits -s so the CLI can print usage lines we parse into ``usage``.
+        Set ``providers.copilot.silent`` to true for pipe-friendly output only (no token stats).
         """
-        cmd = [self.cli_command, "-p", prompt, "--allow-all", "-s"]
+        cmd = [self.cli_command, "-p", prompt, "--allow-all", "--no-ask-user"]
+        if self._silent:
+            cmd.append("-s")
         if model and model.lower() not in {"default", "auto"}:
             cmd.extend(["--model", model])
         return cmd

@@ -4,13 +4,56 @@ Shells out to the `codex` CLI or `openai` CLI binary.
 Supports GPT-4o and other OpenAI models as first-class citizens.
 """
 
+import json
+import logging
 import subprocess
 from pathlib import Path
-import logging
 
 from .base import ProviderAdapter, HealthResult, HealthStatus
 
 _DEFAULT_OPENAI_MODEL = "gpt-4o"
+
+
+def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
+    """Parse `codex exec --json` JSONL: assistant text + normalized usage from last turn.completed."""
+    output_text = ""
+    last_usage: dict = {}
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") == "turn.completed" and isinstance(obj.get("usage"), dict):
+            last_usage = obj["usage"]
+        if obj.get("type") != "item.completed":
+            continue
+        item = obj.get("item")
+        if not isinstance(item, dict):
+            continue
+        itype = item.get("item_type") or item.get("type")
+        if itype not in ("assistant_message", "agent_message"):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            output_text = text
+
+    usage: dict = {}
+    if last_usage:
+        inp = int(last_usage.get("input_tokens", 0) or 0)
+        cached = int(last_usage.get("cached_input_tokens", 0) or 0)
+        out = int(last_usage.get("output_tokens", 0) or 0)
+        usage = {
+            "input_tokens": inp,
+            "output_tokens": out,
+            "cache_read_input_tokens": cached,
+            "cache_creation_input_tokens": 0,
+        }
+    return output_text, usage
 
 
 class OpenAIAdapter(ProviderAdapter):
@@ -71,17 +114,20 @@ class OpenAIAdapter(ProviderAdapter):
                     failure_type="timeout",
                 )
             if proc.returncode == 0:
+                parsed_out, usage = _parse_codex_jsonl(stdout or "")
+                out_text = parsed_out if parsed_out.strip() else (stdout or "")
+                usage_source = "codex_jsonl" if usage else "openai_cli"
                 return {
                     "success": True,
-                    "output": stdout,
+                    "output": out_text,
                     "error": None,
                     "failure_type": None,
                     "duration_seconds": duration,
                     "retries": 0,
-                    "usage": {},
+                    "usage": usage,
                     "total_cost_usd": None,
                     "model_used": model,
-                    "usage_source": "openai_cli",
+                    "usage_source": usage_source,
                     "provider_id": self.PROVIDER_ID,
                     "account_id": account_id,
                 }
@@ -104,8 +150,8 @@ class OpenAIAdapter(ProviderAdapter):
             )
 
     def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
-        """Build the codex exec CLI command."""
-        cmd = [self.cli_command, "exec", "--model", model]
+        """Build the codex exec CLI command (--json enables JSONL with turn.completed usage)."""
+        cmd = [self.cli_command, "exec", "--json", "--model", model]
         if allow_edits:
             cmd.append("--full-auto")
         cmd.append(prompt)
