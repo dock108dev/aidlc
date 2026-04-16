@@ -94,6 +94,42 @@ class TestProjectScanner:
         result = scanner.scan()
         assert len(result["existing_issues"]) == 1
 
+    def test_existing_issue_is_parsed(self, project, config):
+        issues_dir = project / ".aidlc" / "issues"
+        issues_dir.mkdir(parents=True)
+        (issues_dir / "ISSUE-001.md").write_text(
+            """# ISSUE-001: Test parsed issue
+
+**Priority**: high
+**Labels**: backend, tests
+**Dependencies**: ISSUE-000
+**Status**: verified
+
+## Description
+
+Implement the thing.
+
+## Acceptance Criteria
+
+- [ ] It works
+- [x] It stays working
+
+## Implementation Notes
+
+Done already.
+"""
+        )
+        scanner = ProjectScanner(project, config)
+        result = scanner.scan()
+        parsed = result["existing_issues"][0]["parsed_issue"]
+        assert parsed["id"] == "ISSUE-001"
+        assert parsed["title"] == "Test parsed issue"
+        assert parsed["priority"] == "high"
+        assert parsed["labels"] == ["backend", "tests"]
+        assert parsed["dependencies"] == ["ISSUE-000"]
+        assert parsed["status"] == "verified"
+        assert parsed["acceptance_criteria"] == ["It works", "It stays working"]
+
     def test_build_context_prompt(self, project, config):
         scanner = ProjectScanner(project, config)
         result = scanner.scan()

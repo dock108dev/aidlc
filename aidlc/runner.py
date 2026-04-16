@@ -29,6 +29,7 @@ from .scanner import ProjectScanner
 from .planner import Planner
 from .implementer import Implementer
 from .reporting import generate_run_report
+from .models import Issue
 
 
 def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]:
@@ -111,6 +112,26 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     return context, scan_result
 
 
+def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
+    """Load parsed issue files from scan results into run state.
+
+    Issue markdown under .aidlc/issues is treated as the source of truth for
+    backlog/status when starting a new run or scanning fresh before execution.
+    """
+    existing = scan_result.get("existing_issues", []) or []
+    loaded = 0
+    for entry in existing:
+        parsed = entry.get("parsed_issue")
+        if not isinstance(parsed, dict) or not parsed.get("id"):
+            continue
+        state.update_issue(Issue.from_dict(parsed))
+        loaded += 1
+
+    if loaded:
+        state.total_issues = len(state.issues)
+        logger.info(f"Hydrated {loaded} existing issue(s) into run state")
+
+
 def run_full(
     config: dict,
     resume: bool = False,
@@ -191,6 +212,7 @@ def run_full(
 
         # SCAN — always scan (even on resume, to get fresh context)
         project_context, scan_result = scan_project(state, config, logger, cli=cli)
+        hydrate_existing_issues(state, scan_result, logger)
         save_state(state, run_dir)
 
         # DOC-GAP DETECTION — scan docs for TBD/placeholder markers

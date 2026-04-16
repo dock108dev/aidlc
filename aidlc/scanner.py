@@ -6,7 +6,10 @@ design docs, etc. to build project context for planning.
 
 import fnmatch
 import os
+import re
 from pathlib import Path
+
+from .models import Issue
 
 # Default max chars per doc (overridden by config["max_doc_chars"])
 DEFAULT_MAX_DOC_CHARS = 10000
@@ -229,11 +232,78 @@ class ProjectScanner:
                     try:
                         content = path.read_text(errors="replace")
                         rel = str(path.relative_to(self.project_root))
-                        issues.append({"path": rel, "content": content})
+                        parsed_issue = self._parse_issue_markdown(path, content)
+                        issues.append({"path": rel, "content": content, "parsed_issue": parsed_issue})
                     except (OSError, UnicodeDecodeError):
                         self._skipped_issue_reads += 1
                         continue
         return issues
+
+    def _parse_issue_markdown(self, path: Path, content: str) -> dict | None:
+        """Parse a markdown issue file into a structured Issue dict when possible."""
+        stem = path.stem
+        if not stem.upper().startswith("ISSUE-"):
+            return None
+
+        issue_id = stem.upper()
+        title = self._extract_issue_title(content) or issue_id
+        priority = self._extract_meta(content, "Priority", fallback="medium").lower()
+        labels_raw = self._extract_meta(content, "Labels", fallback="")
+        labels = [part.strip() for part in labels_raw.split(",") if part.strip()]
+        deps_raw = self._extract_meta(content, "Dependencies", fallback="none")
+        if deps_raw.strip().lower() == "none":
+            dependencies: list[str] = []
+        else:
+            dependencies = [part.strip() for part in deps_raw.split(",") if part.strip()]
+        status = self._extract_meta(content, "Status", fallback="pending").lower()
+        description = self._extract_section(content, "Description")
+        acceptance_criteria = self._extract_checklist(content, "Acceptance Criteria")
+        implementation_notes = self._extract_section(content, "Implementation Notes")
+        verification_result = self._extract_section(content, "Verification Result")
+
+        issue = Issue(
+            id=issue_id,
+            title=title,
+            description=description,
+            priority=priority or "medium",
+            labels=labels,
+            dependencies=dependencies,
+            acceptance_criteria=acceptance_criteria,
+        )
+        if status in {"pending", "in_progress", "implemented", "verified", "failed", "blocked", "skipped"}:
+            issue.status = issue.status.__class__(status)
+        issue.implementation_notes = implementation_notes
+        issue.verification_result = verification_result
+        return issue.to_dict()
+
+    @staticmethod
+    def _extract_issue_title(content: str) -> str:
+        match = re.search(r"^#\s+ISSUE-\d+:\s+(.+)$", content, re.MULTILINE)
+        return match.group(1).strip() if match else ""
+
+    @staticmethod
+    def _extract_meta(content: str, key: str, fallback: str = "") -> str:
+        pattern = rf"^\*\*{re.escape(key)}\*\*:\s*(.+)$"
+        match = re.search(pattern, content, re.MULTILINE)
+        return match.group(1).strip() if match else fallback
+
+    @staticmethod
+    def _extract_section(content: str, heading: str) -> str:
+        pattern = rf"^##\s+{re.escape(heading)}\s*$\n+(.+?)(?=\n##\s+|\Z)"
+        match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+        return match.group(1).strip() if match else ""
+
+    @classmethod
+    def _extract_checklist(cls, content: str, heading: str) -> list[str]:
+        body = cls._extract_section(content, heading)
+        if not body:
+            return []
+        items = []
+        for line in body.splitlines():
+            match = re.match(r"^\s*-\s+\[[ xX]\]\s+(.+)$", line)
+            if match:
+                items.append(match.group(1).strip())
+        return items
 
     def _load_audit_result(self) -> dict | None:
         """Load audit results from .aidlc/audit_result.json if present."""

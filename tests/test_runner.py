@@ -6,8 +6,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from aidlc.runner import init_run, scan_project, run_full
-from aidlc.models import RunState, RunStatus, RunPhase
+from aidlc.runner import init_run, scan_project, run_full, hydrate_existing_issues
+from aidlc.models import RunState, RunStatus, RunPhase, IssueStatus
 
 
 @pytest.fixture
@@ -75,6 +75,41 @@ class TestScanProject:
         context, scan_result = scan_project(state, config, logger)
         assert "Test Project" in context
         assert state.docs_scanned >= 1
+
+
+class TestHydrateExistingIssues:
+    def test_hydrates_issue_state_from_scan_result(self):
+        state = RunState(run_id="t", config_name="c")
+        scan_result = {
+            "existing_issues": [
+                {
+                    "path": ".aidlc/issues/ISSUE-001.md",
+                    "content": "",
+                    "parsed_issue": {
+                        "id": "ISSUE-001",
+                        "title": "Existing",
+                        "description": "Loaded from disk",
+                        "priority": "high",
+                        "labels": ["infra"],
+                        "dependencies": [],
+                        "acceptance_criteria": ["AC1"],
+                        "status": "verified",
+                        "implementation_notes": "",
+                        "verification_result": "",
+                        "files_changed": [],
+                        "attempt_count": 0,
+                        "max_attempts": 3,
+                    },
+                }
+            ]
+        }
+
+        hydrate_existing_issues(state, scan_result, logging.getLogger("test"))
+
+        issue = state.get_issue("ISSUE-001")
+        assert issue is not None
+        assert issue.status == IssueStatus.VERIFIED
+        assert state.total_issues == 1
 
 
 class TestRunFull:
