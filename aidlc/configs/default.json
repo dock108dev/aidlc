@@ -1,5 +1,5 @@
 {
-  "plan_budget_hours": 4,
+  "plan_budget_hours": 2.5,
   "checkpoint_interval_minutes": 15,
   "dry_run": false,
   "routing_strategy": "balanced",
