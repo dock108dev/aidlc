@@ -78,6 +78,16 @@ class UsagePressure:
         return self.calls_by_account.get(account_id, 0) / self.total_calls
 
 
+# Claude-specific short-form model aliases that are meaningless to other providers.
+# When a caller passes one of these as model_override but we've routed to a
+# non-Claude provider, we discard the override and use the provider's own
+# phase_models instead (preventing "sonnet is not supported" errors on codex/copilot).
+_CLAUDE_ONLY_ALIASES: frozenset[str] = frozenset({
+    "sonnet", "opus", "haiku",
+    "sonnet-4", "opus-4", "haiku-4",
+    "claude-sonnet", "claude-opus", "claude-haiku",
+})
+
 # Maps phase names to the legacy config keys for backward compatibility
 _PHASE_MODEL_CONFIG_KEYS: dict[str, str] = {
     "planning": "claude_model_planning",
@@ -315,9 +325,18 @@ class ProviderRouter:
                 is_quality_phase=is_quality_phase,
             )
 
-            if model_override:
-                model = model_override
-                model_reason = f"explicit model_override={model_override}"
+            # Discard Claude-specific aliases (e.g. "sonnet", "opus") when the
+            # selected provider is not Claude — those strings are meaningless to
+            # the copilot/openai CLIs and will cause hard errors.
+            effective_override = (
+                None
+                if (model_override and provider_id != "claude"
+                    and model_override in _CLAUDE_ONLY_ALIASES)
+                else model_override
+            )
+            if effective_override:
+                model = effective_override
+                model_reason = f"explicit model_override={effective_override}"
             else:
                 model = self._resolve_model_for_phase(
                     adapter=adapter,
@@ -379,8 +398,14 @@ class ProviderRouter:
                 accounts[0].account_id if accounts else None
             )
 
-            if model_override:
-                model = model_override
+            effective_override = (
+                None
+                if (model_override and provider_id != "claude"
+                    and model_override in _CLAUDE_ONLY_ALIASES)
+                else model_override
+            )
+            if effective_override:
+                model = effective_override
             else:
                 # Use cheapest available model for this provider
                 cheapest_models = {"claude": "haiku", "copilot": "claude-haiku-3-5", "openai": "gpt-5.4-nano"}
@@ -425,8 +450,14 @@ class ProviderRouter:
             adapter = self._adapters[best_provider]
             account_id = best_account.account_id if best_account else None
 
-            if model_override:
-                model = model_override
+            effective_override = (
+                None
+                if (model_override and best_provider != "claude"
+                    and model_override in _CLAUDE_ONLY_ALIASES)
+                else model_override
+            )
+            if effective_override:
+                model = effective_override
             else:
                 quality_models = {"claude": "opus", "copilot": "claude-sonnet-4-6", "openai": "gpt-5.4"}
                 model = quality_models.get(best_provider, adapter.get_default_model(phase))
@@ -465,7 +496,13 @@ class ProviderRouter:
             )
             return self._resolve_balanced(phase, complexity_level, model_override)
 
-        model = model_override or custom_model or adapter.get_default_model(phase)
+        clean_override = (
+            None
+            if (model_override and provider_id != "claude"
+                and model_override in _CLAUDE_ONLY_ALIASES)
+            else model_override
+        )
+        model = clean_override or custom_model or adapter.get_default_model(phase)
 
         return RouteDecision(
             provider_id=provider_id,
