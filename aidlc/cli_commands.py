@@ -883,16 +883,6 @@ def _print_config_summary(config: dict) -> None:
                 model = phase_models.get(phase, default_model)
                 print(f"      {phase:<30} {model}")
         print()
-    elif not providers:
-        # Legacy fallback: no providers config at all
-        print(f"  {_bold('Models (legacy keys):')}")
-        print(f"    claude_model:                   {config.get('claude_model', '?')}")
-        print(f"    claude_model_planning:          {config.get('claude_model_planning', '?')}")
-        print(f"    claude_model_implementation:    {config.get('claude_model_implementation', '?')}")
-        print(f"    claude_model_implementation_complex: {config.get('claude_model_implementation_complex', '?')}")
-        print(f"    claude_model_finalization:      {config.get('claude_model_finalization', '?')}")
-        print()
-
     print(f"  Tip: run {_cyan('aidlc config show --effective')} for a full routing preview.")
 
 

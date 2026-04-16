@@ -12,10 +12,11 @@ Usage:
     aidlc run --plan-only                  # planning only
     aidlc run --implement-only             # skip planning, use existing issues
     aidlc run --resume                     # resume previous run
-    aidlc run --dry-run                    # no Claude calls
+    aidlc run --dry-run                    # no AI provider calls
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,6 +71,10 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     with open(run_dir / "config_snapshot.json", "w") as f:
         serializable = {k: v for k, v in config.items() if not k.startswith("_")}
         json.dump(serializable, f, indent=2)
+    try:
+        os.chmod(run_dir / "config_snapshot.json", 0o600)
+    except OSError:
+        pass
 
     return state, run_dir
 
@@ -93,13 +98,16 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     # Build base context
     context = scanner.build_context_prompt(scan_result)
 
-    # Claude has file access (allow_edits=True) so it can read docs directly.
+    # The active provider has file access (allow_edits=True) so it can read docs directly.
     # No need to paste everything into the prompt or generate summaries.
     # Just note total doc size for logging.
     doc_files = scan_result["doc_files"]
     total_doc_chars = sum(d["size"] for d in doc_files)
     if total_doc_chars > 80000:
-        logger.info(f"Large project: {total_doc_chars:,} chars across {len(doc_files)} docs (Claude will read files directly)")
+        logger.info(
+            f"Large project: {total_doc_chars:,} chars across {len(doc_files)} docs "
+            "(provider will read files directly)"
+        )
 
     state.project_context = context[:2000]  # Save summary to state
 
@@ -164,12 +172,12 @@ def run_full(
     logger.info(f"Plan budget: {state.plan_budget_seconds / 3600:.1f}h")
     logger.info(f"Dry run: {config.get('dry_run', False)}")
 
-    # Init provider router (drop-in replacement for ClaudeCLI)
+    # Init provider router for all AI execution phases.
     cli = ProviderRouter(config, logger)
     if not cli.check_available():
         logger.warning("No AI provider available.")
         if not config.get("dry_run"):
-            logger.error("Install a provider CLI (claude, gh copilot, codex) or use --dry-run. Exiting.")
+            logger.error("Install a supported provider CLI (claude, copilot, codex) or use --dry-run. Exiting.")
             lock.release()
             sys.exit(1)
 

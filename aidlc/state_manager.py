@@ -10,6 +10,14 @@ from pathlib import Path
 from .models import RunState, RunStatus
 
 
+def _chmod_owner_only(path: Path) -> None:
+    """Best-effort owner-only permissions for local state artifacts."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 class RunLock:
     """PID-based lock file to prevent concurrent runs on the same project.
 
@@ -42,6 +50,7 @@ class RunLock:
         self.lock_path.write_text(
             f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}\n"
         )
+        _chmod_owner_only(self.lock_path)
 
     def release(self) -> None:
         """Release the run lock."""
@@ -85,6 +94,7 @@ def save_state(state: RunState, run_dir: Path) -> Path:
     with open(tmp_path, "w") as f:
         json.dump(state.to_dict(), f, indent=2)
     os.replace(tmp_path, state_path)
+    _chmod_owner_only(state_path)
     return state_path
 
 
@@ -125,6 +135,7 @@ def checkpoint(state: RunState, run_dir: Path) -> None:
     with open(tmp_path, "w") as f:
         json.dump(state.to_dict(), f, indent=2)
     os.replace(tmp_path, cp_path)
+    _chmod_owner_only(cp_path)
     save_state(state, run_dir)
 
 
@@ -140,6 +151,7 @@ def save_cycle_snapshot(state: RunState, run_dir: Path, cycle_num: int) -> Path:
     with open(tmp_path, "w") as f:
         json.dump(state.to_dict(), f, indent=2)
     os.replace(tmp_path, snap_path)
+    _chmod_owner_only(snap_path)
     return snap_path
 
 

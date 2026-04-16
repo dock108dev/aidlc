@@ -29,18 +29,6 @@ def should_discard_model_override(provider_id: str, model_override: Optional[str
     return model_override in get_claude_only_aliases()
 
 
-def get_phase_model_config_keys() -> dict[str, str]:
-    """Maps phase names to legacy config keys for backward compatibility."""
-    return {
-        "planning": "claude_model_planning",
-        "research": "claude_model_research",
-        "implementation": "claude_model_implementation",
-        "implementation_complex": "claude_model_implementation_complex",
-        "finalization": "claude_model_finalization",
-        "audit": "claude_model_planning",
-    }
-
-
 def get_quality_sensitive_phases() -> frozenset[str]:
     """Return phases where higher-quality models are preferred."""
     return frozenset({"planning", "implementation_complex", "finalization", "audit"})

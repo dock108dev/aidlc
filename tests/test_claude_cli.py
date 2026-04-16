@@ -18,8 +18,7 @@ def logger():
 @pytest.fixture
 def base_config():
     return {
-        "claude_cli_command": "claude",
-        "claude_model": "opus",
+        "providers": {"claude": {"cli_command": "claude", "default_model": "opus"}},
         "retry_max_attempts": 2,
         "retry_base_delay_seconds": 0.01,  # Fast for tests
         "retry_max_delay_seconds": 0.05,
@@ -226,15 +225,6 @@ class TestExecutePrompt:
         assert "unavailable for an extended period" in result["error"]
         assert mock_popen.call_count > 1
         assert mock_sleep.called
-
-    @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_legacy_timeout_key_used_as_fallback(self, mock_popen, base_config, logger, tmp_path):
-        mock_popen.return_value = _mock_popen_success("ok")
-        base_config.pop("claude_hard_timeout_seconds", None)
-        base_config["claude_timeout_seconds"] = 7
-        cli = ClaudeCLI(base_config, logger)
-        result = cli.execute_prompt("prompt", tmp_path)
-        assert result["success"] is True
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")

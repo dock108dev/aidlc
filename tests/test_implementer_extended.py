@@ -102,8 +102,6 @@ class TestImplementIssueSuccess:
     @patch("aidlc.implementer.subprocess.run")
     def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
-        config["claude_model_implementation"] = "sonnet"
-        config["claude_model_implementation_complex"] = "opus"
         config["implementation_complexity_acceptance_criteria_threshold"] = 2
         cli = make_cli_success({
             "issue_id": "ISSUE-001", "success": True,
@@ -123,8 +121,6 @@ class TestImplementIssueSuccess:
     @patch("aidlc.implementer.subprocess.run")
     def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
-        config["claude_model_implementation"] = "sonnet"
-        config["claude_model_implementation_complex"] = "opus"
         config["implementation_escalate_on_retry"] = True
         cli = make_cli_success({
             "issue_id": "ISSUE-001", "success": True,
@@ -379,7 +375,7 @@ class TestConsecutiveFailures:
         # Add more issues so we don't exhaust immediately
         for i in range(3):
             state.issues.append({
-                "id": f"ISSUE-{i+10:03d}", "title": f"Issue {i}",
+                "id": f"ISSUE-{i + 10:03d}", "title": f"Issue {i}",
                 "description": "D", "priority": "medium", "labels": [],
                 "dependencies": [], "acceptance_criteria": ["AC"],
                 "status": "pending", "implementation_notes": "",
@@ -472,6 +468,79 @@ class TestFixFailingTests:
         assert result is False
 
 
+class TestImplementationResilience:
+    def test_stops_when_all_models_token_exhausted(self, config, logger, tmp_path):
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": False,
+            "output": None,
+            "error": "All available providers/models appear out of tokens or quota",
+            "failure_type": "token_exhausted_all_models",
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+
+        ok = impl.run()
+
+        assert ok is False
+        assert state.stop_reason is not None
+        assert "token" in state.stop_reason.lower()
+
+    def test_syncs_issue_status_to_markdown(self, config, logger, tmp_path):
+        config["dry_run"] = True
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
+
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        impl._implement_issue(issue)
+
+        issue_file = tmp_path / ".aidlc" / "issues" / "ISSUE-001.md"
+        assert issue_file.exists()
+        content = issue_file.read_text()
+        assert "**Status**: implemented" in content
+
+    def test_stops_when_no_models_available(self, config, logger, tmp_path):
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": False,
+            "output": None,
+            "error": "No available provider could execute the prompt.",
+            "failure_type": "provider_unavailable",
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+
+        ok = impl.run()
+
+        assert ok is False
+        assert state.stop_reason is not None
+        assert "no models/providers" in state.stop_reason.lower()
+
+
 class TestRubyTestDetection:
     def test_ruby_rspec(self, config, logger, tmp_path):
         (tmp_path / "Gemfile").write_text("source 'https://rubygems.org'")
@@ -517,3 +586,28 @@ class TestGetChangedFilesEdgeCases:
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
         assert impl._get_changed_files() == []
+
+
+class TestErrorPayloadSampling:
+    def test_limits_to_50_lines_from_last_500(self):
+        payload_lines = [f"line {i}" for i in range(1, 801)]
+        for i in range(730, 780):
+            payload_lines[i] = f"ERROR detail {i}"
+        payload = "\n".join(payload_lines)
+
+        sampled = Implementer._sample_error_payload(payload)
+        sampled_lines = sampled.splitlines()
+
+        assert len(sampled_lines) <= 50
+        # Must come from last 500 lines only: original lines 301..800
+        assert "line 200" not in sampled
+        assert any("ERROR detail" in line for line in sampled_lines)
+
+    def test_falls_back_to_tail_when_no_error_terms(self):
+        payload = "\n".join(f"info {i}" for i in range(1, 601))
+        sampled = Implementer._sample_error_payload(payload)
+        sampled_lines = sampled.splitlines()
+
+        assert len(sampled_lines) == 50
+        assert sampled_lines[0] == "info 551"
+        assert sampled_lines[-1] == "info 600"

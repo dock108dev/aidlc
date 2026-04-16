@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -70,6 +71,7 @@ class AccountManager:
         try:
             with open(self._accounts_path, "w") as f:
                 json.dump(accounts, f, indent=2)
+            os.chmod(self._accounts_path, 0o600)
         except OSError as e:
             self._log.error(f"Failed to save accounts.json: {e}")
 

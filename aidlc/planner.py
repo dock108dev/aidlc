@@ -3,7 +3,7 @@
 Runs time-constrained planning sessions that:
 1. Scan repo docs to build project context
 2. Assess what planning work needs to be done
-3. Have Claude create issues with full specs and acceptance criteria
+3. Have the routed AI provider create issues with full specs and acceptance criteria
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
@@ -14,7 +14,6 @@ from .models import RunState, RunPhase, Issue
 from .schemas import (
     PlanningOutput, PlanningAction, parse_planning_output,
 )
-from .claude_cli import ClaudeCLI
 from .state_manager import save_state, checkpoint, save_cycle_snapshot
 from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
@@ -44,7 +43,7 @@ class Planner:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
         doc_gaps: list | None = None,
@@ -262,11 +261,11 @@ class Planner:
         self.logger.debug(f"Prompt size: {len(prompt)} chars")
 
         # Execute Claude with file access (can read project files + write issues/docs)
-        planning_model = self.config.get("claude_model_planning")
         start_time = time.time()
         result = self.cli.execute_prompt(
-            prompt, self.project_root, allow_edits=True, model_override=planning_model,
+            prompt, self.project_root, allow_edits=True,
         )
+        self._log_provider_result(cycle_num, result)
         self.state.record_provider_result(result, self.config, phase="planning")
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
@@ -346,18 +345,18 @@ class Planner:
             and getattr(self, "_offer_completion", False)
             and foundation_ready
         ):
-            reason = planning_output.completion_reason or "Claude declared planning complete"
+            reason = planning_output.completion_reason or "planning completed"
             self._pending_completion_reason = f"Planning complete — {reason}"
-            self.logger.info(f"Claude signaled planning_complete (accepted): {reason}")
+            self.logger.info(f"Model signaled planning_complete (accepted): {reason}")
         elif planning_output.planning_complete:
             if not foundation_ready:
                 self.logger.warning(
-                    "Claude signaled planning_complete but planning docs are still incomplete "
+                    "Model signaled planning_complete but planning docs are still incomplete "
                     "(missing/thin foundation docs) — ignoring"
                 )
             else:
                 self.logger.info(
-                    "Claude signaled planning_complete but completion not yet offered — ignoring"
+                    "Model signaled planning_complete but completion not yet offered — ignoring"
                 )
 
         if not planning_output.actions:
@@ -523,3 +522,9 @@ class Planner:
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""
         return render_issue_md(issue)
+
+    def _log_provider_result(self, cycle_num: int, result: dict) -> None:
+        """Log which provider/model handled the planning cycle."""
+        provider = str(result.get("provider_id") or "unknown")
+        model = str(result.get("model_used") or "unknown")
+        self.logger.info(f"  Planning Cycle {cycle_num} model: {provider}/{model}")

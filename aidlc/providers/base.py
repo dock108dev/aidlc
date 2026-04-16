@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 import logging
+import subprocess
+import time
 
 
 class HealthStatus(Enum):
@@ -99,3 +101,37 @@ class ProviderAdapter(ABC):
     def supports_edit_permissions(self) -> bool:
         """Return True if this provider supports the allow_edits workflow."""
         return True
+
+    def _communicate_with_heartbeat(
+        self,
+        proc: subprocess.Popen,
+        *,
+        provider_label: str,
+        model: str,
+        timeout_seconds: int,
+        warn_interval: int,
+        account_id: str | None = None,
+    ) -> tuple[str, str, float, bool]:
+        """Wait for a provider process while emitting compact heartbeat logs."""
+        start = time.time()
+        interval = max(1, int(warn_interval))
+        timeout_limit = max(0, int(timeout_seconds))
+
+        while True:
+            elapsed = time.time() - start
+            remaining = max(0.0, timeout_limit - elapsed) if timeout_limit else None
+            wait_timeout = interval if remaining is None else min(interval, max(0.0, remaining))
+
+            try:
+                stdout, stderr = proc.communicate(timeout=wait_timeout)
+                return stdout, stderr, time.time() - start, False
+            except subprocess.TimeoutExpired:
+                elapsed = time.time() - start
+                account_text = f", account={account_id}" if account_id else ""
+                self.logger.info(
+                    f"{provider_label} still running (elapsed={elapsed:.0f}s, model={model}{account_text})"
+                )
+                if timeout_limit and elapsed >= timeout_limit:
+                    proc.kill()
+                    stdout, stderr = proc.communicate()
+                    return stdout, stderr, time.time() - start, True

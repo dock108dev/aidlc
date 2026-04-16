@@ -16,7 +16,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .finalize_prompts import (
     FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
@@ -49,7 +48,7 @@ class Finalizer:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
@@ -126,12 +125,10 @@ class Finalizer:
 
         # Execute Claude with edit permissions (no hard timeout — warns if long)
         start = time.time()
-        finalize_model = self.config.get("claude_model_finalization")
         result = self.cli.execute_prompt(
             prompt=prompt,
             working_dir=self.project_root,
             allow_edits=True,
-            model_override=finalize_model,
         )
         self.state.record_provider_result(result, self.config, phase="finalization")
         duration = time.time() - start

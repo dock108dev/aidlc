@@ -20,6 +20,8 @@ Usage:
 from __future__ import annotations
 
 import logging
+import re
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -101,6 +103,10 @@ class ProviderRouter:
         self._current_phase: str = "default"
         self._complexity: str = "normal"  # "normal" | "complex"
         self._usage = UsagePressure()
+        self._provider_cooldowns: dict[str, float] = {}
+        self._rate_limit_cooldown_seconds = max(
+            1, int(config.get("routing_rate_limit_cooldown_seconds", 300) or 300)
+        )
 
         # Build adapter registry
         self._adapters: dict[str, ProviderAdapter] = self._build_adapters()
@@ -110,9 +116,6 @@ class ProviderRouter:
 
         # dry_run passthrough
         self.dry_run = config.get("dry_run", False)
-
-        # Legacy compat: expose .model like ClaudeCLI does
-        self.model = config.get("claude_model", "sonnet")
 
         # Session-level budget provider selection.
         # Randomly pick copilot or openai at router init so a full run uses one
@@ -150,55 +153,174 @@ class ProviderRouter:
         """
         effective_phase = phase or self._current_phase
         effective_complexity = complexity or self._complexity
+        now = time.time()
 
-        decision = self.resolve(
-            phase=effective_phase,
-            complexity_level=effective_complexity,
-            model_override=model_override,
-        )
-
-        self.logger.debug(
-            f"Router: phase={effective_phase} complexity={effective_complexity} "
-            f"→ provider={decision.provider_id} account={decision.account_id} "
-            f"model={decision.model} [{decision.reasoning}]"
-        )
-        self._log_routing_note(decision, effective_phase)
-
-        result = decision.adapter.execute_prompt(
-            prompt=prompt,
-            working_dir=working_dir,
-            allow_edits=allow_edits,
-            model_override=decision.model,
-            account_id=decision.account_id,
-        )
-
-        # Enrich result with routing metadata
-        result.setdefault("provider_id", decision.provider_id)
-        result.setdefault("account_id", decision.account_id)
-        result["routing_decision"] = {
-            "provider_id": decision.provider_id,
-            "account_id": decision.account_id,
-            "model": decision.model,
-            "reasoning": decision.reasoning,
-            "strategy": decision.strategy_used,
-            "phase": effective_phase,
-            "fallback": decision.fallback,
-            "tier": decision.tier,
-            "quality_note": decision.quality_note,
+        excluded_providers: set[str] = {
+            provider_id
+            for provider_id in self._adapters.keys()
+            if self._provider_is_on_cooldown(provider_id, now)
         }
+        exhausted_providers: list[str] = []
+        rate_limited_providers: list[str] = list(excluded_providers)
+        attempts_remaining = max(1, len(self._adapters))
 
-        # Track usage pressure for Balanced mode
-        tokens_used = sum(result.get("usage", {}).values()) if result.get("usage") else 0
-        self._usage.record(decision.provider_id, decision.account_id, tokens_used)
+        while attempts_remaining > 0:
+            attempts_remaining -= 1
+            decision = self.resolve(
+                phase=effective_phase,
+                complexity_level=effective_complexity,
+                model_override=model_override,
+                excluded_providers=excluded_providers,
+            )
 
-        # Update account last_used
-        if decision.account_id and self._account_manager:
-            try:
-                self._account_manager.mark_used(decision.account_id)
-            except Exception:
-                pass
+            if decision.provider_id in excluded_providers:
+                break
 
-        return result
+            self.logger.debug(
+                f"Router: phase={effective_phase} complexity={effective_complexity} "
+                f"→ provider={decision.provider_id} account={decision.account_id} "
+                f"model={decision.model} [{decision.reasoning}]"
+            )
+            self._log_routing_note(decision, effective_phase)
+
+            result = decision.adapter.execute_prompt(
+                prompt=prompt,
+                working_dir=working_dir,
+                allow_edits=allow_edits,
+                model_override=decision.model,
+                account_id=decision.account_id,
+            )
+
+            # Enrich result with routing metadata
+            result.setdefault("provider_id", decision.provider_id)
+            result.setdefault("account_id", decision.account_id)
+            result["routing_decision"] = {
+                "provider_id": decision.provider_id,
+                "account_id": decision.account_id,
+                "model": decision.model,
+                "reasoning": decision.reasoning,
+                "strategy": decision.strategy_used,
+                "phase": effective_phase,
+                "fallback": decision.fallback,
+                "tier": decision.tier,
+                "quality_note": decision.quality_note,
+            }
+
+            # Track usage pressure for Balanced mode
+            tokens_used = sum(result.get("usage", {}).values()) if result.get("usage") else 0
+            self._usage.record(decision.provider_id, decision.account_id, tokens_used)
+
+            # Update account last_used
+            if decision.account_id and self._account_manager:
+                try:
+                    self._account_manager.mark_used(decision.account_id)
+                except Exception:
+                    pass
+
+            if result.get("success"):
+                return result
+
+            if self._is_token_exhaustion_result(result):
+                excluded_providers.add(decision.provider_id)
+                exhausted_providers.append(decision.provider_id)
+                self.logger.warning(
+                    f"[routing] {effective_phase}: token exhaustion on "
+                    f"{decision.provider_id}/{decision.model}; trying alternate provider"
+                )
+                continue
+
+            if self._is_rate_limited_result(result):
+                excluded_providers.add(decision.provider_id)
+                rate_limited_providers.append(decision.provider_id)
+                self._provider_cooldowns[decision.provider_id] = (
+                    time.time() + self._rate_limit_cooldown_seconds
+                )
+                self.logger.warning(
+                    f"[routing] {effective_phase}: rate limited on "
+                    f"{decision.provider_id}/{decision.model}; cooling down "
+                    f"{self._rate_limit_cooldown_seconds}s and trying alternate provider"
+                )
+                continue
+
+            return result
+
+        if exhausted_providers:
+            providers = ", ".join(dict.fromkeys(exhausted_providers))
+            return {
+                "success": False,
+                "output": None,
+                "error": (
+                    "All available providers/models appear out of tokens or quota "
+                    f"for phase '{effective_phase}': {providers}"
+                ),
+                "failure_type": "token_exhausted_all_models",
+                "duration_seconds": 0.0,
+                "retries": 0,
+                "usage": {},
+                "total_cost_usd": None,
+                "model_used": model_override or "unknown",
+                "usage_source": "none",
+                "provider_id": exhausted_providers[-1],
+                "account_id": None,
+                "routing_decision": {
+                    "provider_id": exhausted_providers[-1],
+                    "account_id": None,
+                    "model": model_override or "unknown",
+                    "reasoning": "all providers exhausted by token/quota limits",
+                    "strategy": self._strategy.value,
+                    "phase": effective_phase,
+                    "fallback": True,
+                    "tier": "fallback",
+                    "quality_note": "all models token exhausted",
+                },
+            }
+
+        if rate_limited_providers:
+            providers = ", ".join(dict.fromkeys(rate_limited_providers))
+            return {
+                "success": False,
+                "output": None,
+                "error": (
+                    "No models currently available because all providers are rate limited "
+                    f"for phase '{effective_phase}': {providers}"
+                ),
+                "failure_type": "rate_limited_all_models",
+                "duration_seconds": 0.0,
+                "retries": 0,
+                "usage": {},
+                "total_cost_usd": None,
+                "model_used": model_override or "unknown",
+                "usage_source": "none",
+                "provider_id": rate_limited_providers[-1],
+                "account_id": None,
+                "routing_decision": {
+                    "provider_id": rate_limited_providers[-1],
+                    "account_id": None,
+                    "model": model_override or "unknown",
+                    "reasoning": "all providers temporarily rate limited",
+                    "strategy": self._strategy.value,
+                    "phase": effective_phase,
+                    "fallback": True,
+                    "tier": "fallback",
+                    "quality_note": "all models rate limited",
+                },
+            }
+
+        # No successful call and no explicit exhaustion classification: last resolve failed hard.
+        return {
+            "success": False,
+            "output": None,
+            "error": "No available provider could execute the prompt.",
+            "failure_type": "provider_unavailable",
+            "duration_seconds": 0.0,
+            "retries": 0,
+            "usage": {},
+            "total_cost_usd": None,
+            "model_used": model_override or "unknown",
+            "usage_source": "none",
+            "provider_id": None,
+            "account_id": None,
+        }
 
     def check_available(self) -> bool:
         """Return True if at least one configured provider is available."""
@@ -228,18 +350,20 @@ class ProviderRouter:
         phase: str = "default",
         complexity_level: str = "normal",
         model_override: str | None = None,
+        excluded_providers: set[str] | None = None,
     ) -> RouteDecision:
         """Resolve the best (adapter, account, model) for the given context."""
         strategy = self._strategy
+        excluded = excluded_providers or set()
 
         if strategy == RoutingStrategy.CHEAPEST:
-            return self._resolve_cheapest(phase, complexity_level, model_override)
+            return self._resolve_cheapest(phase, complexity_level, model_override, excluded)
         elif strategy == RoutingStrategy.BEST_QUALITY:
-            return self._resolve_best_quality(phase, complexity_level, model_override)
+            return self._resolve_best_quality(phase, complexity_level, model_override, excluded)
         elif strategy == RoutingStrategy.CUSTOM:
-            return self._resolve_custom(phase, complexity_level, model_override)
+            return self._resolve_custom(phase, complexity_level, model_override, excluded)
         else:
-            return self._resolve_balanced(phase, complexity_level, model_override)
+            return self._resolve_balanced(phase, complexity_level, model_override, excluded)
 
     def resolve_preview(self) -> dict[str, RouteDecision]:
         """Return a per-phase preview of what the router would do right now.
@@ -262,6 +386,7 @@ class ProviderRouter:
         phase: str,
         complexity_level: str,
         model_override: str | None,
+        excluded_providers: set[str],
     ) -> RouteDecision:
         """Balanced strategy: intelligent 3-tier cost/quality routing.
 
@@ -286,6 +411,8 @@ class ProviderRouter:
         provider_order = self._tier_aware_provider_order(phase, is_premium_phase)
 
         for provider_id in provider_order:
+            if provider_id in excluded_providers:
+                continue
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
@@ -347,17 +474,25 @@ class ProviderRouter:
                 quality_note=quality_note,
             )
 
-        return self._fallback_decision(phase, complexity_level, model_override)
+        return self._fallback_decision(
+            phase,
+            complexity_level,
+            model_override,
+            excluded_providers=excluded_providers,
+        )
 
     def _resolve_cheapest(
         self,
         phase: str,
         complexity_level: str,
         model_override: str | None,
+        excluded_providers: set[str],
     ) -> RouteDecision:
         """Cheapest strategy: prefer lowest-cost provider/model."""
         # For cheapest: prefer haiku/cheap models, non-premium accounts
         for provider_id in helpers.get_balanced_provider_order():
+            if provider_id in excluded_providers:
+                continue
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
@@ -390,13 +525,19 @@ class ProviderRouter:
                 strategy_used="cheapest",
             )
 
-        return self._fallback_decision(phase, complexity_level, model_override)
+        return self._fallback_decision(
+            phase,
+            complexity_level,
+            model_override,
+            excluded_providers=excluded_providers,
+        )
 
     def _resolve_best_quality(
         self,
         phase: str,
         complexity_level: str,
         model_override: str | None,
+        excluded_providers: set[str],
     ) -> RouteDecision:
         """Best quality strategy: prefer highest-tier provider/account/model."""
         # Prefer premium accounts + opus-class models
@@ -405,6 +546,8 @@ class ProviderRouter:
         best_tier = -1
 
         for provider_id in helpers.get_balanced_provider_order():
+            if provider_id in excluded_providers:
+                continue
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
@@ -440,13 +583,19 @@ class ProviderRouter:
                 strategy_used="best_quality",
             )
 
-        return self._fallback_decision(phase, complexity_level, model_override)
+        return self._fallback_decision(
+            phase,
+            complexity_level,
+            model_override,
+            excluded_providers=excluded_providers,
+        )
 
     def _resolve_custom(
         self,
         phase: str,
         complexity_level: str,
         model_override: str | None,
+        excluded_providers: set[str],
     ) -> RouteDecision:
         """Custom strategy: read per-phase routing from providers.*.routing config."""
         routing_cfg = self.config.get("routing", {})
@@ -457,13 +606,18 @@ class ProviderRouter:
         custom_model = phase_cfg.get("model")
 
         adapter = self._adapters.get(provider_id)
-        if adapter is None or not adapter.check_available():
+        if provider_id in excluded_providers or adapter is None or not adapter.check_available():
             # Fall back to balanced
             self.logger.warning(
                 f"Custom routing: provider '{provider_id}' for phase '{phase}' "
                 "unavailable, falling back to balanced."
             )
-            return self._resolve_balanced(phase, complexity_level, model_override)
+            return self._resolve_balanced(
+                phase,
+                complexity_level,
+                model_override,
+                excluded_providers,
+            )
 
         clean_override = (
             None
@@ -625,7 +779,7 @@ class ProviderRouter:
                 if model:
                     return model
 
-        # Fall back to adapter's phase model (reads legacy claude_model_* keys)
+        # Fall back to the provider adapter's default phase model.
         return adapter.get_default_model(effective_phase)
 
     def _fallback_decision(
@@ -633,9 +787,13 @@ class ProviderRouter:
         phase: str,
         complexity_level: str,
         model_override: str | None,
+        excluded_providers: set[str] | None = None,
     ) -> RouteDecision:
         """Emergency fallback: use first adapter that is available."""
+        excluded = excluded_providers or set()
         for provider_id, adapter in self._adapters.items():
+            if provider_id in excluded:
+                continue
             if adapter.check_available():
                 model = model_override or adapter.get_default_model(phase)
                 return RouteDecision(
@@ -650,7 +808,10 @@ class ProviderRouter:
 
         # Absolute last resort: use first registered adapter even if unavailable (will fail gracefully)
         if self._adapters:
-            provider_id, adapter = next(iter(self._adapters.items()))
+            provider_id, adapter = next(
+                ((pid, ad) for pid, ad in self._adapters.items() if pid not in excluded),
+                next(iter(self._adapters.items())),
+            )
             model = model_override or adapter.get_default_model(phase)
             return RouteDecision(
                 provider_id=provider_id,
@@ -680,7 +841,7 @@ class ProviderRouter:
         adapters: dict[str, ProviderAdapter] = {}
 
         if isinstance(providers_cfg, dict):
-            # Respect enabled flag for all providers; Claude defaults to True for backwards compat
+            # Respect enabled flag for all providers; Claude defaults to True.
             if providers_cfg.get("claude", {}).get("enabled", True):
                 adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
             if providers_cfg.get("copilot", {}).get("enabled", False):
@@ -688,7 +849,7 @@ class ProviderRouter:
             if providers_cfg.get("openai", {}).get("enabled", False):
                 adapters["openai"] = OpenAIAdapter(self.config, self.logger)
         else:
-            # No providers config at all — fall back to Claude only (legacy behaviour)
+            # No providers config at all — fall back to Claude only.
             adapters["claude"] = ClaudeCLIAdapter(self.config, self.logger)
 
         return adapters
@@ -705,6 +866,76 @@ class ProviderRouter:
                 self.logger.warning(f"[routing] {decision.quality_note}")
             else:
                 self.logger.info(f"[routing] {decision.quality_note}")
+
+    @staticmethod
+    def _is_token_exhaustion_result(result: dict) -> bool:
+        """Return True when provider failure indicates exhausted token/quota budget."""
+        if not isinstance(result, dict):
+            return False
+        failure_type = str(result.get("failure_type") or "").lower()
+        if failure_type in {"token_exhausted", "quota_exceeded", "token_exhausted_all_models"}:
+            return True
+
+        message = "\n".join(
+            [
+                str(result.get("error") or ""),
+                str(result.get("output") or ""),
+            ]
+        ).lower()
+        if not message.strip():
+            return False
+
+        patterns = (
+            r"out of tokens",
+            r"token budget",
+            r"token quota",
+            r"quota exceeded",
+            r"insufficient quota",
+            r"billing.*required",
+            r"credits? exhausted",
+            r"you exceeded your current quota",
+            r"monthly token.*limit",
+        )
+        return any(re.search(pat, message) for pat in patterns)
+
+    @staticmethod
+    def _is_rate_limited_result(result: dict) -> bool:
+        """Return True when provider failure indicates temporary rate limiting."""
+        if not isinstance(result, dict):
+            return False
+        failure_type = str(result.get("failure_type") or "").lower()
+        if failure_type in {"rate_limited", "rate_limit", "429"}:
+            return True
+
+        message = "\n".join(
+            [
+                str(result.get("error") or ""),
+                str(result.get("output") or ""),
+            ]
+        ).lower()
+        if not message.strip():
+            return False
+
+        patterns = (
+            r"rate.?limit",
+            r"too many requests",
+            r"\b429\b",
+            r"try again later",
+            r"request limit",
+            r"throttl",
+        )
+        return any(re.search(pat, message) for pat in patterns)
+
+    def _provider_is_on_cooldown(self, provider_id: str, now: float | None = None) -> bool:
+        """Return True when a provider is temporarily excluded after rate limiting."""
+        expiry = self._provider_cooldowns.get(provider_id)
+        if not expiry:
+            return False
+        t = now if now is not None else time.time()
+        if t < expiry:
+            return True
+        self._provider_cooldowns.pop(provider_id, None)
+        return False
 
     def set_account_manager(self, manager) -> None:
         """Inject an AccountManager for per-account routing decisions."""

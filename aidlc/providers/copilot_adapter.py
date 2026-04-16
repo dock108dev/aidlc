@@ -10,7 +10,6 @@ when vendor model IDs change.
 """
 
 import subprocess
-import time
 from pathlib import Path
 import logging
 
@@ -60,7 +59,6 @@ class CopilotAdapter(ProviderAdapter):
         # --model: specify the AI model
         cmd = self._build_command(model, allow_edits, prompt)
 
-        start = time.time()
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -69,19 +67,20 @@ class CopilotAdapter(ProviderAdapter):
                 text=True,
                 cwd=str(working_dir),
             )
-            try:
-                stdout, stderr = proc.communicate(timeout=self.hard_timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-                duration = time.time() - start
+            stdout, stderr, duration, timed_out = self._communicate_with_heartbeat(
+                proc,
+                provider_label="Copilot CLI",
+                model=model or "default",
+                timeout_seconds=self.hard_timeout,
+                warn_interval=self.warn_interval,
+                account_id=account_id,
+            )
+            if timed_out:
                 return self._failure_result(
                     model, account_id, duration,
                     error="Copilot CLI timed out",
                     failure_type="timeout",
                 )
-
-            duration = time.time() - start
             if proc.returncode == 0:
                 return {
                     "success": True,

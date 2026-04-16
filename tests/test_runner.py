@@ -24,12 +24,11 @@ def config(tmp_path):
         "_runs_dir": str(aidlc_dir / "runs"),
         "_reports_dir": str(aidlc_dir / "reports"),
         "_issues_dir": str(aidlc_dir / "issues"),
+        "providers": {"claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}},
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
         "dry_run": True,
-        "claude_cli_command": "claude",
-        "claude_model": "opus",
-        "claude_timeout_seconds": 10,
+        "claude_hard_timeout_seconds": 10,
         "retry_max_attempts": 0,
         "retry_base_delay_seconds": 0.01,
         "retry_max_delay_seconds": 0.05,
@@ -65,6 +64,11 @@ class TestInitRun:
     def test_dry_run_flag_set(self, config):
         state, run_dir = init_run(config, resume=False, dry_run=True)
         assert config["dry_run"] is True
+
+    @patch("aidlc.runner.os.chmod")
+    def test_config_snapshot_restricts_permissions(self, mock_chmod, config):
+        _, run_dir = init_run(config, resume=False, dry_run=True)
+        assert (run_dir / "config_snapshot.json", 0o600) in [call.args for call in mock_chmod.call_args_list]
 
 
 class TestScanProject:

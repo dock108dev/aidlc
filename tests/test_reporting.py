@@ -95,4 +95,4 @@ class TestGenerateCheckpointSummary:
         assert "Checkpoint 3" in content
         assert "implementing" in content
         assert "ISSUE-005" in content
-        assert "Claude calls" in content
+        assert "Provider calls" in content

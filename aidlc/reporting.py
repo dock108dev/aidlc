@@ -22,7 +22,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         f"**Started**: {state.started_at or 'N/A'}",
         f"**Last Updated**: {state.last_updated}",
         f"**Planning time**: {plan_h:.1f}h / {plan_budget_h:.0f}h budget",
-        f"**Claude (CLI) time**: {elapsed_h:.1f}h",
+        f"**AI provider time**: {elapsed_h:.1f}h",
         f"**Console (local) time**: {console_h:.1f}h",
         f"**Stop Reason**: {state.stop_reason or 'N/A'}",
         "",
@@ -210,24 +210,24 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
 
 def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
     cp_path = report_dir / f"checkpoint_{state.checkpoint_count:04d}.md"
-    claude_h = state.elapsed_seconds / 3600
+    provider_h = state.elapsed_seconds / 3600
     console_h = state.console_seconds / 3600
 
     content = f"""# Checkpoint {state.checkpoint_count}
 
 - **Time**: {datetime.now(timezone.utc).isoformat()}
 - **Phase**: {state.phase.value}
-- **Claude (CLI) time**: {claude_h:.1f}h
+- **AI provider time**: {provider_h:.1f}h
 - **Console (local) time**: {console_h:.1f}h
 - **Planning cycles**: {state.planning_cycles}
 - **Issues created**: {state.issues_created}
 - **Implementation cycles**: {state.implementation_cycles}
 - **Issues implemented**: {state.issues_implemented}
 - **Current issue**: {state.current_issue_id or 'none'}
-- **Claude calls**: {state.claude_calls_total} total ({state.claude_calls_succeeded} ok, {state.claude_calls_failed} failed, {state.claude_retries_total} retries)
-- **Claude tokens**: in={state.claude_input_tokens}, out={state.claude_output_tokens}, cache_write={state.claude_cache_creation_input_tokens}, cache_read={state.claude_cache_read_input_tokens}, total={state.claude_total_tokens}
-- **Claude tool requests**: web_search={state.claude_web_search_requests}, web_fetch={state.claude_web_fetch_requests}
-- **Claude cost (USD)**: exact={state.claude_cost_usd_exact:.4f}, estimated={state.claude_cost_usd_estimated:.4f}
+- **Provider calls**: {state.claude_calls_total} total ({state.claude_calls_succeeded} ok, {state.claude_calls_failed} failed, {state.claude_retries_total} retries)
+- **Provider tokens**: in={state.claude_input_tokens}, out={state.claude_output_tokens}, cache_write={state.claude_cache_creation_input_tokens}, cache_read={state.claude_cache_read_input_tokens}, total={state.claude_total_tokens}
+- **Provider tool requests**: web_search={state.claude_web_search_requests}, web_fetch={state.claude_web_fetch_requests}
+- **Provider cost (USD)**: exact={state.claude_cost_usd_exact:.4f}, estimated={state.claude_cost_usd_estimated:.4f}
 """
     cp_path.write_text(content)
     return cp_path

@@ -4,6 +4,7 @@ import json
 import os
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 
 from aidlc.state_manager import (
     generate_run_id, save_state, load_state, checkpoint,
@@ -50,6 +51,12 @@ class TestSaveAndLoadState:
         assert state.last_updated is None
         save_state(state, tmp_path)
         assert state.last_updated is not None
+
+    @patch("aidlc.state_manager.os.chmod")
+    def test_save_restricts_permissions(self, mock_chmod, tmp_path):
+        state = RunState(run_id="test_001", config_name="default")
+        path = save_state(state, tmp_path)
+        mock_chmod.assert_called_once_with(path, 0o600)
 
     def test_load_roundtrip(self, tmp_path):
         state = RunState(run_id="test_rt", config_name="myconfig")
@@ -108,6 +115,14 @@ class TestCheckpoint:
         data = json.loads(cp_file.read_text())
         assert data["run_id"] == "cp_test"
 
+    @patch("aidlc.state_manager.os.chmod")
+    def test_checkpoint_restricts_permissions(self, mock_chmod, tmp_path):
+        state = RunState(run_id="cp_test", config_name="default")
+        checkpoint(state, tmp_path)
+        chmod_paths = [call.args[0].name for call in mock_chmod.call_args_list]
+        assert "checkpoint_0001.json" in chmod_paths
+        assert "state.json" in chmod_paths
+
 
 class TestFindLatestRun:
     def test_finds_latest(self, tmp_path):
@@ -147,6 +162,12 @@ class TestRunLock:
         assert str(os.getpid()) in content
         lock.release()
         assert not lock.lock_path.exists()
+
+    @patch("aidlc.state_manager.os.chmod")
+    def test_acquire_restricts_permissions(self, mock_chmod, tmp_path):
+        lock = RunLock(tmp_path)
+        lock.acquire()
+        mock_chmod.assert_called_once_with(lock.lock_path, 0o600)
 
     def test_context_manager(self, tmp_path):
         with RunLock(tmp_path) as lock:

@@ -79,6 +79,6 @@ class TestLogCheckpoint:
         content = (tmp_path / "cp_test.log").read_text()
         assert "CHECKPOINT" in content
         assert "implementing" in content
-        assert "Claude calls" in content
-        assert "Claude tokens" in content
-        assert "Claude cost (USD)" in content
+        assert "Provider calls" in content
+        assert "Provider tokens" in content
+        assert "Provider cost (USD)" in content

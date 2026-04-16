@@ -1,6 +1,7 @@
 """Config loader for AIDLC runner. Project-agnostic."""
 
 import json
+import os
 from pathlib import Path
 
 # Framework root (where aidlc package lives)
@@ -11,6 +12,7 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 DEFAULTS = {
     "runtime_profile": "standard",          # standard | production
     "routing_strategy": "balanced",         # balanced | cheapest | best_quality | custom
+    "routing_rate_limit_cooldown_seconds": 300,
     "providers": {                          # provider enable/model configuration
         "claude": {
             "enabled": True,
@@ -55,13 +57,6 @@ DEFAULTS = {
     "plan_budget_hours": 4,
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
-    "claude_cli_command": "claude",
-    "claude_model": "opus",                  # default model (used for implementation)
-    "claude_model_planning": "sonnet",       # model for planning cycles
-    "claude_model_research": "sonnet",       # model for research actions
-    "claude_model_implementation": "sonnet",   # default model for implementation
-    "claude_model_implementation_complex": "opus",  # model for complex implementation issues
-    "claude_model_finalization": "sonnet",    # model for finalization passes
     "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
     "claude_hard_timeout_seconds": 1800,    # default 30-minute escape hatch for stuck runs
     "claude_timeout_grace_seconds": 30,     # wait for graceful Claude shutdown before force-kill
@@ -122,7 +117,6 @@ DEFAULTS = {
             "cache_creation_input": 1.75,
             "cache_read_input": 0.175,
         },
-        # Legacy OpenAI models (kept for backward compat with existing run state)
         "gpt-4o": {
             "input": 2.5,
             "output": 10.0,
@@ -183,7 +177,7 @@ DEFAULTS = {
     "implementation_allowed_paths": None,  # None = all paths allowed
     # Audit settings
     "audit_depth": "quick",                 # default depth when --audit is used
-    "audit_max_claude_calls": 10,           # cap Claude calls during full audit
+    "audit_max_claude_calls": 10,           # cap provider calls during full audit
     "audit_max_source_chars_per_module": 15000,  # source chars sent to Claude per module
     "audit_source_extensions": [
         ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb",
@@ -248,6 +242,19 @@ DEFAULTS = {
     # Implementation prompt: max prior completed issues listed (titles only); rest on disk
     "implementation_completed_issues_max": 12,
     "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
+
+    # Implementation autosync / resilience
+    "autosync_enabled": True,
+    "autosync_every_implementation_cycles": 5,
+    "autosync_push_remote": True,
+    "autosync_commit_message_template": "aidlc: autosync after implementation cycle {cycle}",
+    "autosync_issue_status_sync": True,
+    "autosync_prune_enabled": True,
+    "autosync_runs_to_keep": 5,
+    "autosync_keep_claude_outputs": 200,
+
+    # Stop run cleanly when router confirms token exhaustion across all models/providers
+    "stop_on_all_models_token_exhausted": True,
 }
 
 
@@ -343,6 +350,10 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                     default_config[key] = value
         with open(config_path, "w") as f:
             json.dump(default_config, f, indent=2)
+        try:
+            os.chmod(config_path, 0o600)
+        except OSError:
+            pass
 
     # Add .gitignore entries
     project_root = aidlc_dir.parent

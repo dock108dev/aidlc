@@ -43,13 +43,13 @@ def setup_logger(run_id: str, log_dir: Path, verbose: bool = False) -> logging.L
 
 
 def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
-    claude_h = state_dict.get("elapsed_seconds", 0) / 3600
+    provider_h = state_dict.get("elapsed_seconds", 0) / 3600
     console_h = state_dict.get("console_seconds", 0) / 3600
     phase = state_dict.get("phase", "?")
     logger.info("=" * 60)
     logger.info("CHECKPOINT")
     logger.info(f"  Phase: {phase}")
-    logger.info(f"  Claude (CLI) time:   {claude_h:.1f}h")
+    logger.info(f"  AI provider time:    {provider_h:.1f}h")
     logger.info(f"  Console (local) time: {console_h:.1f}h")
     logger.info(f"  Planning cycles: {state_dict.get('planning_cycles', 0)}")
     logger.info(f"  Issues created: {state_dict.get('issues_created', 0)}")
@@ -57,14 +57,14 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
     logger.info(f"  Issues implemented: {state_dict.get('issues_implemented', 0)}")
     logger.info(f"  Issues verified: {state_dict.get('issues_verified', 0)}")
     logger.info(
-        "  Claude calls: "
+        "  Provider calls: "
         f"{state_dict.get('claude_calls_total', 0)} total, "
         f"{state_dict.get('claude_calls_succeeded', 0)} ok, "
         f"{state_dict.get('claude_calls_failed', 0)} failed, "
         f"{state_dict.get('claude_retries_total', 0)} retries"
     )
     logger.info(
-        "  Claude tokens: "
+        "  Provider tokens: "
         f"in={state_dict.get('claude_input_tokens', 0)}, "
         f"out={state_dict.get('claude_output_tokens', 0)}, "
         f"cache_write={state_dict.get('claude_cache_creation_input_tokens', 0)}, "
@@ -72,12 +72,12 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
         f"total={state_dict.get('claude_total_tokens', 0)}"
     )
     logger.info(
-        "  Claude tool requests: "
+        "  Provider tool requests: "
         f"web_search={state_dict.get('claude_web_search_requests', 0)}, "
         f"web_fetch={state_dict.get('claude_web_fetch_requests', 0)}"
     )
     logger.info(
-        "  Claude cost (USD): "
+        "  Provider cost (USD): "
         f"exact={state_dict.get('claude_cost_usd_exact', 0.0):.4f}, "
         f"estimated={state_dict.get('claude_cost_usd_estimated', 0.0):.4f}"
     )

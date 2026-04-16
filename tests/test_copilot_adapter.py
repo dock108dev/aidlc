@@ -1,6 +1,7 @@
 """Tests for the GitHub Copilot provider adapter."""
 
 import logging
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from aidlc.providers.copilot_adapter import CopilotAdapter
@@ -61,3 +62,28 @@ def test_returns_empty_default_model_when_unset():
 
     assert adapter.get_default_model() == ""
     assert adapter.get_default_model("planning") == ""
+
+
+@patch("aidlc.providers.copilot_adapter.subprocess.Popen")
+def test_logs_heartbeat_while_running(mock_popen, tmp_path):
+    proc = MagicMock()
+    proc.communicate.side_effect = [
+        subprocess.TimeoutExpired(cmd="copilot", timeout=1),
+        ("ok", ""),
+    ]
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    logger = MagicMock()
+    adapter = CopilotAdapter(
+        {
+            "providers": {"copilot": {"cli_command": "copilot", "default_model": ""}},
+            "claude_long_run_warn_seconds": 1,
+            "claude_hard_timeout_seconds": 10,
+        },
+        logger,
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    logger.info.assert_any_call("Copilot CLI still running (elapsed=0s, model=default)")

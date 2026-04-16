@@ -1,8 +1,4 @@
-"""Claude CLI provider adapter.
-
-Wraps the existing ClaudeCLI execution logic as a ProviderAdapter.
-Maintains full backward compatibility with the original ClaudeCLI class.
-"""
+"""Claude CLI provider adapter."""
 
 from pathlib import Path
 import logging
@@ -61,7 +57,13 @@ class ClaudeCLIAdapter(ProviderAdapter):
         """Check Claude CLI installation and authentication."""
         import subprocess
 
-        cli_cmd = self.config.get("claude_cli_command", "claude")
+        providers_cfg = self.config.get("providers", {})
+        if not isinstance(providers_cfg, dict):
+            providers_cfg = {}
+        claude_cfg = providers_cfg.get(self.PROVIDER_ID, {})
+        if not isinstance(claude_cfg, dict):
+            claude_cfg = {}
+        cli_cmd = str(claude_cfg.get("cli_command", "claude"))
 
         # Check if binary exists
         try:

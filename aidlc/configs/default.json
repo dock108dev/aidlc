@@ -55,13 +55,6 @@
       "accounts": []
     }
   },
-  "claude_cli_command": "claude",
-  "claude_model": "opus",
-  "claude_model_planning": "sonnet",
-  "claude_model_research": "sonnet",
-  "claude_model_implementation": "sonnet",
-  "claude_model_implementation_complex": "opus",
-  "claude_model_finalization": "sonnet",
   "claude_hard_timeout_seconds": 600,
   "telemetry_cost_mode": "auto",
   "telemetry_model_pricing_usd_per_million_tokens": {

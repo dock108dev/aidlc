@@ -5,7 +5,6 @@ Supports GPT-4o and other OpenAI models as first-class citizens.
 """
 
 import subprocess
-import time
 from pathlib import Path
 import logging
 
@@ -26,6 +25,7 @@ class OpenAIAdapter(ProviderAdapter):
         self.default_model = provider_cfg.get("default_model", _DEFAULT_OPENAI_MODEL)
         self.dry_run = config.get("dry_run", False)
         self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
+        self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
 
     def _provider_config(self) -> dict:
         providers = self.config.get("providers", {})
@@ -48,7 +48,6 @@ class OpenAIAdapter(ProviderAdapter):
         # Build codex CLI command: codex exec --model <model> [--full-auto] <prompt>
         cmd = self._build_command(model, allow_edits, prompt)
 
-        start = time.time()
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -57,19 +56,20 @@ class OpenAIAdapter(ProviderAdapter):
                 text=True,
                 cwd=str(working_dir),
             )
-            try:
-                stdout, stderr = proc.communicate(timeout=self.hard_timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
-                duration = time.time() - start
+            stdout, stderr, duration, timed_out = self._communicate_with_heartbeat(
+                proc,
+                provider_label="OpenAI CLI",
+                model=model,
+                timeout_seconds=self.hard_timeout,
+                warn_interval=self.warn_interval,
+                account_id=account_id,
+            )
+            if timed_out:
                 return self._failure_result(
                     model, account_id, duration,
                     error="OpenAI CLI timed out",
                     failure_type="timeout",
                 )
-
-            duration = time.time() - start
             if proc.returncode == 0:
                 return {
                     "success": True,

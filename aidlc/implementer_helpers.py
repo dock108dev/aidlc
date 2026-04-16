@@ -35,6 +35,7 @@ def build_implementation_prompt(impl, issue) -> str:
     """Build prompt: static instructions + schema first (cache-friendly), then volatile context."""
     issue_file = Path(impl.config["_issues_dir"]) / f"{issue.id}.md"
     issue_content = issue_file.read_text() if issue_file.exists() else ""
+    previous_notes = issue.implementation_notes or ""
 
     completed = [
         data
@@ -68,11 +69,11 @@ def build_implementation_prompt(impl, issue) -> str:
         for criterion in issue.acceptance_criteria:
             volatile_sections.append(f"- {criterion}")
 
-    if issue.attempt_count > 1:
+    if issue.attempt_count > 1 and not issue_content:
         volatile_sections.extend(
             [
                 "\n### Previous attempt notes\n",
-                issue.implementation_notes,
+                previous_notes,
                 "\nAddress failures above.",
             ]
         )

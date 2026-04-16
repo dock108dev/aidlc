@@ -33,11 +33,11 @@ class TestLoadConfig:
         config_file = aidlc_dir / "config.json"
         config_file.write_text(json.dumps({
             "plan_budget_hours": 8,
-            "claude_model": "sonnet",
+            "providers": {"claude": {"default_model": "opus"}},
         }))
         config = load_config(project_root=str(tmp_path))
         assert config["plan_budget_hours"] == 8
-        assert config["claude_model"] == "sonnet"
+        assert config["providers"]["claude"]["default_model"] == "opus"
         # Defaults still present
         assert config["checkpoint_interval_minutes"] == 15
 
@@ -63,9 +63,8 @@ class TestLoadConfig:
         """Verify all expected config keys exist in DEFAULTS."""
         expected_keys = [
             "runtime_profile", "plan_budget_hours", "checkpoint_interval_minutes", "dry_run",
-            "claude_cli_command", "claude_model", "claude_model_planning",
-            "claude_model_research", "claude_model_implementation",
-            "claude_model_implementation_complex", "claude_model_finalization",
+            "providers",
+            "routing_rate_limit_cooldown_seconds",
             "claude_long_run_warn_seconds",
             "claude_hard_timeout_seconds", "claude_timeout_grace_seconds",
             "retry_max_attempts", "retry_base_delay_seconds", "retry_max_delay_seconds",
@@ -86,6 +85,15 @@ class TestLoadConfig:
             "strict_validation", "validation_allow_no_tests", "fail_on_validation_incomplete",
             "fail_on_final_test_failure", "strict_change_detection",
             "planning_action_failure_ratio_threshold",
+            "autosync_enabled",
+            "autosync_every_implementation_cycles",
+            "autosync_push_remote",
+            "autosync_commit_message_template",
+            "autosync_issue_status_sync",
+            "autosync_prune_enabled",
+            "autosync_runs_to_keep",
+            "autosync_keep_claude_outputs",
+            "stop_on_all_models_token_exhausted",
             "audit_runtime_enabled", "audit_runtime_timeout_seconds",
             "audit_coverage_threshold_percent", "audit_playwright_headless",
             "audit_playwright_command_override", "audit_braindump_enabled",

@@ -43,20 +43,19 @@ class ClaudeCLI:
     def __init__(self, config: dict, logger: logging.Logger):
         self.config = config
         self.logger = logger
-        self.cli_command = config.get("claude_cli_command", "claude")
         providers_cfg = config.get("providers", {})
         if not isinstance(providers_cfg, dict):
             providers_cfg = {}
         claude_cfg = providers_cfg.get("claude", {})
         if not isinstance(claude_cfg, dict):
             claude_cfg = {}
+        self.cli_command = str(claude_cfg.get("cli_command", "claude"))
         self.model = str(claude_cfg.get("default_model", "opus"))
         self.max_retries = config.get("retry_max_attempts", 2)
         self.retry_base_delay = config.get("retry_base_delay_seconds", 30)
         self.retry_max_delay = config.get("retry_max_delay_seconds", 300)
         self.retry_backoff_factor = config.get("retry_backoff_factor", 2.0)
         self.dry_run = config.get("dry_run", False)
-        self._warned_legacy_timeout_key = False
 
     def execute_prompt(
         self,
@@ -106,14 +105,6 @@ class ClaudeCLI:
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
         hard_timeout_raw = self.config.get("claude_hard_timeout_seconds")
-        if hard_timeout_raw is None and self.config.get("claude_timeout_seconds") is not None:
-            hard_timeout_raw = self.config.get("claude_timeout_seconds")
-            if not self._warned_legacy_timeout_key:
-                self.logger.warning(
-                    "Config uses deprecated 'claude_timeout_seconds'; "
-                    "use 'claude_hard_timeout_seconds' instead."
-                )
-                self._warned_legacy_timeout_key = True
         hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 1800))
         timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
         outage_max_wait = max(
@@ -300,7 +291,7 @@ class ClaudeCLI:
             except FileNotFoundError:
                 raise ClaudeCLIError(
                     f"Claude CLI not found at '{self.cli_command}'. "
-                    "Install it or set claude_cli_command in config."
+                    "Install it or set providers.claude.cli_command in config."
                 )
 
         if outage_budget_exceeded:

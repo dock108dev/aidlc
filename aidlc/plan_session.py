@@ -331,7 +331,7 @@ class PlanSession:
 
         # Launch claude interactively
         cmd = [
-            self.config.get("claude_cli_command", "claude"),
+            self.config.get("providers", {}).get("claude", {}).get("cli_command", "claude"),
             "--append-system-prompt", system_prompt,
             "--dangerously-skip-permissions",
             initial_msg,
