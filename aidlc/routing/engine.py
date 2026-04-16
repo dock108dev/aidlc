@@ -274,8 +274,8 @@ class ProviderRouter:
         Within a tier the account with lowest call count is preferred.
         """
         is_complex = complexity_level == "complex"
-        is_quality_phase = phase in _QUALITY_SENSITIVE_PHASES or is_complex
-        is_premium_phase = phase in _PREMIUM_PHASES or (phase == "implementation" and is_complex)
+        is_quality_phase = phase in helpers.get_quality_sensitive_phases() or is_complex
+        is_premium_phase = phase in helpers.get_premium_phases() or (phase == "implementation" and is_complex)
 
         # Build candidate list: premium first for premium phases, budget first otherwise
         provider_order = self._tier_aware_provider_order(phase, is_premium_phase)
@@ -326,7 +326,7 @@ class ProviderRouter:
                     f"Claude unavailable for {phase} (premium phase), "
                     f"quality reduced: falling back to {provider_id}/{model}"
                 )
-            elif not is_premium_phase and provider_id in _BUDGET_PROVIDERS:
+            elif not is_premium_phase and provider_id in helpers.get_budget_providers():
                 # Only note model upgrades within the budget tier
                 if model not in ("gpt-5.4-mini", "claude-sonnet-4-6", "claude-haiku-3-5"):
                     quality_note = f"model upgraded to {model} for {phase} (complexity)"
@@ -366,8 +366,7 @@ class ProviderRouter:
 
             effective_override = (
                 None
-                if (model_override and provider_id != "claude"
-                    and model_override in _CLAUDE_ONLY_ALIASES)
+                if helpers.should_discard_model_override(provider_id, model_override)
                 else model_override
             )
             if effective_override:
@@ -400,7 +399,7 @@ class ProviderRouter:
         best_provider = None
         best_tier = -1
 
-        for provider_id in _BALANCED_PROVIDER_ORDER:
+        for provider_id in helpers.get_balanced_provider_order():
             adapter = self._adapters.get(provider_id)
             if adapter is None or not adapter.check_available():
                 continue
@@ -418,8 +417,7 @@ class ProviderRouter:
 
             effective_override = (
                 None
-                if (model_override and best_provider != "claude"
-                    and model_override in _CLAUDE_ONLY_ALIASES)
+                if helpers.should_discard_model_override(best_provider, model_override)
                 else model_override
             )
             if effective_override:
@@ -464,8 +462,7 @@ class ProviderRouter:
 
         clean_override = (
             None
-            if (model_override and provider_id != "claude"
-                and model_override in _CLAUDE_ONLY_ALIASES)
+            if helpers.should_discard_model_override(provider_id, model_override)
             else model_override
         )
         model = clean_override or custom_model or adapter.get_default_model(phase)
@@ -492,12 +489,12 @@ class ProviderRouter:
                 if isinstance(pcfg, dict) and pcfg.get("enabled", True)
             ]
             if enabled:
-                ordered = list(_BALANCED_PROVIDER_ORDER)
+                ordered = list(helpers.get_balanced_provider_order())
                 for pid in enabled:
                     if pid not in ordered:
                         ordered.append(pid)
                 return [p for p in ordered if p in enabled]
-        return list(_BALANCED_PROVIDER_ORDER)
+        return list(helpers.get_balanced_provider_order())
 
     def _tier_aware_provider_order(self, phase: str, is_premium_phase: bool) -> list[str]:
         """Return provider IDs ordered by tier appropriateness.
@@ -516,7 +513,7 @@ class ProviderRouter:
             enabled = set(self._adapters.keys())
 
         session_budget = self._session_budget_provider
-        other_budget = [p for p in _BUDGET_PROVIDERS if p != session_budget and p in enabled]
+        other_budget = [p for p in helpers.get_budget_providers() if p != session_budget and p in enabled]
 
         if is_premium_phase:
             # Premium → budget fallback order
@@ -525,7 +522,7 @@ class ProviderRouter:
                 candidates.append(session_budget)
             candidates.extend(other_budget)
             # Append any remaining enabled providers not yet listed
-            for p in _BALANCED_PROVIDER_ORDER:
+            for p in helpers.get_balanced_provider_order():
                 if p not in candidates and p in enabled:
                     candidates.append(p)
         else:
@@ -536,7 +533,7 @@ class ProviderRouter:
             candidates.extend(other_budget)
             if "claude" in enabled:
                 candidates.append("claude")
-            for p in _BALANCED_PROVIDER_ORDER:
+            for p in helpers.get_balanced_provider_order():
                 if p not in candidates and p in enabled:
                     candidates.append(p)
 
