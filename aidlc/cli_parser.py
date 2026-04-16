@@ -47,6 +47,11 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         action="store_true",
         help="Copy planning doc templates (ROADMAP.md, ARCHITECTURE.md, etc.) into the project",
     )
+    init_parser.add_argument(
+        "--providers",
+        action="store_true",
+        help="Run provider setup wizard after init (validate, auth, configure)",
+    )
 
     improve_parser = subparsers.add_parser(
         "improve",
@@ -154,6 +159,41 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     provider_enable.add_argument("name", help="Provider name: claude | copilot | openai")
     provider_disable = provider_subparsers.add_parser("disable", help="Disable a provider")
     provider_disable.add_argument("name", help="Provider name: claude | copilot | openai")
+    provider_auth = provider_subparsers.add_parser(
+        "auth",
+        help="Authenticate a provider (runs vendor login flow)",
+    )
+    provider_auth.add_argument("name", help="Provider name: claude | copilot | openai")
+    provider_subparsers.add_parser(
+        "reconnect",
+        help="Re-authenticate all providers currently failing health check",
+    )
+
+    # --- usage subcommand ---
+    usage_parser = subparsers.add_parser(
+        "usage",
+        help="Show token and cost usage across runs",
+        description="Display token/cost usage table by provider, phase, model, or account.",
+    )
+    usage_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    usage_parser.add_argument(
+        "--last",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Number of most recent runs to include (default: 1; 0 = all)",
+    )
+    usage_parser.add_argument(
+        "--by",
+        choices=["provider", "phase", "model", "account"],
+        default="provider",
+        help="Group results by dimension (default: provider)",
+    )
+    usage_parser.add_argument(
+        "--since",
+        metavar="YYYY-MM-DD",
+        help="Only include runs on or after this date",
+    )
 
     # --- config subcommand ---
     config_parser = subparsers.add_parser(
@@ -169,5 +209,10 @@ def build_parser(version: str) -> argparse.ArgumentParser:
                              help="Show full effective runtime preview (provider health, per-phase routing)")
     config_show.add_argument("--project", "-p", help="Project root directory (default: cwd)")
     config_show.add_argument("--config", "-c", help="Config file path")
+    config_subparsers.add_parser("edit", help="Open config file in $EDITOR")
+    config_subparsers.add_parser(
+        "wizard",
+        help="Interactive config setup (routing, providers, models)",
+    )
 
     return parser
