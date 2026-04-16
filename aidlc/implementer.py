@@ -344,9 +344,9 @@ class Implementer:
     def _implementation_instructions(self) -> str:
         return implementation_instructions(self.test_command)
 
-    def _fix_failing_tests(self, issue: Issue) -> bool:
+    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> bool:
         """Give Claude a chance to fix failing tests."""
-        return fix_failing_tests(self, issue)
+        return fix_failing_tests(self, issue, model_override=model_override)
 
     def _is_complex_issue(self, issue: Issue) -> bool:
         """Return whether an issue should use the complex implementation path."""

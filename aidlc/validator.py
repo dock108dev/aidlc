@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .models import RunState, RunPhase, Issue, IssueStatus
 from .state_manager import save_state
-from .test_parser import parse_test_failures, TestFailure
+from .test_parser import parse_test_failures, FailureReport
 from .test_profiles import detect_test_profile
 from .validation_issues import create_fix_issues
 from .context_utils import parse_project_type
@@ -173,7 +173,7 @@ class Validator:
                         excerpt = excerpt[-500:]
                     else:
                         excerpt = "Command exited non-zero with no output."
-                    failures = [TestFailure(
+                    failures = [FailureReport(
                         test_name=f"{tier} command failed",
                         assertion=f"Command `{command}` failed",
                         stack_trace=excerpt,

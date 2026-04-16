@@ -246,7 +246,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
         allow_edits=True,
         model_override=model_override,
     )
-    impl.state.record_claude_result(result, impl.config)
+    impl.state.record_provider_result(result, impl.config, phase="fix_tests")
     if result["success"]:
         impl.state.elapsed_seconds += result.get("duration_seconds", 0)
         return impl._run_tests()

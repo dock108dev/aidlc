@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from aidlc.test_profiles import detect_test_profile
-from aidlc.test_parser import parse_test_failures, TestFailure
+from aidlc.test_parser import parse_test_failures, FailureReport
 from aidlc.validation_issues import create_fix_issues
 from aidlc.models import RunState, RunPhase
 
@@ -114,8 +114,8 @@ FAIL
 class TestValidationIssues:
     def test_create_fix_issues(self):
         failures = [
-            TestFailure(test_name="test_login", file="tests/test_auth.py", line=10, assertion="assert False"),
-            TestFailure(test_name="test_signup", file="tests/test_auth.py", line=20, assertion="missing field"),
+            FailureReport(test_name="test_login", file="tests/test_auth.py", line=10, assertion="assert False"),
+            FailureReport(test_name="test_signup", file="tests/test_auth.py", line=20, assertion="missing field"),
         ]
         issues = create_fix_issues(failures, set())
         assert len(issues) == 2
@@ -127,25 +127,25 @@ class TestValidationIssues:
 
     def test_dedup_same_test(self):
         failures = [
-            TestFailure(test_name="test_same", assertion="err1"),
-            TestFailure(test_name="test_same", assertion="err2"),
+            FailureReport(test_name="test_same", assertion="err1"),
+            FailureReport(test_name="test_same", assertion="err2"),
         ]
         issues = create_fix_issues(failures, set())
         assert len(issues) == 1
 
     def test_skip_existing_ids(self):
-        failures = [TestFailure(test_name="test_x")]
+        failures = [FailureReport(test_name="test_x")]
         issues = create_fix_issues(failures, {"VFIX-001"})
         # Should still create since we check by test name dedup, not ID collision
         assert len(issues) >= 0  # Implementation detail
 
     def test_max_issues_cap(self):
-        failures = [TestFailure(test_name=f"test_{i}") for i in range(20)]
+        failures = [FailureReport(test_name=f"test_{i}") for i in range(20)]
         issues = create_fix_issues(failures, set(), max_issues=3)
         assert len(issues) == 3
 
     def test_acceptance_criteria(self):
-        failures = [TestFailure(test_name="test_checkout")]
+        failures = [FailureReport(test_name="test_checkout")]
         issues = create_fix_issues(failures, set())
         assert any("test_checkout" in ac for ac in issues[0].acceptance_criteria)
 

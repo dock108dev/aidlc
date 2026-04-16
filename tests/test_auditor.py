@@ -4,7 +4,7 @@ import json
 import pytest
 
 from aidlc.auditor import CodeAuditor
-from aidlc.audit_models import AuditResult, ModuleInfo, TechDebtItem, TestCoverageInfo, AuditConflict
+from aidlc.audit_models import AuditResult, ModuleInfo, TechDebtItem, CoverageInfo, AuditConflict
 
 
 @pytest.fixture
@@ -330,7 +330,7 @@ class TestAuditModels:
             directory_tree="app/\n  main.py",
             source_stats={"total_files": 5, "total_lines": 200},
             tech_debt=[TechDebtItem(file="app/main.py", line=10, type="todo", text="TODO: fix this")],
-            test_coverage=TestCoverageInfo(test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"),
+            test_coverage=CoverageInfo(test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"),
             conflicts=[AuditConflict(doc_path="ARCH.md", field="type", audit_value="python", user_value="java")],
             runtime_checks={"overall_passed": False},
             braindump_summary={"focus": "ci_build_test_stabilization"},

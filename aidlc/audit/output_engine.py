@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from ..audit_models import AuditConflict, ModuleInfo, TechDebtItem, TestCoverageInfo
+from ..audit_models import AuditConflict, ModuleInfo, TechDebtItem, CoverageInfo
 from .constants import EXCLUDE_DIRS
 
 
@@ -91,8 +91,8 @@ class AuditOutputEngine:
         if result.test_coverage:
             tc = (
                 result.test_coverage
-                if isinstance(result.test_coverage, TestCoverageInfo)
-                else TestCoverageInfo.from_dict(result.test_coverage)
+                if isinstance(result.test_coverage, CoverageInfo)
+                else CoverageInfo.from_dict(result.test_coverage)
             )
             lines.append("## Test Coverage")
             lines.append("")

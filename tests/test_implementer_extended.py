@@ -46,6 +46,7 @@ def make_cli_success(output_json=None):
         "duration_seconds": 1.0,
         "retries": 0,
     }
+    cli.set_complexity = MagicMock()
     return cli
 
 
@@ -117,8 +118,7 @@ class TestImplementIssueSuccess:
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
         assert result is True
-        kwargs = cli.execute_prompt.call_args.kwargs
-        assert kwargs.get("model_override") == "opus"
+        cli.set_complexity.assert_called_once_with("complex")
 
     @patch("aidlc.implementer.subprocess.run")
     def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
@@ -139,8 +139,7 @@ class TestImplementIssueSuccess:
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
         assert result is True
-        kwargs = cli.execute_prompt.call_args.kwargs
-        assert kwargs.get("model_override") == "opus"
+        cli.set_complexity.assert_called_once_with("complex")
 
     @patch("aidlc.implementer.subprocess.run")
     def test_successful_with_json_result(self, mock_subproc, config, logger, tmp_path):

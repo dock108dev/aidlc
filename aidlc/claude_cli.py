@@ -50,7 +50,7 @@ class ClaudeCLI:
         claude_cfg = providers_cfg.get("claude", {})
         if not isinstance(claude_cfg, dict):
             claude_cfg = {}
-        self.model = str(claude_cfg.get("default_model", "unknown"))
+        self.model = str(claude_cfg.get("default_model", "opus"))
         self.max_retries = config.get("retry_max_attempts", 2)
         self.retry_base_delay = config.get("retry_base_delay_seconds", 30)
         self.retry_max_delay = config.get("retry_max_delay_seconds", 300)

@@ -63,7 +63,7 @@ class TechDebtItem:
 
 
 @dataclass
-class TestCoverageInfo:
+class CoverageInfo:
     """Assessment of test coverage in the project."""
     test_files: int = 0
     test_functions: int = 0
@@ -81,7 +81,7 @@ class TestCoverageInfo:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TestCoverageInfo":
+    def from_dict(cls, data: dict) -> "CoverageInfo":
         return cls(
             test_files=data.get("test_files", 0),
             test_functions=data.get("test_functions", 0),
@@ -163,7 +163,7 @@ class AuditResult:
 
     # Full audit only (None when quick)
     features: Optional[list] = None
-    test_coverage: Optional[TestCoverageInfo] = None
+    test_coverage: Optional[CoverageInfo] = None
     tech_debt: Optional[list] = None  # list of TechDebtItem
 
     # Conflicts and output tracking
@@ -213,7 +213,7 @@ class AuditResult:
         ]
         tc = data.get("test_coverage")
         if tc:
-            result.test_coverage = TestCoverageInfo.from_dict(tc) if isinstance(tc, dict) else tc
+            result.test_coverage = CoverageInfo.from_dict(tc) if isinstance(tc, dict) else tc
         result.tech_debt = [
             TechDebtItem.from_dict(t) if isinstance(t, dict) else t
             for t in data.get("tech_debt", [])

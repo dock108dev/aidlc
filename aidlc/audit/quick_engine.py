@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from ..audit_models import AuditResult, ModuleInfo, TechDebtItem, TestCoverageInfo
+from ..audit_models import AuditResult, ModuleInfo, TechDebtItem, CoverageInfo
 from .constants import (
     ENTRY_POINT_NAMES,
     EXCLUDE_DIRS,
@@ -391,7 +391,7 @@ class QuickAuditEngine:
 
         return items
 
-    def assess_test_coverage_quick(self, modules: list[ModuleInfo], stats: dict) -> TestCoverageInfo:
+    def assess_test_coverage_quick(self, modules: list[ModuleInfo], stats: dict) -> CoverageInfo:
         """Quick heuristic test coverage assessment."""
         test_files = 0
         test_functions = 0
@@ -455,7 +455,7 @@ class QuickAuditEngine:
         else:
             estimated = "none"
 
-        return TestCoverageInfo(
+        return CoverageInfo(
             test_files=test_files,
             test_functions=test_functions,
             source_files=source_files,

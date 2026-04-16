@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class TestFailure:
+class FailureReport:
     """A single test failure extracted from test output."""
     test_name: str
     file: str = ""
@@ -26,7 +26,7 @@ class TestFailure:
         return self.test_name
 
 
-def parse_test_failures(output: str, framework: str = "auto", max_failures: int = 20) -> list[TestFailure]:
+def parse_test_failures(output: str, framework: str = "auto", max_failures: int = 20) -> list[FailureReport]:
     """Parse test output into structured failures.
 
     Args:
@@ -75,7 +75,7 @@ def _detect_framework(output: str) -> str:
     return "generic"
 
 
-def _parse_pytest(output: str) -> list[TestFailure]:
+def _parse_pytest(output: str) -> list[FailureReport]:
     """Parse pytest output."""
     failures = []
     # Match: FAILED tests/test_foo.py::TestClass::test_method - AssertionError: ...
@@ -87,7 +87,7 @@ def _parse_pytest(output: str) -> list[TestFailure]:
         file_path = match.group(1)
         test_name = match.group(2)
         assertion = match.group(3).strip()
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_name,
             file=file_path,
             assertion=assertion,
@@ -98,7 +98,7 @@ def _parse_pytest(output: str) -> list[TestFailure]:
     if not failures:
         short_pattern = re.compile(r"([\w/\\.]+)::(\S+)\s+FAILED", re.MULTILINE)
         for match in short_pattern.finditer(output):
-            failures.append(TestFailure(
+            failures.append(FailureReport(
                 test_name=match.group(2),
                 file=match.group(1),
                 framework="pytest",
@@ -116,7 +116,7 @@ def _parse_pytest(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_jest(output: str) -> list[TestFailure]:
+def _parse_jest(output: str) -> list[FailureReport]:
     """Parse Jest output."""
     failures = []
     # Match: ● TestSuite > test name
@@ -134,7 +134,7 @@ def _parse_jest(output: str) -> list[TestFailure]:
         assert_match = re.search(r"(expect\(.+?\)\.[\w.]+\(.+?\))", details)
         assertion = assert_match.group(1) if assert_match else details[:200]
 
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_path,
             file=file_path,
             line=line,
@@ -147,7 +147,7 @@ def _parse_jest(output: str) -> list[TestFailure]:
     if not failures:
         fail_pattern = re.compile(r"FAIL\s+(\S+)", re.MULTILINE)
         for match in fail_pattern.finditer(output):
-            failures.append(TestFailure(
+            failures.append(FailureReport(
                 test_name=match.group(1),
                 file=match.group(1),
                 framework="jest",
@@ -156,7 +156,7 @@ def _parse_jest(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_go(output: str) -> list[TestFailure]:
+def _parse_go(output: str) -> list[FailureReport]:
     """Parse Go test output."""
     failures = []
     pattern = re.compile(
@@ -171,7 +171,7 @@ def _parse_go(output: str) -> list[TestFailure]:
         file_path = loc_match.group(1) if loc_match else ""
         line = int(loc_match.group(2)) if loc_match else 0
 
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_name,
             file=file_path,
             line=line,
@@ -183,7 +183,7 @@ def _parse_go(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_cargo(output: str) -> list[TestFailure]:
+def _parse_cargo(output: str) -> list[FailureReport]:
     """Parse Rust cargo test output."""
     failures = []
     pattern = re.compile(
@@ -199,7 +199,7 @@ def _parse_cargo(output: str) -> list[TestFailure]:
         file_path = loc_match.group(2) if loc_match else ""
         line = int(loc_match.group(3)) if loc_match else 0
 
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_name,
             file=file_path,
             line=line,
@@ -211,7 +211,7 @@ def _parse_cargo(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_gut(output: str) -> list[TestFailure]:
+def _parse_gut(output: str) -> list[FailureReport]:
     """Parse Godot GUT test output."""
     failures = []
     pattern = re.compile(
@@ -222,7 +222,7 @@ def _parse_gut(output: str) -> list[TestFailure]:
         test_name = match.group(1).strip()
         details = match.group(2).strip()
 
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_name,
             assertion=details[:200],
             stack_trace=details[:500],
@@ -232,7 +232,7 @@ def _parse_gut(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_rspec(output: str) -> list[TestFailure]:
+def _parse_rspec(output: str) -> list[FailureReport]:
     """Parse Ruby RSpec output."""
     failures = []
     pattern = re.compile(
@@ -247,7 +247,7 @@ def _parse_rspec(output: str) -> list[TestFailure]:
         file_path = loc_match.group(1) if loc_match else ""
         line = int(loc_match.group(2)) if loc_match else 0
 
-        failures.append(TestFailure(
+        failures.append(FailureReport(
             test_name=test_name,
             file=file_path,
             line=line,
@@ -259,7 +259,7 @@ def _parse_rspec(output: str) -> list[TestFailure]:
     return failures
 
 
-def _parse_generic(output: str) -> list[TestFailure]:
+def _parse_generic(output: str) -> list[FailureReport]:
     """Fallback parser for unknown frameworks."""
     failures = []
 
@@ -275,7 +275,7 @@ def _parse_generic(output: str) -> list[TestFailure]:
             name = match.group(1).strip()[:120]
             if name and name not in seen:
                 seen.add(name)
-                failures.append(TestFailure(
+                failures.append(FailureReport(
                     test_name=name,
                     framework="generic",
                 ))
