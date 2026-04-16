@@ -417,6 +417,13 @@ class Planner:
                 "actions failed but below failure threshold"
             )
 
+        sanitized_changes = self._sanitize_issue_dependencies()
+        if sanitized_changes:
+            self.logger.info(
+                f"Cycle {cycle_num}: normalized dependency graph "
+                f"({sanitized_changes} change{'s' if sanitized_changes != 1 else ''})"
+            )
+
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
 
@@ -475,7 +482,7 @@ class Planner:
                     existing.labels = action.labels
                 if action.acceptance_criteria:
                     existing.acceptance_criteria = action.acceptance_criteria
-                if action.dependencies:
+                if action.dependencies is not None:
                     existing.dependencies = action.dependencies
                 self.state.update_issue(existing)
 
@@ -528,3 +535,150 @@ class Planner:
         provider = str(result.get("provider_id") or "unknown")
         model = str(result.get("model_used") or "unknown")
         self.logger.info(f"  Planning Cycle {cycle_num} model: {provider}/{model}")
+
+    def _sanitize_issue_dependencies(self) -> int:
+        """Normalize dependency graph to avoid implementation stalls.
+
+        Rules:
+        - Remove self-dependencies.
+        - Remove dependencies pointing to missing issues.
+        - De-duplicate dependency lists while preserving order.
+        - Auto-break cycles by removing one circular edge per detected cycle.
+        """
+        if not self.state.issues:
+            return 0
+
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        id_to_issue = {d["id"]: d for d in self.state.issues if d.get("id")}
+        issue_ids = set(id_to_issue.keys())
+        touched: set[str] = set()
+        total_changes = 0
+
+        for issue_id, issue_data in id_to_issue.items():
+            deps = issue_data.get("dependencies") or []
+            if not isinstance(deps, list):
+                deps = []
+            cleaned: list[str] = []
+            seen: set[str] = set()
+            for dep in deps:
+                if not isinstance(dep, str):
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Dropped non-string dependency on {issue_id}: {dep!r}")
+                    continue
+                dep_norm = dep.strip().upper()
+                if not dep_norm:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Dropped empty dependency on {issue_id}")
+                    continue
+                if dep_norm == issue_id:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Removed self-dependency: {issue_id} -> {dep_norm}")
+                    continue
+                if dep_norm not in issue_ids:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(
+                        f"Removed unknown dependency: {issue_id} -> {dep_norm} (target missing)"
+                    )
+                    continue
+                if dep_norm in seen:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Removed duplicate dependency: {issue_id} -> {dep_norm}")
+                    continue
+                seen.add(dep_norm)
+                cleaned.append(dep_norm)
+            issue_data["dependencies"] = cleaned
+
+        def detect_cycles() -> list[list[str]]:
+            cycles: list[list[str]] = []
+            cycle_keys: set[tuple[str, ...]] = set()
+            visited: set[str] = set()
+            temp: set[str] = set()
+
+            def visit(issue_id: str, path: list[str]) -> None:
+                if issue_id in visited:
+                    return
+                if issue_id in temp:
+                    start = path.index(issue_id)
+                    cycle = path[start:] + [issue_id]
+                    key = tuple(sorted(cycle[:-1]))
+                    if key and key not in cycle_keys:
+                        cycle_keys.add(key)
+                        cycles.append(cycle)
+                    return
+                temp.add(issue_id)
+                for dep in id_to_issue.get(issue_id, {}).get("dependencies", []):
+                    if dep in id_to_issue:
+                        visit(dep, path + [issue_id])
+                temp.discard(issue_id)
+                visited.add(issue_id)
+
+            for issue_id in sorted(id_to_issue.keys()):
+                visit(issue_id, [])
+            return cycles
+
+        max_passes = max(1, len(id_to_issue) * 2)
+        for _ in range(max_passes):
+            cycles = detect_cycles()
+            if not cycles:
+                break
+
+            for cycle in cycles:
+                core = cycle[:-1]
+                if not core:
+                    continue
+                cycle_str = " -> ".join(cycle)
+                self.logger.warning(f"Circular dependency detected during planning: {cycle_str}")
+
+                candidate = max(
+                    core,
+                    key=lambda iid: (
+                        priority_order.get(id_to_issue.get(iid, {}).get("priority", "medium"), 1),
+                        len(id_to_issue.get(iid, {}).get("dependencies", [])),
+                        iid,
+                    ),
+                )
+                idx = core.index(candidate)
+                successor = cycle[idx + 1]
+                deps = list(id_to_issue.get(candidate, {}).get("dependencies", []))
+                removed = False
+                if successor in deps:
+                    deps.remove(successor)
+                    removed = True
+                else:
+                    for dep in deps:
+                        if dep in core:
+                            successor = dep
+                            deps.remove(dep)
+                            removed = True
+                            break
+                if removed:
+                    id_to_issue[candidate]["dependencies"] = deps
+                    touched.add(candidate)
+                    total_changes += 1
+                    self.logger.warning(
+                        f"Removed circular dependency edge during planning: {candidate} -> {successor}"
+                    )
+        else:
+            self.logger.error(
+                "Dependency sanitization exceeded max passes; unresolved cycles may remain."
+            )
+
+        if touched:
+            issues_dir = Path(self.config["_issues_dir"])
+            issues_dir.mkdir(parents=True, exist_ok=True)
+            for issue_id in sorted(touched):
+                issue_data = id_to_issue.get(issue_id)
+                if not issue_data:
+                    continue
+                issue = Issue.from_dict(issue_data)
+                self.state.update_issue(issue)
+                issue_path = issues_dir / f"{issue_id}.md"
+                issue_path.write_text(self._render_issue_md(issue))
+                self.logger.info(f"Updated issue dependencies: {issue_id}")
+
+        return total_changes

@@ -145,9 +145,11 @@ class TestSortIssues:
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, cli, "context", logger)
         result = impl._sort_issues()
-        # Should detect cycle and refuse auto-breaking by default
-        assert result is False
+        assert result is True
         assert len(state.issues) == 2
+        deps = {d["id"]: d.get("dependencies", []) for d in state.issues}
+        # At least one edge must be removed to break the cycle.
+        assert not ("ISSUE-001" in deps.get("ISSUE-002", []) and "ISSUE-002" in deps.get("ISSUE-001", []))
 
 
 class TestDetectTestCommand:

@@ -169,6 +169,97 @@ class TestPlanner:
         updated = state.get_issue("ISSUE-001")
         assert updated.description == "Updated description"
 
+    def test_apply_update_issue_can_clear_dependencies(self, state, config, cli, logger, tmp_path):
+        from aidlc.schemas import PlanningAction
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        issues_dir = Path(config["_issues_dir"])
+        issues_dir.mkdir(parents=True, exist_ok=True)
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+
+        planner._apply_action(
+            PlanningAction(
+                action_type="create_issue",
+                rationale="Need",
+                issue_id="ISSUE-001",
+                title="Primary",
+                description="Primary desc",
+                acceptance_criteria=["AC1"],
+            )
+        )
+        planner._apply_action(
+            PlanningAction(
+                action_type="create_issue",
+                rationale="Need",
+                issue_id="ISSUE-002",
+                title="Dep",
+                description="Dep desc",
+                acceptance_criteria=["AC1"],
+            )
+        )
+        planner._apply_action(
+            PlanningAction(
+                action_type="update_issue",
+                rationale="Wire dep",
+                issue_id="ISSUE-001",
+                dependencies=["ISSUE-002"],
+            )
+        )
+        assert state.get_issue("ISSUE-001").dependencies == ["ISSUE-002"]
+
+        planner._apply_action(
+            PlanningAction(
+                action_type="update_issue",
+                rationale="Clear deps",
+                issue_id="ISSUE-001",
+                dependencies=[],
+            )
+        )
+        assert state.get_issue("ISSUE-001").dependencies == []
+
+    def test_sanitize_issue_dependencies_removes_invalid_and_breaks_cycle(
+        self, state, config, cli, logger, tmp_path
+    ):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        issues_dir = Path(config["_issues_dir"])
+        issues_dir.mkdir(parents=True, exist_ok=True)
+
+        state.issues = [
+            {
+                "id": "ISSUE-001",
+                "title": "One",
+                "description": "One",
+                "priority": "high",
+                "labels": [],
+                "dependencies": ["ISSUE-001", "ISSUE-002", "ISSUE-002", "ISSUE-999"],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "Two",
+                "description": "Two",
+                "priority": "medium",
+                "labels": [],
+                "dependencies": ["ISSUE-001"],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+            },
+        ]
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        changes = planner._sanitize_issue_dependencies()
+        assert changes > 0
+
+        deps = {i["id"]: i.get("dependencies", []) for i in state.issues}
+        assert "ISSUE-001" not in deps["ISSUE-001"]
+        assert "ISSUE-999" not in deps["ISSUE-001"]
+        assert deps["ISSUE-001"].count("ISSUE-002") <= 1
+        assert not (
+            "ISSUE-002" in deps.get("ISSUE-001", [])
+            and "ISSUE-001" in deps.get("ISSUE-002", [])
+        )
+
     def test_apply_create_doc(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
         run_dir = tmp_path / "run"

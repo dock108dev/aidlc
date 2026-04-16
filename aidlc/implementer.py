@@ -536,64 +536,142 @@ class Implementer:
     def _sort_issues(self) -> bool:
         """Sort issues by priority and dependency order (topological).
 
-        Detects circular dependencies and logs explicit warnings.
-        Issues in cycles have their circular deps removed so they can proceed.
+        Detects circular dependencies and auto-breaks only the circular edges
+        so the run can continue. Removed edges are logged explicitly.
         """
         priority_order = {"high": 0, "medium": 1, "low": 2}
 
-        # Build dependency graph
-        id_to_issue = {d["id"]: d for d in self.state.issues}
-        sorted_ids = []
-        visited = set()
-        temp_visited = set()
-        cycle_members = set()
+        def detect_cycles(id_to_issue: dict[str, dict]) -> list[list[str]]:
+            sorted_ids_local: list[str] = []
+            visited: set[str] = set()
+            temp_visited: set[str] = set()
+            cycles: list[list[str]] = []
+            cycle_keys: set[tuple[str, ...]] = set()
 
-        def visit(issue_id: str, path: list[str]) -> None:
+            def visit(issue_id: str, path: list[str]) -> None:
+                if issue_id in visited:
+                    return
+                if issue_id in temp_visited:
+                    cycle_start = path.index(issue_id)
+                    cycle = path[cycle_start:] + [issue_id]
+                    # De-duplicate same cycle reported from different traversal roots.
+                    key = tuple(sorted(cycle[:-1]))
+                    if key and key not in cycle_keys:
+                        cycle_keys.add(key)
+                        cycles.append(cycle)
+                    return
+                temp_visited.add(issue_id)
+                issue = id_to_issue.get(issue_id, {})
+                for dep in issue.get("dependencies", []):
+                    if dep in id_to_issue:
+                        visit(dep, path + [issue_id])
+                temp_visited.discard(issue_id)
+                visited.add(issue_id)
+                sorted_ids_local.append(issue_id)
+
+            priority_sorted_local = sorted(
+                self.state.issues,
+                key=lambda d: priority_order.get(d.get("priority", "medium"), 1),
+            )
+            for data in priority_sorted_local:
+                visit(data["id"], [])
+            return cycles
+
+        id_to_issue = {d["id"]: d for d in self.state.issues}
+        removed_edges: list[tuple[str, str]] = []
+        max_passes = max(1, len(id_to_issue) * 2)
+
+        for _ in range(max_passes):
+            cycles = detect_cycles(id_to_issue)
+            if not cycles:
+                break
+
+            for cycle in cycles:
+                cycle_str = " -> ".join(cycle)
+                self.logger.error(f"Circular dependency detected: {cycle_str}. Auto-resolving.")
+
+                core = cycle[:-1]
+                if not core:
+                    continue
+
+                # Prefer removing edge from the lowest-priority issue in the cycle.
+                candidate = max(
+                    core,
+                    key=lambda issue_id: (
+                        priority_order.get(id_to_issue.get(issue_id, {}).get("priority", "medium"), 1),
+                        len(id_to_issue.get(issue_id, {}).get("dependencies", [])),
+                        issue_id,
+                    ),
+                )
+                candidate_idx = core.index(candidate)
+                successor = cycle[candidate_idx + 1]
+
+                deps = list(id_to_issue.get(candidate, {}).get("dependencies", []))
+                removed = False
+                if successor in deps:
+                    deps.remove(successor)
+                    removed = True
+                else:
+                    for dep in deps:
+                        if dep in core:
+                            deps.remove(dep)
+                            successor = dep
+                            removed = True
+                            break
+
+                if removed:
+                    id_to_issue[candidate]["dependencies"] = deps
+                    removed_edges.append((candidate, successor))
+                    self.logger.warning(
+                        f"Removed circular dependency edge: {candidate} -> {successor}"
+                    )
+                else:
+                    self.logger.error(
+                        f"Could not auto-resolve cycle edge for {candidate}; manual fix required."
+                    )
+                    return False
+        else:
+            self.logger.error("Dependency cycle resolution exceeded max passes; manual fix required.")
+            return False
+
+        if removed_edges:
+            touched_issue_ids = {issue_id for issue_id, _ in removed_edges}
+            for issue_id in touched_issue_ids:
+                issue_data = id_to_issue.get(issue_id)
+                if not issue_data:
+                    continue
+                self.state.update_issue(Issue.from_dict(issue_data))
+                self.logger.info(
+                    f"Updated issue dependencies after cycle resolution: {issue_id}"
+                )
+            self._sync_all_issue_markdown()
+
+        # Re-run topo traversal once cycles are removed to produce final order.
+        sorted_ids: list[str] = []
+        visited: set[str] = set()
+        temp_visited: set[str] = set()
+
+        def topo_visit(issue_id: str) -> None:
             if issue_id in visited:
                 return
             if issue_id in temp_visited:
-                # Found a cycle — log it explicitly
-                cycle_start = path.index(issue_id)
-                cycle = path[cycle_start:] + [issue_id]
-                cycle_str = " -> ".join(cycle)
-                self.logger.error(
-                    f"Circular dependency detected: {cycle_str}. "
-                    "Manual resolution required."
-                )
-                for cid in cycle[:-1]:
-                    cycle_members.add(cid)
                 return
             temp_visited.add(issue_id)
-            issue = id_to_issue.get(issue_id, {})
-            for dep in issue.get("dependencies", []):
+            for dep in id_to_issue.get(issue_id, {}).get("dependencies", []):
                 if dep in id_to_issue:
-                    visit(dep, path + [issue_id])
+                    topo_visit(dep)
             temp_visited.discard(issue_id)
             visited.add(issue_id)
             sorted_ids.append(issue_id)
 
-        # Visit in priority order
         priority_sorted = sorted(
             self.state.issues,
             key=lambda d: priority_order.get(d.get("priority", "medium"), 1),
         )
-        for d in priority_sorted:
-            visit(d["id"], [])
+        for data in priority_sorted:
+            topo_visit(data["id"])
 
-        # Handle circular deps from affected issues
-        if cycle_members:
-            self.logger.error(
-                f"{len(cycle_members)} issues involved in dependency cycles: "
-                f"{', '.join(sorted(cycle_members))}. Refusing to auto-remove dependencies."
-            )
-            return False
-
-        # Rebuild issues list in sorted order
-        new_issues = []
-        for iid in sorted_ids:
-            if iid in id_to_issue:
-                new_issues.append(id_to_issue[iid])
-        self.state.issues = new_issues
+        self.state.issues = [id_to_issue[iid] for iid in sorted_ids if iid in id_to_issue]
         return True
 
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
