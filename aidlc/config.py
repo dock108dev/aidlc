@@ -28,14 +28,14 @@ DEFAULTS = {
         "copilot": {
             "enabled": False,
             "cli_command": "copilot",
-            "default_model": "claude-sonnet-4-6",
+            "default_model": "",
             "phase_models": {
-                "planning": "claude-sonnet-4-6",
-                "research": "claude-sonnet-4-6",
-                "implementation": "claude-sonnet-4-6",
-                "implementation_complex": "claude-sonnet-4-6",
-                "finalization": "claude-sonnet-4-6",
-                "audit": "claude-sonnet-4-6",
+                "planning": "",
+                "research": "",
+                "implementation": "",
+                "implementation_complex": "",
+                "finalization": "",
+                "audit": "",
             },
         },
         "openai": {
@@ -96,12 +96,6 @@ DEFAULTS = {
             "output": 4.0,
             "cache_creation_input": 1.0,
             "cache_read_input": 0.08,
-        },
-        "claude-sonnet-4-6": {
-            "input": 3.0,
-            "output": 15.0,
-            "cache_creation_input": 3.75,
-            "cache_read_input": 0.30,
         },
         # OpenAI GPT-5 family (current as of April 2026)
         "gpt-5.4": {
@@ -330,7 +324,7 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "copilot": {
                     "enabled": False,
                     "cli_command": "copilot",
-                    "default_model": "claude-sonnet-4-6",
+                    "default_model": "",
                     "accounts": [],
                 },
                 "openai": {

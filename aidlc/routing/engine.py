@@ -333,7 +333,7 @@ class ProviderRouter:
                 )
             elif not is_premium_phase and provider_id in helpers.get_budget_providers():
                 # Only note model upgrades within the budget tier
-                if model not in ("gpt-5.4-mini", "claude-sonnet-4-6", "claude-haiku-3-5"):
+                if model and model not in ("gpt-5.4-mini", "gpt-5.4-nano"):
                     quality_note = f"model upgraded to {model} for {phase} (complexity)"
 
             return RouteDecision(
@@ -378,7 +378,7 @@ class ProviderRouter:
                 model = effective_override
             else:
                 # Use cheapest available model for this provider
-                cheapest_models = {"claude": "haiku", "copilot": "claude-haiku-3-5", "openai": "gpt-5.4-nano"}
+                cheapest_models = {"claude": "haiku", "copilot": "", "openai": "gpt-5.4-nano"}
                 model = cheapest_models.get(provider_id, adapter.get_default_model(phase))
 
             return RouteDecision(
@@ -428,7 +428,7 @@ class ProviderRouter:
             if effective_override:
                 model = effective_override
             else:
-                quality_models = {"claude": "opus", "copilot": "claude-sonnet-4-6", "openai": "gpt-5.4"}
+                quality_models = {"claude": "opus", "copilot": "", "openai": "gpt-5.4"}
                 model = quality_models.get(best_provider, adapter.get_default_model(phase))
 
             return RouteDecision(

@@ -586,6 +586,15 @@ def _cmd_provider_auth(name: str, config: dict, show_health: bool = True) -> Non
         sys.exit(1)
 
     auth_cmd, fallback_instructions = _PROVIDER_AUTH_COMMANDS[name]
+    if name == "copilot":
+        providers_cfg = config.get("providers", {})
+        provider_cfg = providers_cfg.get("copilot", {}) if isinstance(providers_cfg, dict) else {}
+        cli_command = provider_cfg.get("cli_command", "copilot")
+        if cli_command == "gh":
+            auth_cmd = ["gh", "auth", "login"]
+            fallback_instructions = (
+                "Run: gh auth login, then install the Copilot extension if needed."
+            )
 
     logger = logging.getLogger("aidlc.provider.auth")
     router = ProviderRouter(config, logger)
@@ -760,7 +769,7 @@ def _cmd_config_wizard(config_path: Path) -> None:
         elif raw in ("n", "no"):
             new_enabled = False
 
-        new_cmd = pcfg.get("cli_command", pname if pname != "copilot" else "gh")
+        new_cmd = pcfg.get("cli_command", pname if pname != "copilot" else "copilot")
         try:
             raw = input(f"    CLI command [{new_cmd}]: ").strip()
         except EOFError:
@@ -1109,4 +1118,3 @@ def _acc_legacy(totals: dict, key: str, state) -> None:
         "cost_usd_estimated": getattr(state, "claude_cost_usd_estimated", 0.0) or 0.0,
     }
     _acc(totals, key, usage)
-

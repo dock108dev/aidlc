@@ -1,9 +1,12 @@
 """GitHub Copilot CLI provider adapter.
 
-Shells out to the `copilot` CLI binary (GitHub Copilot CLI).
+Shells out to the standalone `copilot` CLI by default.
 Install: brew install copilot-cli
 Auth: copilot login
-Default model: claude-sonnet-4-6 (configurable via provider config).
+
+Model selection is optional. If no model is configured, the adapter omits
+`--model` and lets Copilot use its own current default. This avoids breaking
+when vendor model IDs change.
 """
 
 import subprocess
@@ -13,8 +16,9 @@ import logging
 
 from .base import ProviderAdapter, HealthResult, HealthStatus
 
-# Default model for Copilot provider
-_DEFAULT_COPILOT_MODEL = "claude-sonnet-4-6"
+# Default model for Copilot provider.
+# Empty string means "let the Copilot CLI choose its default model".
+_DEFAULT_COPILOT_MODEL = ""
 
 
 class CopilotAdapter(ProviderAdapter):
@@ -26,7 +30,7 @@ class CopilotAdapter(ProviderAdapter):
         super().__init__(config, logger)
         provider_cfg = self._provider_config()
         self.cli_command = provider_cfg.get("cli_command", "copilot")
-        self.default_model = provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL)
+        self.default_model = str(provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL) or "")
         self.dry_run = config.get("dry_run", False)
         self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
         self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
@@ -47,7 +51,7 @@ class CopilotAdapter(ProviderAdapter):
             self.logger.info(f"[DRY RUN] Copilot prompt ({len(prompt)} chars) in {working_dir}")
             return self._dry_run_result(model_override or self.default_model, account_id)
 
-        model = model_override or self.default_model
+        model = str(model_override or self.default_model or "")
 
         # Build command: copilot -p <prompt> --allow-all -s --model <model>
         # -p / --prompt: execute prompt programmatically (exits after completion)
@@ -88,7 +92,7 @@ class CopilotAdapter(ProviderAdapter):
                     "retries": 0,
                     "usage": {},
                     "total_cost_usd": None,
-                    "model_used": model,
+                    "model_used": model or "default",
                     "usage_source": "copilot_cli",
                     "provider_id": self.PROVIDER_ID,
                     "account_id": account_id,
@@ -102,7 +106,7 @@ class CopilotAdapter(ProviderAdapter):
 
         except FileNotFoundError:
             return self._failure_result(
-                model, account_id, 0.0,
+                model or "default", account_id, 0.0,
                 error=f"Copilot CLI not found at '{self.cli_command}'. Install with: brew install copilot-cli",
                 failure_type="provider_error",
             )
@@ -110,11 +114,14 @@ class CopilotAdapter(ProviderAdapter):
     def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
         """Build the copilot CLI programmatic command.
 
-        Uses: copilot -p <prompt> --allow-all -s --model <model>
+        Uses: copilot -p <prompt> --allow-all -s [--model <model>]
         --allow-all grants all tool permissions for autonomous execution.
         -s (--silent) suppresses usage stats, outputs only the agent response.
         """
-        return [self.cli_command, "-p", prompt, "--allow-all", "-s", "--model", model]
+        cmd = [self.cli_command, "-p", prompt, "--allow-all", "-s"]
+        if model and model.lower() not in {"default", "auto"}:
+            cmd.extend(["--model", model])
+        return cmd
 
     def check_available(self) -> bool:
         if self.dry_run:
@@ -178,7 +185,7 @@ class CopilotAdapter(ProviderAdapter):
         phase_models = provider_cfg.get("phase_models", {})
         if phase and phase in phase_models:
             return phase_models[phase]
-        return provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL)
+        return str(provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL) or "")
 
     @staticmethod
     def _dry_run_result(model: str, account_id: str | None) -> dict:
