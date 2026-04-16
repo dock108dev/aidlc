@@ -94,7 +94,7 @@ class ProviderAdapter(ABC):
 
         Subclasses should override this to return phase-specific defaults.
         """
-        return self.config.get("claude_model", "sonnet")
+        return str(self.config.get("default_model", "unknown"))
 
     def supports_edit_permissions(self) -> bool:
         """Return True if this provider supports the allow_edits workflow."""

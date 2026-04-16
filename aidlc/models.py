@@ -360,72 +360,7 @@ class RunState:
         config: dict | None = None,
         phase: str | None = None,
     ) -> None:
-        """Accumulate telemetry from any provider result payload.
-
-        Extends record_claude_result with per-provider, per-account, and
-        per-phase tracking. Falls through to record_claude_result for
-        backward-compatible aggregate counters.
-        """
-        self.record_claude_result(result, config)
-
-        provider_id = str(result.get("provider_id") or "claude")
-        account_id = str(result.get("account_id") or "default")
-
-        # Per-provider/account usage
-        prov_map = self.provider_account_usage.setdefault(provider_id, {})
-        acc_map = prov_map.setdefault(account_id, {
-            "calls": 0,
-            "calls_succeeded": 0,
-            "calls_failed": 0,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cost_usd_exact": 0.0,
-            "cost_usd_estimated": 0.0,
-        })
-        acc_map["calls"] += 1
-        acc_map["calls_succeeded"] += 1 if result.get("success") else 0
-        acc_map["calls_failed"] += 0 if result.get("success") else 1
-        usage = result.get("usage") or {}
-        acc_map["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
-        acc_map["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
-        acc_map["total_tokens"] += (
-            acc_map["input_tokens"] + acc_map["output_tokens"]
-        )
-        cost_exact = result.get("total_cost_usd")
-        if cost_exact is not None:
-            try:
-                acc_map["cost_usd_exact"] += float(cost_exact)
-            except (TypeError, ValueError):
-                pass
-
-        # Per-phase usage
-        if phase:
-            phase_entry = self.phase_usage.setdefault(phase, {
-                "provider_id": provider_id,
-                "account_id": account_id,
-                "model": str(result.get("model_used") or "unknown"),
-                "calls": 0,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cost_usd_exact": 0.0,
-            })
-            phase_entry["calls"] += 1
-            phase_entry["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
-            phase_entry["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
-            if cost_exact is not None:
-                try:
-                    phase_entry["cost_usd_exact"] += float(cost_exact)
-                except (TypeError, ValueError):
-                    pass
-
-        # Record routing decision if present
-        routing = result.get("routing_decision")
-        if isinstance(routing, dict):
-            self.routing_decisions.append(routing)
-
-    def record_claude_result(self, result: dict, config: dict | None = None) -> None:
-        """Accumulate telemetry from a Claude CLI result payload."""
+        """Accumulate telemetry from any provider result payload."""
         self.claude_calls_total += 1
         if result.get("success"):
             self.claude_calls_succeeded += 1
@@ -500,9 +435,8 @@ class RunState:
             exact_cost_value = None
 
         should_track_exact = cost_mode in ("auto", "exact_only")
-        should_track_estimated = (
-            cost_mode in ("estimate_only", "auto")
-            and (exact_cost_value is None or cost_mode == "estimate_only")
+        should_track_estimated = cost_mode in ("estimate_only", "auto") and (
+            exact_cost_value is None or cost_mode == "estimate_only"
         )
 
         if should_track_exact and exact_cost_value is not None:
@@ -522,6 +456,59 @@ class RunState:
             self.claude_cost_usd_estimated += estimated_cost
             self.claude_estimated_cost_calls += 1
             model_usage["cost_usd_estimated"] += estimated_cost
+
+        provider_id = str(result.get("provider_id") or "claude")
+        account_id = str(result.get("account_id") or "default")
+
+        # Per-provider/account usage
+        prov_map = self.provider_account_usage.setdefault(provider_id, {})
+        acc_map = prov_map.setdefault(account_id, {
+            "calls": 0,
+            "calls_succeeded": 0,
+            "calls_failed": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd_exact": 0.0,
+            "cost_usd_estimated": 0.0,
+        })
+        acc_map["calls"] += 1
+        acc_map["calls_succeeded"] += 1 if result.get("success") else 0
+        acc_map["calls_failed"] += 0 if result.get("success") else 1
+        acc_map["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+        acc_map["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+        acc_map["total_tokens"] += input_tokens + output_tokens
+        cost_exact = result.get("total_cost_usd")
+        if cost_exact is not None:
+            try:
+                acc_map["cost_usd_exact"] += float(cost_exact)
+            except (TypeError, ValueError):
+                pass
+
+        # Per-phase usage
+        if phase:
+            phase_entry = self.phase_usage.setdefault(phase, {
+                "provider_id": provider_id,
+                "account_id": account_id,
+                "model": str(result.get("model_used") or "unknown"),
+                "calls": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd_exact": 0.0,
+            })
+            phase_entry["calls"] += 1
+            phase_entry["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+            phase_entry["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+            if cost_exact is not None:
+                try:
+                    phase_entry["cost_usd_exact"] += float(cost_exact)
+                except (TypeError, ValueError):
+                    pass
+
+        # Record routing decision if present
+        routing = result.get("routing_decision")
+        if isinstance(routing, dict):
+            self.routing_decisions.append(routing)
 
     @staticmethod
     def _estimate_usage_cost(
@@ -561,8 +548,8 @@ class RunState:
         )
 
         return (
-            (input_tokens / 1_000_000.0) * input_rate
-            + (output_tokens / 1_000_000.0) * output_rate
-            + (cache_creation_tokens / 1_000_000.0) * cache_creation_rate
-            + (cache_read_tokens / 1_000_000.0) * cache_read_rate
+            (input_tokens / 1_000_000.0) * input_rate +
+            ((output_tokens / 1_000_000.0) * output_rate) +
+            ((cache_creation_tokens / 1_000_000.0) * cache_creation_rate) +
+            ((cache_read_tokens / 1_000_000.0) * cache_read_rate)
         )

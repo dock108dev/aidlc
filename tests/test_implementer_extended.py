@@ -79,10 +79,8 @@ def make_state_with_issue(issue_id="ISSUE-001", **overrides):
 
 class TestImplementIssueSuccess:
     @patch("aidlc.implementer.subprocess.run")
-    def test_uses_default_implementation_model(self, mock_subproc, config, logger, tmp_path):
+    def test_uses_standard_implementation_routing(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
-        config["claude_model_implementation"] = "sonnet"
-        config["claude_model_implementation_complex"] = "opus"
         cli = make_cli_success({
             "issue_id": "ISSUE-001", "success": True,
             "summary": "Done", "files_changed": ["a.py"],
@@ -96,8 +94,9 @@ class TestImplementIssueSuccess:
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
         assert result is True
+        cli.set_complexity.assert_called_once_with("normal")
         kwargs = cli.execute_prompt.call_args.kwargs
-        assert kwargs.get("model_override") == "sonnet"
+        assert "model_override" not in kwargs
 
     @patch("aidlc.implementer.subprocess.run")
     def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):

@@ -16,16 +16,6 @@ class ClaudeCLIAdapter(ProviderAdapter):
 
     PROVIDER_ID = "claude"
 
-    # Maps AIDLC phase names to config keys for per-phase model selection
-    _PHASE_MODEL_KEYS = {
-        "planning": "claude_model_planning",
-        "research": "claude_model_research",
-        "implementation": "claude_model_implementation",
-        "implementation_complex": "claude_model_implementation_complex",
-        "finalization": "claude_model_finalization",
-        "audit": "claude_model_planning",  # audit uses planning-tier model
-    }
-
     def __init__(self, config: dict, logger: logging.Logger):
         super().__init__(config, logger)
         self._cli = ClaudeCLI(config, logger)
@@ -105,7 +95,18 @@ class ClaudeCLIAdapter(ProviderAdapter):
         )
 
     def get_default_model(self, phase: str | None = None) -> str:
-        if phase and phase in self._PHASE_MODEL_KEYS:
-            key = self._PHASE_MODEL_KEYS[phase]
-            return self.config.get(key, self.config.get("claude_model", "sonnet"))
-        return self.config.get("claude_model", "sonnet")
+        providers_cfg = self.config.get("providers", {})
+        if not isinstance(providers_cfg, dict):
+            providers_cfg = {}
+        claude_cfg = providers_cfg.get(self.PROVIDER_ID, {})
+        if not isinstance(claude_cfg, dict):
+            claude_cfg = {}
+
+        if phase:
+            phase_models = claude_cfg.get("phase_models", {})
+            if isinstance(phase_models, dict):
+                model = phase_models.get(phase)
+                if model:
+                    return str(model)
+
+        return str(claude_cfg.get("default_model", "unknown"))

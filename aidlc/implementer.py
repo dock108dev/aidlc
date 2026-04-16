@@ -10,7 +10,6 @@ from .models import RunState, RunPhase, Issue, IssueStatus
 from .schemas import (
     ImplementationResult, parse_implementation_result,
 )
-from .claude_cli import ClaudeCLI
 from .state_manager import save_state, checkpoint
 from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
@@ -27,7 +26,7 @@ class Implementer:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
@@ -42,14 +41,6 @@ class Implementer:
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
-        self.implementation_default_model = config.get(
-            "claude_model_implementation",
-            config.get("claude_model", "sonnet"),
-        )
-        self.implementation_complex_model = config.get(
-            "claude_model_implementation_complex",
-            "opus",
-        )
         self.escalate_on_retry = config.get("implementation_escalate_on_retry", True)
         self.complexity_ac_threshold = max(
             1, int(config.get("implementation_complexity_acceptance_criteria_threshold", 6))
@@ -202,19 +193,18 @@ class Implementer:
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
         self.logger.debug(f"Implementation prompt: {len(prompt)} chars")
-        model_override = self._select_implementation_model(issue)
+        is_complex = self._is_complex_issue(issue)
         # Signal complexity to router so it can apply phase-aware model selection
         if hasattr(self.cli, "set_complexity"):
-            complexity = "complex" if model_override == self.implementation_complex_model else "normal"
+            complexity = "complex" if is_complex else "normal"
             self.cli.set_complexity(complexity)
 
-        # Execute Claude with file edit permissions
+        # Execute with file edit permissions; router selects provider/model.
         start_time = time.time()
         result = self.cli.execute_prompt(
             prompt,
             self.project_root,
             allow_edits=True,
-            model_override=model_override,
         )
         self.state.record_provider_result(result, self.config, phase="implementation")
         duration = time.time() - start_time
@@ -297,7 +287,7 @@ class Implementer:
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
                 # Give Claude a chance to fix
-                fix_success = self._fix_failing_tests(issue, model_override=model_override)
+                fix_success = self._fix_failing_tests(issue)
                 if fix_success:
                     impl_result.tests_passed = True
                 else:
@@ -354,12 +344,12 @@ class Implementer:
     def _implementation_instructions(self) -> str:
         return implementation_instructions(self.test_command)
 
-    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> bool:
+    def _fix_failing_tests(self, issue: Issue) -> bool:
         """Give Claude a chance to fix failing tests."""
-        return fix_failing_tests(self, issue, model_override=model_override)
+        return fix_failing_tests(self, issue)
 
-    def _select_implementation_model(self, issue: Issue) -> str:
-        """Select model for an issue, escalating to complex model when warranted."""
+    def _is_complex_issue(self, issue: Issue) -> bool:
+        """Return whether an issue should use the complex implementation path."""
         is_complex = False
         reasons = []
 
@@ -385,14 +375,13 @@ class Implementer:
                 is_complex = True
                 reasons.append("labels")
 
-        selected = self.implementation_complex_model if is_complex else self.implementation_default_model
         if reasons:
             self.logger.info(
-                f"{issue.id}: using model '{selected}' (complexity: {', '.join(reasons)})"
+                f"{issue.id}: using implementation_complex routing (complexity: {', '.join(reasons)})"
             )
         else:
-            self.logger.info(f"{issue.id}: using model '{selected}'")
-        return selected
+            self.logger.info(f"{issue.id}: using standard implementation routing")
+        return is_complex
 
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)

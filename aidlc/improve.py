@@ -16,7 +16,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .context_utils import parse_project_type
 from .models import RunState, RunPhase, RunStatus, Issue
 from .research_output import (
@@ -122,7 +121,7 @@ class ImprovementCycle:
         self,
         project_root: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         logger,
         project_context: str,
     ):

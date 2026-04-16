@@ -14,7 +14,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .plan_templates import (
     ARCHITECTURE_GENERATION_PROMPT,
     CLAUDE_MD_GENERATION_PROMPT,
@@ -46,7 +45,7 @@ class PlanSession:
         self,
         project_root: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         logger,
     ):
         self.project_root = project_root

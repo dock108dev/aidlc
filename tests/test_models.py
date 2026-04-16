@@ -212,11 +212,13 @@ class TestRunState:
         assert restored.claude_model_usage["sonnet"]["calls"] == 4
         assert len(restored.issues) == 1
 
-    def test_record_claude_result_uses_exact_cost_when_available(self):
+    def test_record_provider_result_uses_exact_cost_when_available(self):
         state = RunState(run_id="t", config_name="c")
         result = {
             "success": True,
             "retries": 1,
+            "provider_id": "openai",
+            "account_id": "acct-1",
             "model_used": "sonnet",
             "total_cost_usd": 0.42,
             "usage": {
@@ -228,7 +230,11 @@ class TestRunState:
                 "web_fetch_requests": 1,
             },
         }
-        state.record_claude_result(result, {"telemetry_cost_mode": "auto"})
+        state.record_provider_result(
+            result,
+            {"telemetry_cost_mode": "auto"},
+            phase="planning",
+        )
         assert state.claude_calls_total == 1
         assert state.claude_calls_succeeded == 1
         assert state.claude_retries_total == 1
@@ -238,12 +244,18 @@ class TestRunState:
         assert state.claude_web_fetch_requests == 1
         assert state.claude_cost_usd_exact == pytest.approx(0.42)
         assert state.claude_cost_usd_estimated == pytest.approx(0.0)
+        assert state.provider_account_usage["openai"]["acct-1"]["calls"] == 1
+        assert state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 150
+        assert state.phase_usage["planning"]["calls"] == 1
+        assert state.phase_usage["planning"]["provider_id"] == "openai"
 
-    def test_record_claude_result_estimates_cost_without_exact(self):
+    def test_record_provider_result_estimates_cost_without_exact(self):
         state = RunState(run_id="t", config_name="c")
         result = {
             "success": False,
             "retries": 0,
+            "provider_id": "copilot",
+            "account_id": "primary",
             "model_used": "sonnet",
             "usage": {
                 "input_tokens": 1_000_000,
@@ -252,7 +264,7 @@ class TestRunState:
                 "cache_read_input_tokens": 0,
             },
         }
-        state.record_claude_result(
+        state.record_provider_result(
             result,
             {
                 "telemetry_cost_mode": "auto",
@@ -260,8 +272,11 @@ class TestRunState:
                     "sonnet": {"input": 2.0, "output": 8.0}
                 },
             },
+            phase="research",
         )
         assert state.claude_calls_total == 1
         assert state.claude_calls_failed == 1
         assert state.claude_cost_usd_exact == pytest.approx(0.0)
         assert state.claude_cost_usd_estimated == pytest.approx(10.0)
+        assert state.provider_account_usage["copilot"]["primary"]["calls_failed"] == 1
+        assert state.phase_usage["research"]["calls"] == 1

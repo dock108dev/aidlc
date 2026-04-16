@@ -44,7 +44,13 @@ class ClaudeCLI:
         self.config = config
         self.logger = logger
         self.cli_command = config.get("claude_cli_command", "claude")
-        self.model = config.get("claude_model", "opus")
+        providers_cfg = config.get("providers", {})
+        if not isinstance(providers_cfg, dict):
+            providers_cfg = {}
+        claude_cfg = providers_cfg.get("claude", {})
+        if not isinstance(claude_cfg, dict):
+            claude_cfg = {}
+        self.model = str(claude_cfg.get("default_model", "unknown"))
         self.max_retries = config.get("retry_max_attempts", 2)
         self.retry_base_delay = config.get("retry_base_delay_seconds", 30)
         self.retry_max_delay = config.get("retry_max_delay_seconds", 300)
@@ -380,16 +386,14 @@ class ClaudeCLI:
                         (parsed_usage.get("server_tool_use") or {}).get("web_search_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_search_requests", 0)
-                    )
-                    or 0
+                    ) or 0
                 ),
                 "web_fetch_requests": int(
                     (
                         (parsed_usage.get("server_tool_use") or {}).get("web_fetch_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_fetch_requests", 0)
-                    )
-                    or 0
+                    ) or 0
                 ),
             }
 

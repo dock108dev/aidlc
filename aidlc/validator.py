@@ -8,7 +8,6 @@ import subprocess
 import time
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .models import RunState, RunPhase, Issue, IssueStatus
 from .state_manager import save_state
 from .test_parser import parse_test_failures, TestFailure
@@ -26,7 +25,7 @@ class Validator:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
