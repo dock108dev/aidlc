@@ -1,13 +1,11 @@
 """Tests for aidlc.finalizer module."""
 
-import json
 import logging
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
 from aidlc.finalizer import Finalizer
-from aidlc.models import RunState, RunPhase
+from aidlc.models import RunPhase, RunState
 
 
 @pytest.fixture

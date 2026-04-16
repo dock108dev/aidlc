@@ -2,7 +2,7 @@
 
 import logging
 
-from aidlc.logger import setup_logger, log_checkpoint
+from aidlc.logger import log_checkpoint, setup_logger
 
 
 class TestSetupLogger:

@@ -10,13 +10,8 @@ Runs time-constrained planning sessions that:
 import time
 from pathlib import Path
 
-from .models import RunState, RunPhase, Issue
-from .schemas import (
-    PlanningOutput, PlanningAction, parse_planning_output,
-)
-from .state_manager import save_state, checkpoint, save_cycle_snapshot
-from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
+from .models import Issue, RunPhase, RunState
 from .planner_helpers import (
     assess_planning_foundation,
     build_prompt,
@@ -33,6 +28,13 @@ from .planner_text import (
     FINALIZATION_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
 )
+from .reporting import generate_checkpoint_summary
+from .schemas import (
+    PlanningAction,
+    PlanningOutput,
+    parse_planning_output,
+)
+from .state_manager import checkpoint, save_cycle_snapshot, save_state
 
 
 class Planner:

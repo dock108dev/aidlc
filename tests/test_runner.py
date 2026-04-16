@@ -1,13 +1,11 @@
 """Tests for aidlc.runner module."""
 
-import json
 import logging
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from aidlc.runner import init_run, scan_project, run_full, hydrate_existing_issues
-from aidlc.models import RunState, RunStatus, RunPhase, IssueStatus
+import pytest
+from aidlc.models import IssueStatus, RunState
+from aidlc.runner import hydrate_existing_issues, init_run, run_full, scan_project
 
 
 @pytest.fixture

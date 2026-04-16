@@ -1,9 +1,8 @@
 """Tests for aidlc.scanner module."""
 
-import pytest
-from pathlib import Path
 
-from aidlc.scanner import ProjectScanner, DEFAULT_MAX_DOC_CHARS
+import pytest
+from aidlc.scanner import DEFAULT_MAX_DOC_CHARS, ProjectScanner
 
 
 @pytest.fixture

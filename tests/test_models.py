@@ -1,7 +1,7 @@
 """Tests for aidlc.models module."""
 
 import pytest
-from aidlc.models import Issue, IssueStatus, RunState, RunStatus, RunPhase
+from aidlc.models import Issue, IssueStatus, RunPhase, RunState, RunStatus
 
 
 class TestIssue:

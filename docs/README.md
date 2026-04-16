@@ -1,14 +1,30 @@
-# Documentation Index
+# Documentation index
 
-This directory contains all non-template project documentation.
+Project documentation for the **AIDLC** tool (this repository). Bundled templates for *consumed* projects live under `aidlc/project_template/`.
 
-- [`cli-lifecycle.md`](cli-lifecycle.md): lifecycle phases, run modes, and stop conditions
-- [`configuration.md`](configuration.md): config defaults, resolution rules, and production profile behavior
-- [`audit.md`](audit.md): quick/full audit behavior, outputs, and conflict handling
-- [`local-development.md`](local-development.md): local setup, test commands, and packaging
-- [`limitations.md`](limitations.md): explicit non-goals, unsupported behavior, and tradeoffs
-- [`deprecations.md`](deprecations.md): behavior intentionally removed from active support
+## Guides
 
-Notes:
+| Document | Description |
+|----------|-------------|
+| [cli-lifecycle.md](cli-lifecycle.md) | Phases, run modes, stop conditions |
+| [configuration.md](configuration.md) | Config resolution, defaults, production profile |
+| [audit.md](audit.md) | Quick/full audit behavior and artifacts |
+| [local-development.md](local-development.md) | Setup, tests, packaging, common commands |
+| [limitations.md](limitations.md) | Non-goals and tradeoffs |
+| [deprecations.md](deprecations.md) | Removed or discouraged behavior |
+| [deployment.md](deployment.md) | Install wheel / CI usage |
 
-- `docs/audits/` is generated in target repositories during finalization/audit reporting and is not a static source-doc folder in this repository.
+## Reference audits
+
+Static audit write-ups and checklists used for reviews:
+
+- [audits/abend_audit_one_pager.md](audits/abend_audit_one_pager.md)
+- [audits/abend_audit_full.md](audits/abend_audit_full.md)
+- [audits/abend_remediation_checklist.md](audits/abend_remediation_checklist.md)
+
+## Maintenance notes
+
+| Document | Description |
+|----------|-------------|
+| [FILE_SIZE_FOLLOWUP.md](FILE_SIZE_FOLLOWUP.md) | Python modules still above ~500 LOC and suggested split directions |
+| [history/cleanup-summary-2026-04-15.md](history/cleanup-summary-2026-04-15.md) | Short archive of an earlier cleanup milestone |

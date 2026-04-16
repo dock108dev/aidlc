@@ -36,7 +36,7 @@ Issues = "https://github.com/highlyprofitable108/aidlc/issues"
 aidlc = "aidlc.__main__:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov>=4.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.8.0"]
 
 [tool.setuptools.packages.find]
 include = ["aidlc*"]
@@ -46,6 +46,14 @@ aidlc = [
     "configs/*.json",
     "project_template/**/*.md",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["aidlc", "tests"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

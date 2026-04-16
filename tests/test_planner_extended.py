@@ -2,11 +2,11 @@
 
 import json
 import logging
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+from aidlc.models import Issue, RunState
 from aidlc.planner import Planner
-from aidlc.models import RunState, Issue
 from aidlc.planner_helpers import write_planning_index
 
 

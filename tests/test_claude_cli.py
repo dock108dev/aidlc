@@ -1,12 +1,12 @@
 """Tests for aidlc.claude_cli module."""
 
-import logging
-import json
 import itertools
+import json
+import logging
 import subprocess
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from aidlc.claude_cli import ClaudeCLI, ClaudeCLIError
 
 

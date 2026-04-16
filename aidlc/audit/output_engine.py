@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from ..audit_models import AuditConflict, ModuleInfo, TechDebtItem, CoverageInfo
+from ..audit_models import AuditConflict, CoverageInfo, ModuleInfo, TechDebtItem
 from .constants import EXCLUDE_DIRS
 
 

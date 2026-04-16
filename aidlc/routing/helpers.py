@@ -1,9 +1,6 @@
 """Routing helpers and utilities for provider routing engine."""
 
-from typing import Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .engine import ProviderRouter, RouteDecision
+from typing import Optional
 
 
 def get_claude_only_aliases() -> frozenset[str]:

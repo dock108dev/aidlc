@@ -21,16 +21,15 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import load_config, get_run_dir, get_reports_dir, get_issues_dir
-from .models import RunState, RunStatus, RunPhase
-from .state_manager import generate_run_id, save_state, load_state, checkpoint, find_latest_run, RunLock
+from .config import get_reports_dir, get_run_dir
+from .implementer import Implementer
 from .logger import setup_logger
+from .models import Issue, RunPhase, RunState, RunStatus
+from .planner import Planner
+from .reporting import generate_run_report
 from .routing import ProviderRouter
 from .scanner import ProjectScanner
-from .planner import Planner
-from .implementer import Implementer
-from .reporting import generate_run_report
-from .models import Issue
+from .state_manager import RunLock, find_latest_run, generate_run_id, load_state, save_state
 
 
 def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]:

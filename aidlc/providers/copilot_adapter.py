@@ -14,7 +14,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from .base import ProviderAdapter, HealthResult, HealthStatus
+from .base import HealthResult, HealthStatus, ProviderAdapter
 
 # Default model for Copilot provider.
 # Empty string means "let the Copilot CLI choose its default model".

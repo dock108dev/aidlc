@@ -45,10 +45,10 @@ def run_wizard(project_root: Path, auto_detect: bool = True) -> dict:
     if has_existing:
         size = len(braindump_path.read_text(errors="replace"))
         print(f"  {_green('+')} Found existing {_cyan('BRAINDUMP.md')} ({size:,} chars)")
-        print(f"  Review or update it if needed.")
+        print("  Review or update it if needed.")
     else:
         print(f"  Created {_cyan('BRAINDUMP.md')} in your project root.")
-        print(f"  Open it and write everything about what you want to build.")
+        print("  Open it and write everything about what you want to build.")
     print()
     print(f"  {_dim('What is it? What should it do? Features, vibes, inspiration,')}")
     print(f"  {_dim('constraints, phases, whatever — dump it all in there.')}")

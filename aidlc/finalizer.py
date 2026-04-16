@@ -17,19 +17,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .finalize_prompts import (
+    ABEND_PROMPT,
+    CLEANUP_PROMPT,
+    DOCS_PROMPT,
     FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
     PASS_ORDER,
-    SSOT_PROMPT,
     SECURITY_PROMPT,
-    ABEND_PROMPT,
-    DOCS_PROMPT,
-    CLEANUP_PROMPT,
+    SSOT_PROMPT,
 )
-from .models import RunState, RunPhase
+from .models import RunPhase, RunState
 from .state_manager import save_state
 from .timing import add_console_time
-
 
 PASS_PROMPTS = {
     "ssot": SSOT_PROMPT,

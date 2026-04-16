@@ -2,12 +2,12 @@
 
 import json
 import logging
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+from aidlc.models import RunPhase, RunState
 from aidlc.planner import Planner
-from aidlc.models import RunState, RunPhase
 
 
 @pytest.fixture

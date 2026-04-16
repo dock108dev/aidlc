@@ -1,10 +1,10 @@
 """Claude CLI provider adapter."""
 
-from pathlib import Path
 import logging
+from pathlib import Path
 
-from .base import ProviderAdapter, HealthResult, HealthStatus
 from ..claude_cli import ClaudeCLI, ClaudeCLIError
+from .base import HealthResult, HealthStatus, ProviderAdapter
 
 
 class ClaudeCLIAdapter(ProviderAdapter):

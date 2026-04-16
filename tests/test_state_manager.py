@@ -2,15 +2,18 @@
 
 import json
 import os
-import pytest
-from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from aidlc.models import RunPhase, RunState, RunStatus
 from aidlc.state_manager import (
-    generate_run_id, save_state, load_state, checkpoint,
-    find_latest_run, RunLock,
+    RunLock,
+    checkpoint,
+    find_latest_run,
+    generate_run_id,
+    load_state,
+    save_state,
 )
-from aidlc.models import RunState, RunStatus, RunPhase
 
 
 class TestGenerateRunId:

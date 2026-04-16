@@ -1,10 +1,10 @@
 """Tests for aidlc.auditor module."""
 
 import json
-import pytest
 
+import pytest
+from aidlc.audit_models import AuditConflict, AuditResult, CoverageInfo, ModuleInfo, TechDebtItem
 from aidlc.auditor import CodeAuditor
-from aidlc.audit_models import AuditResult, ModuleInfo, TechDebtItem, CoverageInfo, AuditConflict
 
 
 @pytest.fixture

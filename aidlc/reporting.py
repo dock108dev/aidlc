@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import RunState, Issue
+from .models import Issue, RunState
 
 
 def generate_run_report(state: RunState, report_dir: Path) -> Path:

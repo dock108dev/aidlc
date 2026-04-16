@@ -1,6 +1,5 @@
 """Tests for the OpenAI provider adapter."""
 
-import logging
 import subprocess
 from unittest.mock import MagicMock, patch
 

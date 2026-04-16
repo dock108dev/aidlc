@@ -3,11 +3,10 @@
 import json
 import logging
 import os
-import signal
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import RunState, RunStatus
+from .models import RunState
 
 
 def _chmod_owner_only(path: Path) -> None:

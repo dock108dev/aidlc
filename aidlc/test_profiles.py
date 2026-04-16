@@ -7,7 +7,6 @@ Users can override any command via .aidlc/config.json.
 import logging
 from pathlib import Path
 
-
 # Test command tiers — run in order, stop on first tier failure (unless progressive)
 # Each entry: (detection_files, command, description)
 TEST_PROFILES = {

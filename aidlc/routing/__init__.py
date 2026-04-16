@@ -1,5 +1,6 @@
 """Routing engine package for AIDLC."""
 
-from .engine import ProviderRouter, RouteDecision, RoutingStrategy
+from .engine import ProviderRouter
+from .types import RouteDecision, RoutingStrategy, UsagePressure
 
-__all__ = ["ProviderRouter", "RouteDecision", "RoutingStrategy"]
+__all__ = ["ProviderRouter", "RouteDecision", "RoutingStrategy", "UsagePressure"]

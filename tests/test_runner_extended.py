@@ -2,12 +2,12 @@
 
 import json
 import logging
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from aidlc.runner import init_run, scan_project, run_full
-from aidlc.models import RunState, RunStatus, RunPhase
+import pytest
+from aidlc.models import RunPhase, RunState, RunStatus
+from aidlc.runner import init_run, run_full, scan_project
 from aidlc.state_manager import save_state
 
 
@@ -138,5 +138,5 @@ class TestScanProject:
 
         logger = logging.getLogger("test_scan")
         state = RunState(run_id="t", config_name="c")
-        context = scan_project(state, config, logger)
+        scan_project(state, config, logger)
         assert state.docs_scanned >= 1

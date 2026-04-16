@@ -1,11 +1,11 @@
 """Tests for aidlc.__main__ module."""
 
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from aidlc.__main__ import parse_budget, cmd_init, cmd_status, main
+import pytest
+from aidlc.__main__ import cmd_init, cmd_status, main, parse_budget
 
 
 class TestParseBudget:
@@ -89,7 +89,7 @@ class TestCmdStatus:
         assert "No AIDLC runs found" in captured.out
 
     def test_shows_status(self, tmp_path, capsys):
-        from aidlc.models import RunState, RunStatus, RunPhase
+        from aidlc.models import RunPhase, RunState, RunStatus
         from aidlc.state_manager import save_state
 
         # Set up .aidlc/runs/ with a run

@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from ..audit_models import AuditResult, ModuleInfo, TechDebtItem, CoverageInfo
+from ..audit_models import AuditResult, CoverageInfo, ModuleInfo, TechDebtItem
 from .constants import (
     ENTRY_POINT_NAMES,
     EXCLUDE_DIRS,

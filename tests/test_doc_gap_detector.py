@@ -1,10 +1,9 @@
 """Tests for aidlc.doc_gap_detector module."""
 
-import pytest
-from pathlib import Path
 
-from aidlc.doc_gap_detector import detect_doc_gaps
+import pytest
 from aidlc.audit_models import DocGap
+from aidlc.doc_gap_detector import detect_doc_gaps
 
 
 @pytest.fixture

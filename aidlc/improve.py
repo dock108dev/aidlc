@@ -17,14 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .context_utils import parse_project_type
-from .models import RunState, RunPhase, RunStatus, Issue
+from .models import Issue, RunPhase, RunState, RunStatus
 from .research_output import (
     add_research_output_constraints,
     build_repair_prompt,
     is_permission_chatter,
 )
 from .schemas import parse_json_output
-from .state_manager import save_state, generate_run_id
+from .state_manager import generate_run_id, save_state
 
 
 # ANSI helpers

@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .models import Account, AuthState, MembershipTier
 from .credentials import CredentialStore
+from .models import Account, AuthState, MembershipTier
 
 _logger = logging.getLogger(__name__)
 

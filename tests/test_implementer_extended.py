@@ -3,11 +3,11 @@
 import json
 import logging
 import subprocess
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from aidlc.implementer import Implementer
-from aidlc.models import RunState, Issue, IssueStatus
+from aidlc.models import Issue, IssueStatus, RunState
 
 
 @pytest.fixture
@@ -569,7 +569,7 @@ class TestPreviousAttemptInPrompt:
 
 
 class TestGetChangedFilesEdgeCases:
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer_workspace.subprocess.run")
     def test_git_timeout(self, mock_run, config, logger, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
         state = RunState(run_id="t", config_name="c")
@@ -578,7 +578,7 @@ class TestGetChangedFilesEdgeCases:
         impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
         assert impl._get_changed_files() == []
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer_workspace.subprocess.run")
     def test_git_not_found(self, mock_run, config, logger, tmp_path):
         mock_run.side_effect = FileNotFoundError()
         state = RunState(run_id="t", config_name="c")
@@ -590,12 +590,14 @@ class TestGetChangedFilesEdgeCases:
 
 class TestErrorPayloadSampling:
     def test_limits_to_50_lines_from_last_500(self):
+        from aidlc.implementer_signals import sample_error_payload
+
         payload_lines = [f"line {i}" for i in range(1, 801)]
         for i in range(730, 780):
             payload_lines[i] = f"ERROR detail {i}"
         payload = "\n".join(payload_lines)
 
-        sampled = Implementer._sample_error_payload(payload)
+        sampled = sample_error_payload(payload)
         sampled_lines = sampled.splitlines()
 
         assert len(sampled_lines) <= 50
@@ -605,7 +607,9 @@ class TestErrorPayloadSampling:
 
     def test_falls_back_to_tail_when_no_error_terms(self):
         payload = "\n".join(f"info {i}" for i in range(1, 601))
-        sampled = Implementer._sample_error_payload(payload)
+        from aidlc.implementer_signals import sample_error_payload
+
+        sampled = sample_error_payload(payload)
         sampled_lines = sampled.splitlines()
 
         assert len(sampled_lines) == 50

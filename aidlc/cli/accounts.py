@@ -1,15 +1,15 @@
 """Accounts management subcommand for CLI."""
 
 import argparse
-import sys
 import logging
+import sys
 from pathlib import Path
 
-from aidlc.accounts import AccountManager, Account, AuthState, MembershipTier
-from aidlc.routing import ProviderRouter
+from aidlc.accounts import Account, AccountManager, AuthState, MembershipTier
 from aidlc.config import load_config
+from aidlc.routing import ProviderRouter
 
-from .display import bold, red, yellow, green, dim, cyan
+from .display import bold, cyan, dim, green, red, yellow
 
 
 def cmd_accounts(args: argparse.Namespace, version: str) -> None:

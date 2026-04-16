@@ -8,13 +8,13 @@ import subprocess
 import time
 from pathlib import Path
 
-from .models import RunState, RunPhase, Issue, IssueStatus
-from .state_manager import save_state
-from .test_parser import parse_test_failures, FailureReport
-from .test_profiles import detect_test_profile
-from .validation_issues import create_fix_issues
 from .context_utils import parse_project_type
+from .models import Issue, IssueStatus, RunPhase, RunState
+from .state_manager import save_state
+from .test_parser import FailureReport, parse_test_failures
+from .test_profiles import detect_test_profile
 from .timing import add_console_time
+from .validation_issues import create_fix_issues
 
 
 class Validator:

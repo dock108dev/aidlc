@@ -10,16 +10,38 @@ from .cli_commands import (
     _print_banner,
     _print_precheck,
     _red,
+)
+from .cli_commands import (
     cmd_accounts as _cmd_accounts,
+)
+from .cli_commands import (
     cmd_audit as _cmd_audit,
+)
+from .cli_commands import (
     cmd_config_show as _cmd_config_show,
+)
+from .cli_commands import (
     cmd_finalize as _cmd_finalize,
+)
+from .cli_commands import (
     cmd_improve as _cmd_improve,
+)
+from .cli_commands import (
     cmd_init as _cmd_init,
+)
+from .cli_commands import (
     cmd_plan as _cmd_plan,
+)
+from .cli_commands import (
     cmd_precheck as _cmd_precheck,
+)
+from .cli_commands import (
     cmd_provider as _cmd_provider,
+)
+from .cli_commands import (
     cmd_status as _cmd_status,
+)
+from .cli_commands import (
     cmd_usage as _cmd_usage,
 )
 from .cli_parser import build_parser
@@ -93,6 +115,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             find_latest_run,
             list_cycle_snapshots,
             load_cycle_snapshot,
+        )
+        from .state_manager import (
             save_state as _save,
         )
 

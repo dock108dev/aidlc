@@ -1,24 +1,43 @@
 """Implementation engine for AIDLC issue execution and verification."""
 
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
+from .implementer_helpers import (
+    build_implementation_prompt,
+    detect_test_command,
+    ensure_test_deps,
+    fix_failing_tests,
+    implementation_instructions,
+)
+from .implementer_issue_order import sort_issues_for_implementation
+from .implementer_signals import (
+    compact_error_text,
+    is_all_models_token_exhausted,
+    is_no_models_available,
+    sample_error_payload,
+    should_stop_for_provider_availability,
+)
+from .implementer_workspace import (
+    get_changed_files,
+    git_commit_cycle_snapshot,
+    git_current_branch,
+    git_has_changes,
+    git_push_current_branch,
+    prune_aidlc_data,
+)
+from .logger import log_checkpoint
+from .models import Issue, IssueStatus, RunPhase, RunState
+from .planner_helpers import render_issue_md
+from .reporting import generate_checkpoint_summary
+from .schemas import (
+    ImplementationResult,
+    parse_implementation_result,
+)
+from .state_manager import checkpoint, save_state
 from .timing import add_console_time
 
-from .models import RunState, RunPhase, Issue, IssueStatus
-from .schemas import (
-    ImplementationResult, parse_implementation_result,
-)
-from .state_manager import save_state, checkpoint
-from .reporting import generate_checkpoint_summary
-from .logger import log_checkpoint
-from .implementer_helpers import (
-    build_implementation_prompt, detect_test_command, ensure_test_deps,
-    fix_failing_tests, implementation_instructions,
-)
-from .planner_helpers import render_issue_md
 
 class Implementer:
     """Runs the implementation phase of an AIDLC session."""
@@ -189,7 +208,7 @@ class Implementer:
                         self.logger.error(self.state.stop_reason)
                         break
 
-            if self._should_stop_for_provider_availability(self.state.stop_reason):
+            if should_stop_for_provider_availability(self.state.stop_reason):
                 self.logger.error("Stopping implementation loop due to provider/model availability.")
                 break
 
@@ -259,17 +278,17 @@ class Implementer:
             (output_dir / f"impl_{issue.id}_{issue.attempt_count:02d}.md").write_text(output_text)
 
         if not result["success"]:
-            sampled_error = self._sample_error_payload(result.get("error"))
-            compact_error = self._compact_error_text(sampled_error)
+            sampled_error = sample_error_payload(result.get("error"))
+            compact_error = compact_error_text(sampled_error)
             self.logger.error(f"Implementation of {issue.id} failed: {compact_error}")
-            if self._is_all_models_token_exhausted(result):
+            if is_all_models_token_exhausted(result):
                 message = (
                     "All available models/providers appear out of tokens or quota; "
                     "stopping run to allow safe resume later."
                 )
                 self.state.stop_reason = message
                 self.logger.error(message)
-            elif self._is_no_models_available(result):
+            elif is_no_models_available(result):
                 message = (
                     "No models/providers are currently available; "
                     "saving state and exiting for clean resume."
@@ -389,14 +408,14 @@ class Implementer:
             self.state.issues_implemented += 1
             self.logger.info(f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)")
         else:
-            sampled_notes = self._sample_error_payload(impl_result.notes)
+            sampled_notes = sample_error_payload(impl_result.notes)
             issue.status = IssueStatus.FAILED
             issue.implementation_notes += (
                 f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_notes}"
             )
             self.state.issues_failed += 1
             self.logger.warning(
-                f"Failed to implement {issue.id}: {self._compact_error_text(sampled_notes)}"
+                f"Failed to implement {issue.id}: {compact_error_text(sampled_notes)}"
             )
 
         self.state.current_issue_id = None
@@ -534,187 +553,16 @@ class Implementer:
         return True
 
     def _sort_issues(self) -> bool:
-        """Sort issues by priority and dependency order (topological).
-
-        Detects circular dependencies and auto-breaks only the circular edges
-        so the run can continue. Removed edges are logged explicitly.
-        """
-        priority_order = {"high": 0, "medium": 1, "low": 2}
-
-        def detect_cycles(id_to_issue: dict[str, dict]) -> list[list[str]]:
-            sorted_ids_local: list[str] = []
-            visited: set[str] = set()
-            temp_visited: set[str] = set()
-            cycles: list[list[str]] = []
-            cycle_keys: set[tuple[str, ...]] = set()
-
-            def visit(issue_id: str, path: list[str]) -> None:
-                if issue_id in visited:
-                    return
-                if issue_id in temp_visited:
-                    cycle_start = path.index(issue_id)
-                    cycle = path[cycle_start:] + [issue_id]
-                    # De-duplicate same cycle reported from different traversal roots.
-                    key = tuple(sorted(cycle[:-1]))
-                    if key and key not in cycle_keys:
-                        cycle_keys.add(key)
-                        cycles.append(cycle)
-                    return
-                temp_visited.add(issue_id)
-                issue = id_to_issue.get(issue_id, {})
-                for dep in issue.get("dependencies", []):
-                    if dep in id_to_issue:
-                        visit(dep, path + [issue_id])
-                temp_visited.discard(issue_id)
-                visited.add(issue_id)
-                sorted_ids_local.append(issue_id)
-
-            priority_sorted_local = sorted(
-                self.state.issues,
-                key=lambda d: priority_order.get(d.get("priority", "medium"), 1),
-            )
-            for data in priority_sorted_local:
-                visit(data["id"], [])
-            return cycles
-
-        id_to_issue = {d["id"]: d for d in self.state.issues}
-        removed_edges: list[tuple[str, str]] = []
-        max_passes = max(1, len(id_to_issue) * 2)
-
-        for _ in range(max_passes):
-            cycles = detect_cycles(id_to_issue)
-            if not cycles:
-                break
-
-            for cycle in cycles:
-                cycle_str = " -> ".join(cycle)
-                self.logger.error(f"Circular dependency detected: {cycle_str}. Auto-resolving.")
-
-                core = cycle[:-1]
-                if not core:
-                    continue
-
-                # Prefer removing edge from the lowest-priority issue in the cycle.
-                candidate = max(
-                    core,
-                    key=lambda issue_id: (
-                        priority_order.get(id_to_issue.get(issue_id, {}).get("priority", "medium"), 1),
-                        len(id_to_issue.get(issue_id, {}).get("dependencies", [])),
-                        issue_id,
-                    ),
-                )
-                candidate_idx = core.index(candidate)
-                successor = cycle[candidate_idx + 1]
-
-                deps = list(id_to_issue.get(candidate, {}).get("dependencies", []))
-                removed = False
-                if successor in deps:
-                    deps.remove(successor)
-                    removed = True
-                else:
-                    for dep in deps:
-                        if dep in core:
-                            deps.remove(dep)
-                            successor = dep
-                            removed = True
-                            break
-
-                if removed:
-                    id_to_issue[candidate]["dependencies"] = deps
-                    removed_edges.append((candidate, successor))
-                    self.logger.warning(
-                        f"Removed circular dependency edge: {candidate} -> {successor}"
-                    )
-                else:
-                    self.logger.error(
-                        f"Could not auto-resolve cycle edge for {candidate}; manual fix required."
-                    )
-                    return False
-        else:
-            self.logger.error("Dependency cycle resolution exceeded max passes; manual fix required.")
-            return False
-
-        if removed_edges:
-            touched_issue_ids = {issue_id for issue_id, _ in removed_edges}
-            for issue_id in touched_issue_ids:
-                issue_data = id_to_issue.get(issue_id)
-                if not issue_data:
-                    continue
-                self.state.update_issue(Issue.from_dict(issue_data))
-                self.logger.info(
-                    f"Updated issue dependencies after cycle resolution: {issue_id}"
-                )
-            self._sync_all_issue_markdown()
-
-        # Re-run topo traversal once cycles are removed to produce final order.
-        sorted_ids: list[str] = []
-        visited: set[str] = set()
-        temp_visited: set[str] = set()
-
-        def topo_visit(issue_id: str) -> None:
-            if issue_id in visited:
-                return
-            if issue_id in temp_visited:
-                return
-            temp_visited.add(issue_id)
-            for dep in id_to_issue.get(issue_id, {}).get("dependencies", []):
-                if dep in id_to_issue:
-                    topo_visit(dep)
-            temp_visited.discard(issue_id)
-            visited.add(issue_id)
-            sorted_ids.append(issue_id)
-
-        priority_sorted = sorted(
-            self.state.issues,
-            key=lambda d: priority_order.get(d.get("priority", "medium"), 1),
+        """Sort issues by priority and dependency order (topological)."""
+        return sort_issues_for_implementation(
+            self.state, self.logger, self._sync_all_issue_markdown
         )
-        for data in priority_sorted:
-            topo_visit(data["id"])
-
-        self.state.issues = [id_to_issue[iid] for iid in sorted_ids if iid in id_to_issue]
-        return True
 
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
-        detection_ok = True
-        proc = None
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            detection_ok = False
-            self.logger.warning(f"Unable to run git diff for change detection: {e}")
-        finally:
-            add_console_time(self.state, t0)
-        if proc and proc.returncode == 0 and proc.stdout.strip():
-            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-            return (files, True) if with_status else files
-        # Also check untracked files
-        proc = None
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            detection_ok = False
-            self.logger.warning(f"Unable to run git ls-files for change detection: {e}")
-        finally:
-            add_console_time(self.state, t0)
-        if proc and proc.returncode == 0 and proc.stdout.strip():
-            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-            return (files, True) if with_status else files
-        return ([], detection_ok) if with_status else []
+        return get_changed_files(
+            self.project_root, self.state, self.logger, with_status
+        )
 
     def _detect_test_command(self) -> str | None:
         return detect_test_command(self.project_root)
@@ -763,304 +611,31 @@ class Implementer:
 
     def _git_commit_cycle_snapshot(self, cycle_num: int) -> bool:
         """Create an autosync commit when there are uncommitted changes."""
-        if not self._git_has_changes():
-            self.logger.info("Autosync: no git changes to commit.")
-            return False
-
-        t0 = time.time()
-        try:
-            subprocess.run(
-                ["git", "add", "-A"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=True,
-            )
-
-            commit_message = self.autosync_commit_message_template.format(cycle=cycle_num)
-            commit = subprocess.run(
-                ["git", "commit", "-m", commit_message],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if commit.returncode != 0:
-                stderr_text = (commit.stderr or "").strip().lower()
-                stdout_text = (commit.stdout or "").strip().lower()
-                if "nothing to commit" in stderr_text or "nothing to commit" in stdout_text:
-                    self.logger.info("Autosync: nothing to commit after staging.")
-                    return False
-                self.logger.warning(
-                    "Autosync commit failed: "
-                    f"{(commit.stderr or commit.stdout or 'unknown git error').strip()}"
-                )
-                return False
-
-            self.logger.info(f"Autosync commit created at cycle {cycle_num}.")
-            return True
-        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
-            self.logger.warning(f"Autosync commit error: {e}")
-            return False
-        finally:
-            add_console_time(self.state, t0)
+        return git_commit_cycle_snapshot(
+            self.project_root,
+            cycle_num,
+            self.logger,
+            self.state,
+            self.autosync_commit_message_template,
+        )
 
     def _git_push_current_branch(self) -> bool:
         """Push the current branch to its configured upstream remote."""
-        branch = self._git_current_branch()
-        if not branch:
-            self.logger.warning("Autosync push skipped: could not determine current branch.")
-            return False
-
-        t0 = time.time()
-        try:
-            push = subprocess.run(
-                ["git", "push"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=90,
-            )
-            if push.returncode == 0:
-                self.logger.info(f"Autosync pushed to remote on branch '{branch}'.")
-                return True
-
-            stderr_text = (push.stderr or "").lower()
-            if "no upstream" in stderr_text or "set-upstream" in stderr_text:
-                push_upstream = subprocess.run(
-                    ["git", "push", "-u", "origin", branch],
-                    cwd=str(self.project_root),
-                    capture_output=True,
-                    text=True,
-                    timeout=90,
-                )
-                if push_upstream.returncode == 0:
-                    self.logger.info(
-                        f"Autosync pushed and set upstream origin/{branch}."
-                    )
-                    return True
-                self.logger.warning(
-                    "Autosync push with upstream failed: "
-                    f"{(push_upstream.stderr or push_upstream.stdout or 'unknown git error').strip()}"
-                )
-                return False
-
-            self.logger.warning(
-                "Autosync push failed: "
-                f"{(push.stderr or push.stdout or 'unknown git error').strip()}"
-            )
-            return False
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            self.logger.warning(f"Autosync push error: {e}")
-            return False
-        finally:
-            add_console_time(self.state, t0)
+        return git_push_current_branch(self.project_root, self.logger, self.state)
 
     def _git_current_branch(self) -> str | None:
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "branch", "--show-current"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if proc.returncode == 0:
-                branch = (proc.stdout or "").strip()
-                return branch or None
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return None
-        finally:
-            add_console_time(self.state, t0)
-        return None
+        return git_current_branch(self.project_root, self.state, self.logger)
 
     def _git_has_changes(self) -> bool:
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            return proc.returncode == 0 and bool((proc.stdout or "").strip())
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
-        finally:
-            add_console_time(self.state, t0)
+        return git_has_changes(self.project_root, self.state, self.logger)
 
     def _prune_aidlc_data(self) -> None:
         """Prune stale .aidlc run artifacts while keeping current and most recent history."""
-        aidlc_dir = self.project_root / ".aidlc"
-        runs_dir = aidlc_dir / "runs"
-        reports_dir = aidlc_dir / "reports"
-
-        # Keep current run and newest N other run directories.
-        if runs_dir.exists() and runs_dir.is_dir():
-            run_dirs = [p for p in runs_dir.iterdir() if p.is_dir()]
-            run_dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-            keep_ids = {self.state.run_id}
-            for p in run_dirs:
-                if len(keep_ids) >= self.autosync_runs_to_keep:
-                    break
-                keep_ids.add(p.name)
-
-            for run_path in run_dirs:
-                if run_path.name in keep_ids:
-                    continue
-                try:
-                    shutil.rmtree(run_path)
-                    self.logger.info(f"Pruned old run cache: {run_path.name}")
-                except OSError as e:
-                    self.logger.warning(f"Failed to prune run cache {run_path.name}: {e}")
-
-        if reports_dir.exists() and reports_dir.is_dir():
-            for report_path in reports_dir.iterdir():
-                if not report_path.is_dir():
-                    continue
-                if report_path.name == self.state.run_id:
-                    continue
-                if runs_dir.exists() and (runs_dir / report_path.name).exists():
-                    continue
-                try:
-                    shutil.rmtree(report_path)
-                    self.logger.info(f"Pruned old report cache: {report_path.name}")
-                except OSError as e:
-                    self.logger.warning(f"Failed to prune report cache {report_path.name}: {e}")
-
-        # Keep only most recent K Claude outputs in current run.
-        outputs_dir = self.run_dir / "claude_outputs"
-        if outputs_dir.exists() and outputs_dir.is_dir():
-            outputs = [p for p in outputs_dir.iterdir() if p.is_file()]
-            outputs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            for old in outputs[self.autosync_keep_claude_outputs:]:
-                try:
-                    old.unlink()
-                except OSError:
-                    pass
-
-    @staticmethod
-    def _is_all_models_token_exhausted(result: dict) -> bool:
-        if not isinstance(result, dict):
-            return False
-        failure_type = str(result.get("failure_type") or "").lower()
-        if failure_type == "token_exhausted_all_models":
-            return True
-        message = "\n".join(
-            [str(result.get("error") or ""), str(result.get("output") or "")]
-        ).lower()
-        return "all available providers/models" in message and "token" in message
-
-    @staticmethod
-    def _is_no_models_available(result: dict) -> bool:
-        if not isinstance(result, dict):
-            return False
-        failure_type = str(result.get("failure_type") or "").lower()
-        if failure_type in {
-            "rate_limited_all_models",
-            "provider_unavailable",
-            "no_models_available",
-        }:
-            return True
-        message = "\n".join(
-            [str(result.get("error") or ""), str(result.get("output") or "")]
-        ).lower()
-        return any(
-            phrase in message
-            for phrase in (
-                "no models",
-                "no available provider",
-                "all providers are rate limited",
-            )
-        )
-
-    @staticmethod
-    def _compact_error_text(value: object, max_len: int = 360) -> str:
-        text = str(value or "").strip()
-        if not text:
-            return "unknown provider error"
-        compact = " ".join(text.split())
-        if len(compact) <= max_len:
-            return compact
-        return f"{compact[:max_len - 3]}..."
-
-    @staticmethod
-    def _sample_error_payload(
-        value: object,
-        tail_max_lines: int = 500,
-        max_sample_lines: int = 50,
-    ) -> str:
-        """Extract relevant error lines from the last tail_max_lines of payload.
-
-        Selection is bottom-up around likely error anchors and capped to max_sample_lines.
-        """
-        text = str(value or "")
-        if not text.strip():
-            return "unknown provider error"
-
-        lines = text.splitlines()
-        if not lines:
-            return "unknown provider error"
-
-        tail = lines[-max(1, int(tail_max_lines)):]
-        max_lines = max(1, int(max_sample_lines))
-
-        anchor_terms = (
-            "error",
-            "exception",
-            "traceback",
-            "failed",
-            "failure",
-            "quota",
-            "rate limit",
-            "timeout",
-        )
-
-        selected_indexes: list[int] = []
-        seen: set[int] = set()
-
-        for idx in range(len(tail) - 1, -1, -1):
-            lowered = tail[idx].lower()
-            if not any(term in lowered for term in anchor_terms):
-                continue
-
-            start = max(0, idx - 2)
-            end = min(len(tail), idx + 3)
-            for line_idx in range(start, end):
-                if line_idx in seen:
-                    continue
-                seen.add(line_idx)
-                selected_indexes.append(line_idx)
-                if len(selected_indexes) >= max_lines:
-                    break
-            if len(selected_indexes) >= max_lines:
-                break
-
-        if not selected_indexes:
-            sampled = tail[-max_lines:]
-        else:
-            ordered = sorted(selected_indexes)
-            if len(ordered) > max_lines:
-                ordered = ordered[-max_lines:]
-            sampled = [tail[i] for i in ordered]
-
-        return "\n".join(sampled).strip() or "unknown provider error"
-
-    @staticmethod
-    def _should_stop_for_provider_availability(reason: str | None) -> bool:
-        if not reason:
-            return False
-        text = reason.lower()
-        return any(
-            phrase in text
-            for phrase in (
-                "out of tokens",
-                "no models/providers",
-                "provider unavailable",
-                "rate limit",
-            )
+        prune_aidlc_data(
+            self.project_root,
+            self.run_dir,
+            self.state,
+            self.logger,
+            self.autosync_runs_to_keep,
+            self.autosync_keep_claude_outputs,
         )

@@ -57,7 +57,7 @@ def get_template_dir() -> Path:
 
 def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
     """Print precheck results to console."""
-    from aidlc.precheck import REQUIRED_DOCS, RECOMMENDED_DOCS, OPTIONAL_DOCS
+    from aidlc.precheck import OPTIONAL_DOCS, RECOMMENDED_DOCS, REQUIRED_DOCS
 
     if result.config_created:
         print(f"  {green('+')} Auto-created {cyan('.aidlc/')} with default config")

@@ -2,12 +2,12 @@
 
 import json
 from unittest.mock import MagicMock
-import pytest
 
+import pytest
+from aidlc.models import RunPhase, RunState
+from aidlc.test_parser import FailureReport, parse_test_failures
 from aidlc.test_profiles import detect_test_profile
-from aidlc.test_parser import parse_test_failures, FailureReport
 from aidlc.validation_issues import create_fix_issues
-from aidlc.models import RunState, RunPhase
 
 
 class TestTestProfiles:

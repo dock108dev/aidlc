@@ -1,10 +1,10 @@
 """Tests for aidlc.config module."""
 
 import json
-import pytest
 from pathlib import Path
 
-from aidlc.config import load_config, get_run_dir, get_reports_dir, get_issues_dir, DEFAULTS
+import pytest
+from aidlc.config import DEFAULTS, get_issues_dir, get_reports_dir, get_run_dir, load_config
 from aidlc.config_detect import update_config_file
 
 

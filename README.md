@@ -1,72 +1,34 @@
 # AIDLC
 
-AIDLC is a Python CLI for running an AI-assisted development lifecycle inside a target repository.
+Python CLI for an **AI-assisted development lifecycle** inside a target repository: scan documentation, plan work as issues, implement with provider-backed agents, verify, and report.
 
-Primary `aidlc run` flow:
-
-`AUDIT (optional) -> SCAN -> PLAN -> IMPLEMENT -> VERIFY -> VALIDATE (optional) -> FINALIZE (optional) -> REPORT`
-
-## Quick Start
+## Run locally
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# initialize metadata in a target repository
 aidlc init --project /path/to/target-repo
-
-# run the lifecycle
 aidlc run --project /path/to/target-repo
 ```
 
-## Requirements
-
-- Python 3.11+
-- [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli) installed and authenticated (unless using `--dry-run`)
-
-## High-Level Commands
-
-- `aidlc precheck` auto-creates `.aidlc/` if missing and reports documentation readiness tiers
-- `aidlc init` initializes `.aidlc/` and optionally copies planning templates with `--with-docs`
-- `aidlc audit [--full]` analyzes an existing codebase and writes audit artifacts
-- `aidlc run` executes the lifecycle with optional modes (`--resume`, `--plan-only`, `--implement-only`, `--audit [quick|full]`)
-- `aidlc finalize` runs finalization passes against the latest run
-- `aidlc plan` runs an interactive planning/doc-generation session
-- `aidlc improve` runs a targeted improvement cycle from a user concern
-- `aidlc status` prints the latest run state
-
-## Runtime Artifacts
-
-```text
-.aidlc/
-  config.json
-  issues/
-  runs/<run_id>/
-  reports/<run_id>/
-```
-
-Additional runtime outputs may include:
-
-- `.aidlc/audit_result.json`
-- `.aidlc/CONFLICTS.md`
-- `BRAINDUMP.md` (full audit handoff and plan wizard input)
-- `docs/audits/*.md`
-- `AIDLC_FUTURES.md`
-
-## Production Profile
-
-Set `runtime_profile` to `"production"` in `.aidlc/config.json` to auto-apply stricter defaults unless explicitly overridden:
-
-- `strict_validation=true`
-- `validation_allow_no_tests=false`
-- `fail_on_validation_incomplete=true`
-- `fail_on_final_test_failure=true`
-- `strict_change_detection=true`
-- `claude_hard_timeout_seconds=1800`
-
-In production profile, `aidlc run --skip-validation` and `aidlc run --skip-finalize` are rejected.
+- **Python:** 3.11+
+- **Providers:** Configure [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli), Codex, or Copilot per `.aidlc/config.json` (see [docs/configuration.md](docs/configuration.md)). Use `--dry-run` to exercise flows without calling a provider.
 
 ## Documentation
 
-See [`docs/README.md`](docs/README.md) for the full documentation map.
+All detailed docs live under **[`docs/`](docs/README.md)**:
+
+| Topic | Link |
+|--------|------|
+| Index | [docs/README.md](docs/README.md) |
+| Commands & lifecycle | [docs/cli-lifecycle.md](docs/cli-lifecycle.md) |
+| Configuration | [docs/configuration.md](docs/configuration.md) |
+| Local dev & tests | [docs/local-development.md](docs/local-development.md) |
+| Audit behavior | [docs/audit.md](docs/audit.md) |
+| Limits & deprecations | [docs/limitations.md](docs/limitations.md), [docs/deprecations.md](docs/deprecations.md) |
+
+## Deploy / distribute
+
+Install from a git checkout or a built wheel; entry point: `aidlc`. See **[docs/deployment.md](docs/deployment.md)**.

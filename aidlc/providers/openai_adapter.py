@@ -9,7 +9,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from .base import ProviderAdapter, HealthResult, HealthStatus
+from .base import HealthResult, HealthStatus, ProviderAdapter
 
 _DEFAULT_OPENAI_MODEL = "gpt-4o"
 

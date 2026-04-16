@@ -1,7 +1,7 @@
 """Tests for aidlc.reporting module."""
 
-from aidlc.reporting import generate_run_report, generate_checkpoint_summary
-from aidlc.models import RunState, RunStatus, RunPhase
+from aidlc.models import RunPhase, RunState, RunStatus
+from aidlc.reporting import generate_checkpoint_summary, generate_run_report
 
 
 class TestGenerateRunReport:

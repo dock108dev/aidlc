@@ -10,7 +10,6 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,7 +115,7 @@ class PlanSession:
         print()
         print(f"  {_green('Planning session complete!')}")
         print()
-        print(f"  Next steps:")
+        print("  Next steps:")
         print(f"    {_cyan('aidlc precheck')}       Verify readiness")
         print(f"    {_cyan('aidlc run')}            Start planning and implementation")
         print(f"    {_cyan('aidlc plan --review')}   Get an audit of your docs")
@@ -146,7 +145,6 @@ class PlanSession:
 
         # Parse JSON from response
         try:
-            from .schemas import parse_json_output
             output = result.get("output", "")
             # Try to extract JSON array
             import re
@@ -338,7 +336,7 @@ class PlanSession:
         ]
 
         try:
-            proc = subprocess.run(
+            subprocess.run(
                 cmd,
                 cwd=str(self.project_root),
                 stdin=sys.stdin,

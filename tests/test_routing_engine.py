@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 from aidlc.routing.engine import ProviderRouter
+from aidlc.routing import result_signals
 
 
 class FakeAdapter:
@@ -275,7 +276,7 @@ def test_usage_limit_phrase_is_treated_as_rate_limited():
         "failure_type": "issue",
     }
 
-    assert ProviderRouter._is_rate_limited_result(result) is True
+    assert result_signals.is_rate_limited_result(result) is True
 
 
 def test_restore_time_parses_try_again_at_clock_time():
@@ -286,7 +287,7 @@ def test_restore_time_parses_try_again_at_clock_time():
         "failure_type": "issue",
     }
 
-    restore = ProviderRouter._extract_restore_time_epoch(result)
+    restore = result_signals.extract_restore_time_epoch(result)
 
     assert restore is not None
     assert restore > 0

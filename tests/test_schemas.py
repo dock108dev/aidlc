@@ -2,8 +2,12 @@
 
 import pytest
 from aidlc.schemas import (
-    PlanningAction, PlanningOutput, ImplementationResult,
-    parse_json_output, parse_planning_output, parse_implementation_result,
+    ImplementationResult,
+    PlanningAction,
+    PlanningOutput,
+    parse_implementation_result,
+    parse_json_output,
+    parse_planning_output,
 )
 
 

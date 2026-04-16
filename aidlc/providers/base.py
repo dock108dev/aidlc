@@ -1,12 +1,12 @@
 """Provider adapter abstract base class."""
 
+import logging
+import subprocess
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-import logging
-import subprocess
-import time
 
 
 class HealthStatus(Enum):

@@ -4,12 +4,12 @@ Shells out to `claude` CLI. The CLI must be installed and authenticated.
 """
 
 import json
+import logging
 import re
 import signal
 import subprocess
 import time
 from pathlib import Path
-import logging
 
 _TRANSIENT_PATTERNS = re.compile(
     r"rate.?limit|connection|timeout|API error|overloaded|503|502|429|ECONNRESET",

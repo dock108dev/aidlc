@@ -9,7 +9,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 # --- PLANNING SCHEMAS ---
 
 PLANNING_ACTION_TYPES = {
