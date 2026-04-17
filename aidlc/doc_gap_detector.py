@@ -32,8 +32,17 @@ _INFO_PATTERNS = re.compile(
 
 # Directories to always exclude
 _EXCLUDE_DIRS = {
-    "node_modules", ".git", "venv", ".venv", "__pycache__",
-    ".aidlc", "dist", "build", ".next", "target", "vendor",
+    "node_modules",
+    ".git",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".aidlc",
+    "dist",
+    "build",
+    ".next",
+    "target",
+    "vendor",
 }
 
 
@@ -80,24 +89,28 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
             # Check patterns in severity order
             match = _CRITICAL_PATTERNS.search(stripped)
             if match:
-                gaps.append(DocGap(
-                    doc_path=rel_path,
-                    line=line_num,
-                    pattern=match.group(),
-                    text=stripped[:200],
-                    severity="critical",
-                ))
+                gaps.append(
+                    DocGap(
+                        doc_path=rel_path,
+                        line=line_num,
+                        pattern=match.group(),
+                        text=stripped[:200],
+                        severity="critical",
+                    )
+                )
                 continue
 
             match = _WARNING_PATTERNS.search(stripped)
             if match:
-                gaps.append(DocGap(
-                    doc_path=rel_path,
-                    line=line_num,
-                    pattern=match.group(),
-                    text=stripped[:200],
-                    severity="warning",
-                ))
+                gaps.append(
+                    DocGap(
+                        doc_path=rel_path,
+                        line=line_num,
+                        pattern=match.group(),
+                        text=stripped[:200],
+                        severity="warning",
+                    )
+                )
                 continue
 
             match = _INFO_PATTERNS.search(stripped)
@@ -106,13 +119,15 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
                 matched_text = match.group()
                 if _is_likely_false_positive(matched_text, stripped):
                     continue
-                gaps.append(DocGap(
-                    doc_path=rel_path,
-                    line=line_num,
-                    pattern=matched_text,
-                    text=stripped[:200],
-                    severity="info",
-                ))
+                gaps.append(
+                    DocGap(
+                        doc_path=rel_path,
+                        line=line_num,
+                        pattern=matched_text,
+                        text=stripped[:200],
+                        severity="info",
+                    )
+                )
 
     # Sort: critical first, then warning, then info
     severity_order = {"critical": 0, "warning": 1, "info": 2}

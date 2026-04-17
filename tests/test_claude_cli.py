@@ -1,12 +1,12 @@
 """Tests for aidlc.claude_cli module."""
 
-import logging
-import json
 import itertools
+import json
+import logging
 import subprocess
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from aidlc.claude_cli import ClaudeCLI, ClaudeCLIError
 
 
@@ -18,8 +18,7 @@ def logger():
 @pytest.fixture
 def base_config():
     return {
-        "claude_cli_command": "claude",
-        "claude_model": "opus",
+        "providers": {"claude": {"cli_command": "claude", "default_model": "opus"}},
         "retry_max_attempts": 2,
         "retry_base_delay_seconds": 0.01,  # Fast for tests
         "retry_max_delay_seconds": 0.05,
@@ -199,7 +198,9 @@ class TestExecutePrompt:
         assert result["usage"]["web_fetch_requests"] == 1
 
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_falls_back_to_raw_output_when_json_parse_fails(self, mock_popen, base_config, logger, tmp_path):
+    def test_falls_back_to_raw_output_when_json_parse_fails(
+        self, mock_popen, base_config, logger, tmp_path
+    ):
         mock_popen.return_value = _mock_popen_success("non-json response")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
@@ -227,18 +228,11 @@ class TestExecutePrompt:
         assert mock_popen.call_count > 1
         assert mock_sleep.called
 
-    @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_legacy_timeout_key_used_as_fallback(self, mock_popen, base_config, logger, tmp_path):
-        mock_popen.return_value = _mock_popen_success("ok")
-        base_config.pop("claude_hard_timeout_seconds", None)
-        base_config["claude_timeout_seconds"] = 7
-        cli = ClaudeCLI(base_config, logger)
-        result = cli.execute_prompt("prompt", tmp_path)
-        assert result["success"] is True
-
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_terminates_process(self, mock_popen, mock_time, base_config, logger, tmp_path):
+    def test_hard_timeout_terminates_process(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
         proc = MagicMock()
         proc.poll.side_effect = [None, 124]
         proc.wait.side_effect = [
@@ -269,7 +263,9 @@ class TestExecutePrompt:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_graceful_exit_keeps_success(self, mock_popen, mock_time, base_config, logger, tmp_path):
+    def test_hard_timeout_graceful_exit_keeps_success(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
         proc = MagicMock()
         proc.poll.side_effect = [None, 0]
         proc.wait.side_effect = [
@@ -298,6 +294,26 @@ class TestExecutePrompt:
         assert not proc.terminate.called
 
 
+class TestExtractCliMetadataNdjson:
+    def test_picks_jsonl_line_with_usage_when_stdout_not_single_json(self):
+        line1 = json.dumps({"type": "progress", "note": "x"})
+        line2 = json.dumps(
+            {
+                "result": "from line",
+                "usage": {"input_tokens": 5, "output_tokens": 3},
+                "model": "sonnet",
+            }
+        )
+        blob = f"noise prefix\n{line1}\n{line2}\n"
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata(blob, "opus")
+        assert text == "from line"
+        assert usage["input_tokens"] == 5
+        assert usage["output_tokens"] == 3
+        assert model == "sonnet"
+        assert src == "claude_cli_json"
+        assert cost is None
+
+
 class TestClassifyFailure:
     def test_transient_rate_limit(self):
         assert ClaudeCLI._classify_failure(1, "rate limit exceeded") == "transient"
@@ -320,3 +336,69 @@ class TestClassifyFailure:
 
     def test_service_outage_detection_from_network_message(self):
         assert ClaudeCLI._is_service_outage(1, "", "temporary DNS failure") is True
+
+
+class TestExtractCliMetadataBranches:
+    def test_whitespace_only_stdout(self):
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata("  \n  ", "fb")
+        assert src == "none"
+        assert usage == {}
+
+    def test_message_dict_usage_when_top_usage_missing(self):
+        payload = {
+            "message": {
+                "usage": {"input_tokens": 2, "output_tokens": 1},
+                "content": [{"type": "text", "text": "hello"}],
+                "model": "opus-2",
+                "total_cost_usd": "0.01",
+            }
+        }
+        blob = json.dumps(payload)
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata(blob, "fb")
+        assert text == "hello"
+        assert usage.get("input_tokens") == 2
+        assert model == "opus-2"
+        assert cost == 0.01
+        assert src == "claude_cli_json"
+
+    def test_non_dict_top_level_scans_json_lines(self):
+        blob = "prefix\n" + json.dumps({"usage": {"output_tokens": 7}, "result": "r2"})
+        text, usage, _, model, src = ClaudeCLI._extract_cli_metadata(blob, "fb")
+        assert text == "r2"
+        assert usage["output_tokens"] == 7
+        assert src == "claude_cli_json"
+        assert model == "fb"
+
+    def test_usage_with_server_tool_use_dict(self):
+        payload = {
+            "result": "ok",
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "server_tool_use": {"web_search_requests": 2, "web_fetch_requests": 3},
+            },
+            "model": "m",
+        }
+        text, usage, _, _, src = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
+        assert text == "ok"
+        assert usage["web_search_requests"] == 2
+        assert usage["web_fetch_requests"] == 3
+        assert src == "claude_cli_json"
+
+    def test_invalid_total_cost_and_model_ignored(self):
+        payload = {"result": "x", "usage": {}, "total_cost_usd": "nope", "model": ""}
+        _, _, cost, model, _ = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
+        assert cost is None
+        assert model == "fb"
+
+    def test_extract_text_from_message_non_list_content(self):
+        assert ClaudeCLI._extract_text_from_message({"content": "bad"}) == ""
+
+    def test_extract_text_from_message_skips_non_text_blocks(self):
+        msg = {
+            "content": [
+                {"type": "tool_use", "name": "x"},
+                {"type": "text", "text": "only"},
+            ]
+        }
+        assert ClaudeCLI._extract_text_from_message(msg) == "only"

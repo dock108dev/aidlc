@@ -63,11 +63,15 @@ def _render_existing_issues_section(planner) -> list[str]:
         lines.append(f"- Status totals: {status_summary}")
 
         high_priority_pending = [
-            issue for issue in issues
-            if (
-                issue.get("priority") == "high"
-                and issue.get("status", "pending")
-                in ("pending", "in_progress", "blocked", "failed")
+            issue
+            for issue in issues
+            if issue.get("priority") == "high"
+            and issue.get("status", "pending")
+            in (
+                "pending",
+                "in_progress",
+                "blocked",
+                "failed",
             )
         ]
         high_priority_pending.sort(
@@ -114,8 +118,8 @@ def _render_existing_issues_section(planner) -> list[str]:
 
     for issue in selected:
         title = (issue.get("title", "") or "").strip()
-        if len(title) > 120:
-            title = f"{title[:117]}..."
+        if len(title) > 90:
+            title = f"{title[:87]}..."
         deps = issue.get("dependencies") or []
         dep_s = ",".join(deps) if deps else "-"
         lines.append(
@@ -124,6 +128,39 @@ def _render_existing_issues_section(planner) -> list[str]:
             f"deps:{dep_s}"
         )
     return lines
+
+
+def _enforce_prompt_budget(prompt: str, planner) -> str:
+    """Shrink planning prompt to configured budget while preserving key instructions."""
+    max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
+    if len(prompt) <= max_chars:
+        return prompt
+
+    planner.logger.warning(
+        f"Planning prompt exceeded budget ({len(prompt):,} > {max_chars:,}); shrinking context"
+    )
+
+    shrunk = re.sub(
+        r"\n## Existing Issues[\s\S]*?(?=\n## |\Z)",
+        "\n## Existing Issues\nUse .aidlc/planning_index.md and .aidlc/issues/*.md for full backlog details.",
+        prompt,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    shrunk = re.sub(
+        r"\n## Previous Cycle[\s\S]*?(?=\n## |\Z)",
+        "\n## Previous Cycle\nSee prior cycle notes in this run's planning outputs.",
+        shrunk,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    marker = "\n\n[planning prompt truncated to fit max_planning_prompt_chars]\n"
+    keep = max(1000, max_chars - len(marker))
+    return shrunk[:keep] + marker
 
 
 def write_planning_index(planner) -> Path:
@@ -192,10 +229,10 @@ def write_planning_index(planner) -> Path:
             f"- Priority totals: high={priority_counts['high']}, "
             f"medium={priority_counts['medium']}, low={priority_counts['low']}"
         )
-        lines.append(
-            "- Status totals: "
-            + ", ".join(f"{status}={count}" for status, count in sorted(status_counts.items()))
+        status_totals = ", ".join(
+            f"{status}={count}" for status, count in sorted(status_counts.items())
         )
+        lines.append(f"- Status totals: {status_totals}")
         lines.append("")
 
         if label_counts:
@@ -206,7 +243,9 @@ def write_planning_index(planner) -> Path:
 
         lines.append("### Active Issues")
         active_statuses = ("pending", "in_progress", "blocked", "failed")
-        active_issues = [issue for issue in issues if issue.get("status", "pending") in active_statuses]
+        active_issues = [
+            issue for issue in issues if issue.get("status", "pending") in active_statuses
+        ]
         if active_issues:
             for issue in active_issues:
                 labels = ", ".join(issue.get("labels", []) or [])
@@ -314,7 +353,8 @@ def build_prompt(planner, is_finalization: bool) -> str:
     volatile_parts.append(f"- docs_created: {planner.state.files_created}")
 
     prompt = "\n\n".join(static_parts + volatile_parts)
-    planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt)//4:,} tokens)")
+    prompt = _enforce_prompt_budget(prompt, planner)
+    planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
     return prompt
 
 
@@ -332,9 +372,7 @@ def execute_research(planner, action) -> None:
     sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
     output_path = planner.project_root / "docs" / "research" / f"{sanitized}.md"
     if output_path.exists():
-        planner.logger.info(
-            f"Research already exists: docs/research/{sanitized}.md — skipping"
-        )
+        planner.logger.info(f"Research already exists: docs/research/{sanitized}.md — skipping")
         return
 
     planner.logger.info(f"Researching: {action.research_topic}")
@@ -408,20 +446,15 @@ def execute_research(planner, action) -> None:
     )
 
     prompt = add_research_output_constraints("\n".join(prompt_parts))
-    research_model = planner.config.get("claude_model_research")
     start_time = time.time()
-    result = planner.cli.execute_prompt(
-        prompt, planner.project_root, model_override=research_model
-    )
-    planner.state.record_claude_result(result, planner.config)
+    result = planner.cli.execute_prompt(prompt, planner.project_root)
+    planner.state.record_provider_result(result, planner.config, phase="research")
     duration = time.time() - start_time
     planner.state.plan_elapsed_seconds += duration
     planner.state.elapsed_seconds += duration
 
     if not result["success"]:
-        planner.logger.error(
-            f"Research failed for {action.research_topic}: {result.get('error')}"
-        )
+        planner.logger.error(f"Research failed for {action.research_topic}: {result.get('error')}")
         return
 
     output = result.get("output", "")
@@ -441,9 +474,8 @@ def execute_research(planner, action) -> None:
         retry_result = planner.cli.execute_prompt(
             retry_prompt,
             planner.project_root,
-            model_override=research_model,
         )
-        planner.state.record_claude_result(retry_result, planner.config)
+        planner.state.record_provider_result(retry_result, planner.config, phase="research")
         retry_duration = time.time() - retry_start
         planner.state.plan_elapsed_seconds += retry_duration
         planner.state.elapsed_seconds += retry_duration
@@ -584,8 +616,7 @@ def save_cycle_notes(run_dir: Path, frontier: str, notes: str, cycle_num: int) -
     data = {
         "last_cycle": cycle_num,
         "last_cycle_summary": (
-            f"Last planning cycle ({cycle_num}) assessment: {frontier}\n"
-            f"Notes: {notes}"
+            f"Last planning cycle ({cycle_num}) assessment: {frontier}\nNotes: {notes}"
         ),
     }
     notes_path.write_text(json.dumps(data, indent=2))

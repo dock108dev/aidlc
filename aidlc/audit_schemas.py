@@ -2,7 +2,6 @@
 
 from .schemas import parse_json_output
 
-
 AUDIT_MODULE_ANALYSIS_PROMPT = """\
 Analyze the following source code module and return a JSON assessment.
 

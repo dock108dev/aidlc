@@ -8,14 +8,13 @@ import subprocess
 import time
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
-from .models import RunState, RunPhase, Issue, IssueStatus
-from .state_manager import save_state
-from .test_parser import parse_test_failures, TestFailure
-from .test_profiles import detect_test_profile
-from .validation_issues import create_fix_issues
 from .context_utils import parse_project_type
+from .models import Issue, IssueStatus, RunPhase, RunState
+from .state_manager import save_state
+from .test_parser import FailureReport, parse_test_failures
+from .test_profiles import detect_test_profile
 from .timing import add_console_time
+from .validation_issues import create_fix_issues
 
 
 class Validator:
@@ -26,7 +25,7 @@ class Validator:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
@@ -61,7 +60,9 @@ class Validator:
         # Check if we have any test commands at all
         has_tests = any(v for v in self.test_profile.values() if v)
         if not has_tests:
-            if self.config.get("strict_validation") and not self.config.get("validation_allow_no_tests", True):
+            if self.config.get("strict_validation") and not self.config.get(
+                "validation_allow_no_tests", True
+            ):
                 self.logger.error(
                     "No test commands detected and strict validation forbids skipping."
                 )
@@ -79,12 +80,14 @@ class Validator:
             all_passed, failures, tier_results = self._run_test_tiers()
 
             # Record results
-            self.state.validation_test_results.append({
-                "cycle": cycle + 1,
-                "passed": all_passed,
-                "failure_count": len(failures),
-                "tier_results": tier_results,
-            })
+            self.state.validation_test_results.append(
+                {
+                    "cycle": cycle + 1,
+                    "passed": all_passed,
+                    "failure_count": len(failures),
+                    "tier_results": tier_results,
+                }
+            )
             save_state(self.state, self.run_dir)
 
             if all_passed:
@@ -107,7 +110,8 @@ class Validator:
             existing_ids = {d["id"] for d in self.state.issues}
             fix_counter = self.state.validation_issues_created + 1
             new_issues = create_fix_issues(
-                failures, existing_ids,
+                failures,
+                existing_ids,
                 max_issues=self.batch_size,
                 base_id_counter=fix_counter,
             )
@@ -160,11 +164,13 @@ class Validator:
             self.logger.info(f"  Running {tier} tests: {command}")
             passed, output = self._run_command(command)
 
-            tier_results.append({
-                "tier": tier,
-                "command": command,
-                "passed": passed,
-            })
+            tier_results.append(
+                {
+                    "tier": tier,
+                    "command": command,
+                    "passed": passed,
+                }
+            )
 
             if not passed:
                 failures = parse_test_failures(output) if output else []
@@ -174,12 +180,14 @@ class Validator:
                         excerpt = excerpt[-500:]
                     else:
                         excerpt = "Command exited non-zero with no output."
-                    failures = [TestFailure(
-                        test_name=f"{tier} command failed",
-                        assertion=f"Command `{command}` failed",
-                        stack_trace=excerpt,
-                        framework="generic",
-                    )]
+                    failures = [
+                        FailureReport(
+                            test_name=f"{tier} command failed",
+                            assertion=f"Command `{command}` failed",
+                            stack_trace=excerpt,
+                            framework="generic",
+                        )
+                    ]
                 all_failures.extend(failures)
                 self.logger.info(f"  {tier}: FAILED ({len(failures)} failures parsed)")
 
@@ -229,8 +237,12 @@ class Validator:
 
         # Create a mini implementer for just these fixes
         implementer = Implementer(
-            self.state, self.run_dir, self.config,
-            self.cli, self.project_context, self.logger,
+            self.state,
+            self.run_dir,
+            self.config,
+            self.cli,
+            self.project_context,
+            self.logger,
         )
 
         # Implement each fix issue

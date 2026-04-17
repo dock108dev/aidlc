@@ -1,9 +1,9 @@
 """Tests for aidlc.precheck module."""
 
 import json
-import pytest
 
-from aidlc.precheck import run_precheck, PrecheckResult
+import pytest
+from aidlc.precheck import PrecheckResult, run_precheck
 
 
 @pytest.fixture

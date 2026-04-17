@@ -2,12 +2,12 @@
 
 import json
 import logging
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from aidlc.runner import init_run, scan_project, run_full
-from aidlc.models import RunState, RunStatus, RunPhase
+import pytest
+from aidlc.models import RunPhase, RunState, RunStatus
+from aidlc.runner import init_run, run_full, scan_project
 from aidlc.state_manager import save_state
 
 
@@ -25,12 +25,13 @@ def config(tmp_path):
         "_runs_dir": str(aidlc_dir / "runs"),
         "_reports_dir": str(aidlc_dir / "reports"),
         "_issues_dir": str(aidlc_dir / "issues"),
+        "providers": {
+            "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}
+        },
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
         "dry_run": True,
-        "claude_cli_command": "claude",
-        "claude_model": "opus",
-        "claude_timeout_seconds": 10,
+        "claude_hard_timeout_seconds": 10,
         "retry_max_attempts": 0,
         "retry_base_delay_seconds": 0.01,
         "retry_max_delay_seconds": 0.05,
@@ -139,5 +140,5 @@ class TestScanProject:
 
         logger = logging.getLogger("test_scan")
         state = RunState(run_id="t", config_name="c")
-        context = scan_project(state, config, logger)
+        scan_project(state, config, logger)
         assert state.docs_scanned >= 1

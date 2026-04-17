@@ -1,10 +1,10 @@
 """Tests for aidlc.auditor module."""
 
 import json
-import pytest
 
+import pytest
+from aidlc.audit_models import AuditConflict, AuditResult, CoverageInfo, ModuleInfo, TechDebtItem
 from aidlc.auditor import CodeAuditor
-from aidlc.audit_models import AuditResult, ModuleInfo, TechDebtItem, TestCoverageInfo, AuditConflict
 
 
 @pytest.fixture
@@ -22,10 +22,7 @@ def python_project(tmp_path):
     """Create a Python project structure for testing."""
     # Project config
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "myapp"\n\n'
-        "[project.dependencies]\n"
-        '"fastapi>=0.100"\n'
-        '"sqlalchemy>=2.0"\n'
+        '[project]\nname = "myapp"\n\n[project.dependencies]\n"fastapi>=0.100"\n"sqlalchemy>=2.0"\n'
     )
     (tmp_path / "README.md").write_text("# My App\nA web application.")
 
@@ -65,13 +62,17 @@ def python_project(tmp_path):
 @pytest.fixture
 def js_project(tmp_path):
     """Create a JavaScript project structure."""
-    (tmp_path / "package.json").write_text(json.dumps({
-        "name": "myapp",
-        "main": "src/index.js",
-        "scripts": {"start": "node src/index.js"},
-        "dependencies": {"express": "^4.18.0", "mongoose": "^7.0.0"},
-        "devDependencies": {"jest": "^29.0.0"},
-    }))
+    (tmp_path / "package.json").write_text(
+        json.dumps(
+            {
+                "name": "myapp",
+                "main": "src/index.js",
+                "scripts": {"start": "node src/index.js"},
+                "dependencies": {"express": "^4.18.0", "mongoose": "^7.0.0"},
+                "devDependencies": {"jest": "^29.0.0"},
+            }
+        )
+    )
     src = tmp_path / "src"
     src.mkdir()
     (src / "index.js").write_text("const express = require('express');\n")
@@ -201,15 +202,19 @@ class TestCodeAuditorQuickScan:
 
 
 class TestBraindumpGeneration:
-    def test_full_audit_generates_workload_capped_braindump(self, python_project, config, monkeypatch):
-        config.update({
-            "plan_budget_hours": 1,
-            "audit_planning_workload_stop_ratio": 0.5,  # 0.5h workload cap
-            "audit_research_estimate_default_hours": 0.4,
-            "audit_issue_estimate_defaults": {"high": 0.4, "medium": 0.3, "low": 0.2},
-            "audit_runtime_enabled": True,
-            "audit_braindump_enabled": True,
-        })
+    def test_full_audit_generates_workload_capped_braindump(
+        self, python_project, config, monkeypatch
+    ):
+        config.update(
+            {
+                "plan_budget_hours": 1,
+                "audit_planning_workload_stop_ratio": 0.5,  # 0.5h workload cap
+                "audit_research_estimate_default_hours": 0.4,
+                "audit_issue_estimate_defaults": {"high": 0.4, "medium": 0.3, "low": 0.2},
+                "audit_runtime_enabled": True,
+                "audit_braindump_enabled": True,
+            }
+        )
 
         cli = object()
         auditor = CodeAuditor(python_project, config, cli=cli)
@@ -224,9 +229,19 @@ class TestBraindumpGeneration:
             "run_runtime_checks",
             lambda _ptype: {
                 "tier_results": [
-                    {"tier": "build", "command": "echo build", "passed": True, "duration_seconds": 1},
+                    {
+                        "tier": "build",
+                        "command": "echo build",
+                        "passed": True,
+                        "duration_seconds": 1,
+                    },
                     {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
-                    {"tier": "integration", "command": "echo integ", "passed": True, "duration_seconds": 1},
+                    {
+                        "tier": "integration",
+                        "command": "echo integ",
+                        "passed": True,
+                        "duration_seconds": 1,
+                    },
                 ],
                 "overall_passed": True,
                 "build_health": "healthy",
@@ -246,13 +261,17 @@ class TestBraindumpGeneration:
         assert result.braindump_summary is not None
         assert result.braindump_summary["workload_budget_reached"] is True
 
-    def test_braindump_focuses_coverage_when_build_is_healthy(self, python_project, config, monkeypatch):
-        config.update({
-            "plan_budget_hours": 4,
-            "audit_runtime_enabled": True,
-            "audit_braindump_enabled": True,
-            "audit_coverage_threshold_percent": 85,
-        })
+    def test_braindump_focuses_coverage_when_build_is_healthy(
+        self, python_project, config, monkeypatch
+    ):
+        config.update(
+            {
+                "plan_budget_hours": 4,
+                "audit_runtime_enabled": True,
+                "audit_braindump_enabled": True,
+                "audit_coverage_threshold_percent": 85,
+            }
+        )
 
         cli = object()
         auditor = CodeAuditor(python_project, config, cli=cli)
@@ -263,7 +282,12 @@ class TestBraindumpGeneration:
             "run_runtime_checks",
             lambda _ptype: {
                 "tier_results": [
-                    {"tier": "build", "command": "echo build", "passed": True, "duration_seconds": 1},
+                    {
+                        "tier": "build",
+                        "command": "echo build",
+                        "passed": True,
+                        "duration_seconds": 1,
+                    },
                     {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
                 ],
                 "overall_passed": True,
@@ -308,9 +332,7 @@ class TestConflictDetection:
         assert any("billing" in c.audit_value for c in missing)
 
     def test_conflicts_file_written(self, python_project, config):
-        (python_project / "ARCHITECTURE.md").write_text(
-            "# Architecture\nThis is a Java project."
-        )
+        (python_project / "ARCHITECTURE.md").write_text("# Architecture\nThis is a Java project.")
         auditor = CodeAuditor(python_project, config)
         auditor.run(depth="quick")
         conflicts_path = python_project / ".aidlc" / "CONFLICTS.md"
@@ -326,12 +348,22 @@ class TestAuditModels:
             project_type="python",
             frameworks=["FastAPI"],
             entry_points=["main.py"],
-            modules=[ModuleInfo(name="app", path="app", file_count=5, line_count=200, role="services")],
+            modules=[
+                ModuleInfo(name="app", path="app", file_count=5, line_count=200, role="services")
+            ],
             directory_tree="app/\n  main.py",
             source_stats={"total_files": 5, "total_lines": 200},
-            tech_debt=[TechDebtItem(file="app/main.py", line=10, type="todo", text="TODO: fix this")],
-            test_coverage=TestCoverageInfo(test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"),
-            conflicts=[AuditConflict(doc_path="ARCH.md", field="type", audit_value="python", user_value="java")],
+            tech_debt=[
+                TechDebtItem(file="app/main.py", line=10, type="todo", text="TODO: fix this")
+            ],
+            test_coverage=CoverageInfo(
+                test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"
+            ),
+            conflicts=[
+                AuditConflict(
+                    doc_path="ARCH.md", field="type", audit_value="python", user_value="java"
+                )
+            ],
             runtime_checks={"overall_passed": False},
             braindump_summary={"focus": "ci_build_test_stabilization"},
         )
@@ -348,7 +380,14 @@ class TestAuditModels:
         assert restored.braindump_summary["focus"] == "ci_build_test_stabilization"
 
     def test_module_info_serialization(self):
-        m = ModuleInfo(name="api", path="src/api", file_count=3, line_count=100, role="api", key_files=["routes.py"])
+        m = ModuleInfo(
+            name="api",
+            path="src/api",
+            file_count=3,
+            line_count=100,
+            role="api",
+            key_files=["routes.py"],
+        )
         d = m.to_dict()
         restored = ModuleInfo.from_dict(d)
         assert restored.name == "api"

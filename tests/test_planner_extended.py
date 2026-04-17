@@ -2,11 +2,11 @@
 
 import json
 import logging
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+from aidlc.models import Issue, RunState
 from aidlc.planner import Planner
-from aidlc.models import RunState, Issue
 from aidlc.planner_helpers import write_planning_index
 
 
@@ -41,35 +41,40 @@ def make_planning_response(actions=None, frontier="Assessed", notes="Notes"):
 
 class TestPlanningCycleWithRealOutput:
     def test_creates_issues_from_claude_output(self, config, logger, tmp_path):
-        response = make_planning_response(actions=[
-            {
-                "action_type": "create_issue",
-                "rationale": "Need auth",
-                "issue_id": "ISSUE-001",
-                "title": "Add authentication",
-                "description": "Implement auth module",
-                "priority": "high",
-                "labels": ["feature"],
-                "dependencies": [],
-                "acceptance_criteria": ["Login works", "Logout works"],
-            },
-            {
-                "action_type": "create_issue",
-                "rationale": "Need tests",
-                "issue_id": "ISSUE-002",
-                "title": "Add auth tests",
-                "description": "Test auth module",
-                "priority": "medium",
-                "labels": ["test"],
-                "dependencies": ["ISSUE-001"],
-                "acceptance_criteria": ["All tests pass"],
-            },
-        ])
+        response = make_planning_response(
+            actions=[
+                {
+                    "action_type": "create_issue",
+                    "rationale": "Need auth",
+                    "issue_id": "ISSUE-001",
+                    "title": "Add authentication",
+                    "description": "Implement auth module",
+                    "priority": "high",
+                    "labels": ["feature"],
+                    "dependencies": [],
+                    "acceptance_criteria": ["Login works", "Logout works"],
+                },
+                {
+                    "action_type": "create_issue",
+                    "rationale": "Need tests",
+                    "issue_id": "ISSUE-002",
+                    "title": "Add auth tests",
+                    "description": "Test auth module",
+                    "priority": "medium",
+                    "labels": ["test"],
+                    "dependencies": ["ISSUE-001"],
+                    "acceptance_criteria": ["All tests pass"],
+                },
+            ]
+        )
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 5.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 5.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -88,9 +93,12 @@ class TestPlanningCycleWithRealOutput:
         response = make_planning_response(actions=[])
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -102,13 +110,24 @@ class TestPlanningCycleWithRealOutput:
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         from aidlc.models import Issue
+
         issue = Issue(id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"])
         state.update_issue(issue)
         doc_files = [
             {"path": "ROADMAP.md", "content": "Phase 1\n- A\n- B", "priority": 0, "size": 16},
-            {"path": "ARCHITECTURE.md", "content": "Components and flow", "priority": 0, "size": 19},
+            {
+                "path": "ARCHITECTURE.md",
+                "content": "Components and flow",
+                "priority": 0,
+                "size": 19,
+            },
             {"path": "DESIGN.md", "content": "Patterns and conventions", "priority": 0, "size": 24},
-            {"path": "CLAUDE.md", "content": "Agent rules and constraints", "priority": 0, "size": 27},
+            {
+                "path": "CLAUDE.md",
+                "content": "Agent rules and constraints",
+                "priority": 0,
+                "size": 27,
+            },
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
@@ -118,9 +137,12 @@ class TestPlanningCycleWithRealOutput:
     def test_invalid_json_counts_as_failure(self, config, logger, tmp_path):
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": "Just some text with no JSON",
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": "Just some text with no JSON",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -137,9 +159,12 @@ class TestPlanningCycleWithRealOutput:
         response = make_planning_response(actions=[])
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -152,20 +177,25 @@ class TestPlanningCycleWithRealOutput:
         assert "failures" in (state.stop_reason or "").lower()
 
     def test_validation_errors_fail_cycle(self, config, logger, tmp_path):
-        response = make_planning_response(actions=[
-            {
-                "action_type": "create_issue",
-                "rationale": "Need auth",
-                "issue_id": "ISSUE-001",
-                "title": "Add authentication",
-                # Missing required description + acceptance_criteria
-            },
-        ])
+        response = make_planning_response(
+            actions=[
+                {
+                    "action_type": "create_issue",
+                    "rationale": "Need auth",
+                    "issue_id": "ISSUE-001",
+                    "title": "Add authentication",
+                    # Missing required description + acceptance_criteria
+                },
+            ]
+        )
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -178,21 +208,26 @@ class TestPlanningCycleWithRealOutput:
         assert "failures" in (state.stop_reason or "").lower()
 
     def test_cycle_fails_when_all_actions_error(self, config, logger, tmp_path):
-        response = make_planning_response(actions=[
-            {
-                "action_type": "create_issue",
-                "rationale": "Need auth",
-                "issue_id": "ISSUE-001",
-                "title": "Add authentication",
-                "description": "desc",
-                "acceptance_criteria": ["AC1"],
-            },
-        ])
+        response = make_planning_response(
+            actions=[
+                {
+                    "action_type": "create_issue",
+                    "rationale": "Need auth",
+                    "issue_id": "ISSUE-001",
+                    "title": "Add authentication",
+                    "description": "desc",
+                    "acceptance_criteria": ["AC1"],
+                },
+            ]
+        )
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -210,11 +245,21 @@ class TestBuildPrompt:
     def test_includes_existing_issues(self, config, logger, tmp_path):
         state = RunState(run_id="test", config_name="default")
         state.issues = [
-            {"id": "ISSUE-001", "title": "Existing", "description": "D",
-             "priority": "high", "labels": [], "dependencies": [],
-             "acceptance_criteria": ["AC1"], "status": "pending",
-             "implementation_notes": "", "verification_result": "",
-             "files_changed": [], "attempt_count": 0, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "Existing",
+                "description": "D",
+                "priority": "high",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -340,6 +385,7 @@ class TestBuildPrompt:
 class TestApplyActionEdgeCases:
     def test_update_unknown_issue_warns(self, config, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         state = RunState(run_id="test", config_name="default")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -354,6 +400,7 @@ class TestApplyActionEdgeCases:
 
     def test_update_doc(self, config, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         state = RunState(run_id="test", config_name="default")
         # Create initial doc
         doc_path = tmp_path / "docs" / "design.md"
@@ -378,22 +425,27 @@ class TestCheckpointDuringPlanning:
     def test_checkpoint_fires(self, config, logger, tmp_path):
         config["checkpoint_interval_minutes"] = 0  # Checkpoint every cycle
         config["max_planning_cycles"] = 1
-        response = make_planning_response(actions=[
-            {
-                "action_type": "create_issue",
-                "rationale": "Need it",
-                "issue_id": "ISSUE-001",
-                "title": "T",
-                "description": "D",
-                "priority": "high",
-                "acceptance_criteria": ["AC"],
-            },
-        ])
+        response = make_planning_response(
+            actions=[
+                {
+                    "action_type": "create_issue",
+                    "rationale": "Need it",
+                    "issue_id": "ISSUE-001",
+                    "title": "T",
+                    "description": "D",
+                    "priority": "high",
+                    "acceptance_criteria": ["AC"],
+                },
+            ]
+        )
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": response,
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": response,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="test", config_name="default")
         state.plan_budget_seconds = 3600
@@ -416,8 +468,11 @@ class TestRenderIssueMd:
         run_dir.mkdir()
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         issue = Issue(
-            id="ISSUE-001", title="Test", description="Desc",
-            priority="high", labels=["feature"],
+            id="ISSUE-001",
+            title="Test",
+            description="Desc",
+            priority="high",
+            labels=["feature"],
             dependencies=["ISSUE-000"],
             acceptance_criteria=["AC1", "AC2"],
         )

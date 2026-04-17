@@ -12,23 +12,24 @@ Usage:
     aidlc run --plan-only                  # planning only
     aidlc run --implement-only             # skip planning, use existing issues
     aidlc run --resume                     # resume previous run
-    aidlc run --dry-run                    # no Claude calls
+    aidlc run --dry-run                    # no AI provider calls
 """
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import load_config, get_run_dir, get_reports_dir, get_issues_dir
-from .models import RunState, RunStatus, RunPhase
-from .state_manager import generate_run_id, save_state, load_state, checkpoint, find_latest_run, RunLock
-from .logger import setup_logger
-from .claude_cli import ClaudeCLI
-from .scanner import ProjectScanner
-from .planner import Planner
+from .config import get_reports_dir, get_run_dir
 from .implementer import Implementer
+from .logger import setup_logger
+from .models import Issue, RunPhase, RunState, RunStatus
+from .planner import Planner
 from .reporting import generate_run_report
+from .routing import ProviderRouter
+from .scanner import ProjectScanner
+from .state_manager import RunLock, find_latest_run, generate_run_id, load_state, save_state
 
 
 def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]:
@@ -69,6 +70,10 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     with open(run_dir / "config_snapshot.json", "w") as f:
         serializable = {k: v for k, v in config.items() if not k.startswith("_")}
         json.dump(serializable, f, indent=2)
+    try:
+        os.chmod(run_dir / "config_snapshot.json", 0o600)
+    except OSError:
+        pass
 
     return state, run_dir
 
@@ -92,23 +97,48 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     # Build base context
     context = scanner.build_context_prompt(scan_result)
 
-    # Claude has file access (allow_edits=True) so it can read docs directly.
+    # The active provider has file access (allow_edits=True) so it can read docs directly.
     # No need to paste everything into the prompt or generate summaries.
     # Just note total doc size for logging.
     doc_files = scan_result["doc_files"]
     total_doc_chars = sum(d["size"] for d in doc_files)
     if total_doc_chars > 80000:
-        logger.info(f"Large project: {total_doc_chars:,} chars across {len(doc_files)} docs (Claude will read files directly)")
+        logger.info(
+            f"Large project: {total_doc_chars:,} chars across {len(doc_files)} docs "
+            "(provider will read files directly)"
+        )
 
     state.project_context = context[:2000]  # Save summary to state
 
-    logger.info(f"Scanned {scan_result['total_docs']} docs, project type: {scan_result['project_type']}")
+    logger.info(
+        f"Scanned {scan_result['total_docs']} docs, project type: {scan_result['project_type']}"
+    )
 
     existing = scan_result.get("existing_issues", [])
     if existing:
         logger.info(f"Found {len(existing)} existing issues from previous runs")
 
     return context, scan_result
+
+
+def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
+    """Load parsed issue files from scan results into run state.
+
+    Issue markdown under .aidlc/issues is treated as the source of truth for
+    backlog/status when starting a new run or scanning fresh before execution.
+    """
+    existing = scan_result.get("existing_issues", []) or []
+    loaded = 0
+    for entry in existing:
+        parsed = entry.get("parsed_issue")
+        if not isinstance(parsed, dict) or not parsed.get("id"):
+            continue
+        state.update_issue(Issue.from_dict(parsed))
+        loaded += 1
+
+    if loaded:
+        state.total_issues = len(state.issues)
+        logger.info(f"Hydrated {loaded} existing issue(s) into run state")
 
 
 def run_full(
@@ -143,12 +173,14 @@ def run_full(
     logger.info(f"Plan budget: {state.plan_budget_seconds / 3600:.1f}h")
     logger.info(f"Dry run: {config.get('dry_run', False)}")
 
-    # Init Claude CLI
-    cli = ClaudeCLI(config, logger)
+    # Init provider router for all AI execution phases.
+    cli = ProviderRouter(config, logger)
     if not cli.check_available():
-        logger.warning("Claude CLI not available.")
+        logger.warning("No AI provider available.")
         if not config.get("dry_run"):
-            logger.error("Install Claude CLI or use --dry-run. Exiting.")
+            logger.error(
+                "Install a supported provider CLI (claude, copilot, codex) or use --dry-run. Exiting."
+            )
             lock.release()
             sys.exit(1)
 
@@ -161,6 +193,7 @@ def run_full(
                 from .auditor import CodeAuditor
 
                 state.phase = RunPhase.AUDITING
+                cli.set_phase("audit")
                 state.audit_depth = audit
                 logger.info(f"Running {audit} code audit...")
 
@@ -190,12 +223,14 @@ def run_full(
 
         # SCAN — always scan (even on resume, to get fresh context)
         project_context, scan_result = scan_project(state, config, logger, cli=cli)
+        hydrate_existing_issues(state, scan_result, logger)
         save_state(state, run_dir)
 
         # DOC-GAP DETECTION — scan docs for TBD/placeholder markers
         doc_gaps = []
         if config.get("doc_gap_detection_enabled", True) and not implement_only:
             from .doc_gap_detector import detect_doc_gaps
+
             doc_gaps = detect_doc_gaps(Path(config["_project_root"]), config)
             if doc_gaps:
                 critical = sum(1 for g in doc_gaps if g.severity == "critical")
@@ -206,11 +241,23 @@ def run_full(
 
         # PLAN
         if not implement_only:
-            if state.phase in (RunPhase.INIT, RunPhase.SCANNING, RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION):
+            if state.phase in (
+                RunPhase.INIT,
+                RunPhase.SCANNING,
+                RunPhase.PLANNING,
+                RunPhase.PLAN_FINALIZATION,
+            ):
+                cli.set_phase("planning")
                 planner = Planner(
-                    state, run_dir, config, cli, project_context, logger,
+                    state,
+                    run_dir,
+                    config,
+                    cli,
+                    project_context,
+                    logger,
                     doc_gaps=doc_gaps,
                     doc_files=scan_result.get("doc_files", []),
+                    existing_issues=scan_result.get("existing_issues", []),
                 )
                 planner.run()
                 save_state(state, run_dir)
@@ -222,6 +269,7 @@ def run_full(
         else:
             # IMPLEMENT
             if state.issues:
+                cli.set_phase("implementation")
                 implementer = Implementer(state, run_dir, config, cli, project_context, logger)
                 verification_ok = implementer.run()
                 save_state(state, run_dir)
@@ -263,9 +311,7 @@ def run_full(
                 )
                 if config.get("strict_validation") or config.get("fail_on_validation_incomplete"):
                     state.status = RunStatus.PAUSED
-                    state.stop_reason = (
-                        "Validation incomplete under strict validation settings"
-                    )
+                    state.stop_reason = "Validation incomplete under strict validation settings"
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
                     return

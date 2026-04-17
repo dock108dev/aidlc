@@ -4,20 +4,40 @@ import subprocess
 import time
 from pathlib import Path
 
+from .implementer_helpers import (
+    build_implementation_prompt,
+    detect_test_command,
+    ensure_test_deps,
+    fix_failing_tests,
+    implementation_instructions,
+)
+from .implementer_issue_order import sort_issues_for_implementation
+from .implementer_signals import (
+    compact_error_text,
+    is_all_models_token_exhausted,
+    is_no_models_available,
+    sample_error_payload,
+    should_stop_for_provider_availability,
+)
+from .implementer_workspace import (
+    get_changed_files,
+    git_commit_cycle_snapshot,
+    git_current_branch,
+    git_has_changes,
+    git_push_current_branch,
+    prune_aidlc_data,
+)
+from .logger import log_checkpoint
+from .models import Issue, IssueStatus, RunPhase, RunState
+from .planner_helpers import render_issue_md
+from .reporting import generate_checkpoint_summary
+from .schemas import (
+    ImplementationResult,
+    parse_implementation_result,
+)
+from .state_manager import checkpoint, save_state
 from .timing import add_console_time
 
-from .models import RunState, RunPhase, Issue, IssueStatus
-from .schemas import (
-    ImplementationResult, parse_implementation_result,
-)
-from .claude_cli import ClaudeCLI
-from .state_manager import save_state, checkpoint
-from .reporting import generate_checkpoint_summary
-from .logger import log_checkpoint
-from .implementer_helpers import (
-    build_implementation_prompt, detect_test_command, ensure_test_deps,
-    fix_failing_tests, implementation_instructions,
-)
 
 class Implementer:
     """Runs the implementation phase of an AIDLC session."""
@@ -27,7 +47,7 @@ class Implementer:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
@@ -42,14 +62,6 @@ class Implementer:
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
         self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
-        self.implementation_default_model = config.get(
-            "claude_model_implementation",
-            config.get("claude_model", "sonnet"),
-        )
-        self.implementation_complex_model = config.get(
-            "claude_model_implementation_complex",
-            "opus",
-        )
         self.escalate_on_retry = config.get("implementation_escalate_on_retry", True)
         self.complexity_ac_threshold = max(
             1, int(config.get("implementation_complexity_acceptance_criteria_threshold", 6))
@@ -73,10 +85,30 @@ class Implementer:
             default_labels,
         )
         self.complexity_labels = {
-            str(label).strip().lower()
-            for label in raw_complexity_labels
-            if str(label).strip()
+            str(label).strip().lower() for label in raw_complexity_labels if str(label).strip()
         }
+        self.issues_dir = Path(config["_issues_dir"])
+
+        self.autosync_enabled = bool(config.get("autosync_enabled", True))
+        self.autosync_every_cycles = max(
+            1, int(config.get("autosync_every_implementation_cycles", 25) or 25)
+        )
+        self.autosync_push_remote = bool(config.get("autosync_push_remote", True))
+        self.autosync_issue_status_sync = bool(config.get("autosync_issue_status_sync", True))
+        self.autosync_commit_message_template = str(
+            config.get(
+                "autosync_commit_message_template",
+                "aidlc: autosync after implementation cycle {cycle}",
+            )
+        )
+        self.autosync_prune_enabled = bool(config.get("autosync_prune_enabled", True))
+        self.autosync_runs_to_keep = max(1, int(config.get("autosync_runs_to_keep", 5) or 5))
+        self.autosync_keep_claude_outputs = max(
+            1, int(config.get("autosync_keep_claude_outputs", 200) or 200)
+        )
+        self.stop_on_all_models_token_exhausted = bool(
+            config.get("stop_on_all_models_token_exhausted", True)
+        )
 
     def run(self) -> bool:
         """Run implementation loop until all issues are resolved.
@@ -132,7 +164,8 @@ class Implementer:
             if not pending:
                 # Check if we're truly stuck (all remaining are blocked/exhausted)
                 blocked_count = sum(
-                    1 for d in self.state.issues
+                    1
+                    for d in self.state.issues
                     if d.get("status") in ("pending", "blocked", "failed")
                 )
                 if blocked_count > 0:
@@ -174,7 +207,16 @@ class Implementer:
                         self.logger.error(self.state.stop_reason)
                         break
 
+            if should_stop_for_provider_availability(self.state.stop_reason):
+                self.logger.error(
+                    "Stopping implementation loop due to provider/model availability."
+                )
+                break
+
             save_state(self.state, self.run_dir)
+
+            if self._should_autosync():
+                self._autosync_progress()
 
             # Checkpoint
             if time.time() - last_checkpoint_time >= checkpoint_interval:
@@ -184,6 +226,14 @@ class Implementer:
                 generate_checkpoint_summary(self.state, reports_dir)
                 log_checkpoint(self.logger, self.state.to_dict())
                 last_checkpoint_time = time.time()
+
+        if self.state.stop_reason and not self.state.all_issues_resolved():
+            self.logger.info(
+                "Skipping final verification because implementation stopped early: "
+                f"{self.state.stop_reason}"
+            )
+            save_state(self.state, self.run_dir)
+            return False
 
         # Final verification pass
         self.logger.info("Running final verification pass...")
@@ -198,21 +248,26 @@ class Implementer:
         issue.attempt_count += 1
         self.state.current_issue_id = issue.id
         self.state.update_issue(issue)
+        self._sync_issue_markdown(issue)
 
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
         self.logger.debug(f"Implementation prompt: {len(prompt)} chars")
-        model_override = self._select_implementation_model(issue)
+        is_complex = self._is_complex_issue(issue)
+        # Signal complexity to router so it can apply phase-aware model selection
+        if hasattr(self.cli, "set_complexity"):
+            complexity = "complex" if is_complex else "normal"
+            self.cli.set_complexity(complexity)
 
-        # Execute Claude with file edit permissions
+        # Execute with file edit permissions; router selects provider/model.
         start_time = time.time()
         result = self.cli.execute_prompt(
             prompt,
             self.project_root,
             allow_edits=True,
-            model_override=model_override,
         )
-        self.state.record_claude_result(result, self.config)
+        self._log_provider_result(issue, result)
+        self.state.record_provider_result(result, self.config, phase="implementation")
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration
 
@@ -224,10 +279,29 @@ class Implementer:
             (output_dir / f"impl_{issue.id}_{issue.attempt_count:02d}.md").write_text(output_text)
 
         if not result["success"]:
-            self.logger.error(f"Implementation of {issue.id} failed: {result.get('error')}")
+            sampled_error = sample_error_payload(result.get("error"))
+            compact_error = compact_error_text(sampled_error)
+            self.logger.error(f"Implementation of {issue.id} failed: {compact_error}")
+            if is_all_models_token_exhausted(result):
+                message = (
+                    "All available models/providers appear out of tokens or quota; "
+                    "stopping run to allow safe resume later."
+                )
+                self.state.stop_reason = message
+                self.logger.error(message)
+            elif is_no_models_available(result):
+                message = (
+                    "No models/providers are currently available; "
+                    "saving state and exiting for clean resume."
+                )
+                self.state.stop_reason = message
+                self.logger.error(message)
             issue.status = IssueStatus.FAILED
-            issue.implementation_notes += f"\nAttempt {issue.attempt_count} failed: {result.get('error')}"
+            issue.implementation_notes += (
+                f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_error}"
+            )
             self.state.update_issue(issue)
+            self._sync_issue_markdown(issue)
             return False
 
         # Parse implementation result
@@ -293,7 +367,7 @@ class Implementer:
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
                 # Give Claude a chance to fix
-                fix_success = self._fix_failing_tests(issue, model_override=model_override)
+                fix_success = self._fix_failing_tests(issue)
                 if fix_success:
                     impl_result.tests_passed = True
                 else:
@@ -333,15 +407,23 @@ class Implementer:
             issue.files_changed = impl_result.files_changed
             issue.implementation_notes += f"\nAttempt {issue.attempt_count}: {impl_result.summary}"
             self.state.issues_implemented += 1
-            self.logger.info(f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)")
+            self.logger.info(
+                f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)"
+            )
         else:
+            sampled_notes = sample_error_payload(impl_result.notes)
             issue.status = IssueStatus.FAILED
-            issue.implementation_notes += f"\nAttempt {issue.attempt_count} failed: {impl_result.notes}"
+            issue.implementation_notes += (
+                f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_notes}"
+            )
             self.state.issues_failed += 1
-            self.logger.warning(f"Failed to implement {issue.id}: {impl_result.notes}")
+            self.logger.warning(
+                f"Failed to implement {issue.id}: {compact_error_text(sampled_notes)}"
+            )
 
         self.state.current_issue_id = None
         self.state.update_issue(issue)
+        self._sync_issue_markdown(issue)
         return impl_result.success
 
     def _build_implementation_prompt(self, issue: Issue) -> str:
@@ -354,8 +436,8 @@ class Implementer:
         """Give Claude a chance to fix failing tests."""
         return fix_failing_tests(self, issue, model_override=model_override)
 
-    def _select_implementation_model(self, issue: Issue) -> str:
-        """Select model for an issue, escalating to complex model when warranted."""
+    def _is_complex_issue(self, issue: Issue) -> bool:
+        """Return whether an issue should use the complex implementation path."""
         is_complex = False
         reasons = []
 
@@ -381,14 +463,26 @@ class Implementer:
                 is_complex = True
                 reasons.append("labels")
 
-        selected = self.implementation_complex_model if is_complex else self.implementation_default_model
         if reasons:
             self.logger.info(
-                f"{issue.id}: using model '{selected}' (complexity: {', '.join(reasons)})"
+                f"{issue.id}: using implementation_complex routing (complexity: {', '.join(reasons)})"
             )
         else:
-            self.logger.info(f"{issue.id}: using model '{selected}'")
-        return selected
+            self.logger.info(f"{issue.id}: using standard implementation routing")
+        return is_complex
+
+    def _log_provider_result(self, issue: Issue, result: dict) -> None:
+        """Log which provider/model handled an implementation call."""
+        provider = str(result.get("provider_id") or "unknown")
+        model = str(result.get("model_used") or "unknown")
+        routing = result.get("routing_decision") or {}
+        requested_model = str(routing.get("model") or model)
+        if model != requested_model and model != "unknown":
+            self.logger.info(
+                f"{issue.id}: model {provider}/{model} (requested {provider}/{requested_model})"
+            )
+        else:
+            self.logger.info(f"{issue.id}: model {provider}/{requested_model}")
 
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
@@ -444,6 +538,7 @@ class Implementer:
                 # Mark as verified (tests already passed during implementation)
                 issue.status = IssueStatus.VERIFIED
                 self.state.update_issue(issue)
+                self._sync_issue_markdown(issue)
                 self.state.issues_verified += 1
 
         # Run full test suite one last time
@@ -461,109 +556,87 @@ class Implementer:
         return True
 
     def _sort_issues(self) -> bool:
-        """Sort issues by priority and dependency order (topological).
-
-        Detects circular dependencies and logs explicit warnings.
-        Issues in cycles have their circular deps removed so they can proceed.
-        """
-        priority_order = {"high": 0, "medium": 1, "low": 2}
-
-        # Build dependency graph
-        id_to_issue = {d["id"]: d for d in self.state.issues}
-        sorted_ids = []
-        visited = set()
-        temp_visited = set()
-        cycle_members = set()
-
-        def visit(issue_id: str, path: list[str]) -> None:
-            if issue_id in visited:
-                return
-            if issue_id in temp_visited:
-                # Found a cycle — log it explicitly
-                cycle_start = path.index(issue_id)
-                cycle = path[cycle_start:] + [issue_id]
-                cycle_str = " -> ".join(cycle)
-                self.logger.error(
-                    f"Circular dependency detected: {cycle_str}. "
-                    "Manual resolution required."
-                )
-                for cid in cycle[:-1]:
-                    cycle_members.add(cid)
-                return
-            temp_visited.add(issue_id)
-            issue = id_to_issue.get(issue_id, {})
-            for dep in issue.get("dependencies", []):
-                if dep in id_to_issue:
-                    visit(dep, path + [issue_id])
-            temp_visited.discard(issue_id)
-            visited.add(issue_id)
-            sorted_ids.append(issue_id)
-
-        # Visit in priority order
-        priority_sorted = sorted(
-            self.state.issues,
-            key=lambda d: priority_order.get(d.get("priority", "medium"), 1),
+        """Sort issues by priority and dependency order (topological)."""
+        return sort_issues_for_implementation(
+            self.state, self.logger, self._sync_all_issue_markdown
         )
-        for d in priority_sorted:
-            visit(d["id"], [])
-
-        # Handle circular deps from affected issues
-        if cycle_members:
-            self.logger.error(
-                f"{len(cycle_members)} issues involved in dependency cycles: "
-                f"{', '.join(sorted(cycle_members))}. Refusing to auto-remove dependencies."
-            )
-            return False
-
-        # Rebuild issues list in sorted order
-        new_issues = []
-        for iid in sorted_ids:
-            if iid in id_to_issue:
-                new_issues.append(id_to_issue[iid])
-        self.state.issues = new_issues
-        return True
 
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
-        detection_ok = True
-        proc = None
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "diff", "--name-only", "HEAD"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            detection_ok = False
-            self.logger.warning(f"Unable to run git diff for change detection: {e}")
-        finally:
-            add_console_time(self.state, t0)
-        if proc and proc.returncode == 0 and proc.stdout.strip():
-            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-            return (files, True) if with_status else files
-        # Also check untracked files
-        proc = None
-        t0 = time.time()
-        try:
-            proc = subprocess.run(
-                ["git", "ls-files", "--others", "--exclude-standard"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            detection_ok = False
-            self.logger.warning(f"Unable to run git ls-files for change detection: {e}")
-        finally:
-            add_console_time(self.state, t0)
-        if proc and proc.returncode == 0 and proc.stdout.strip():
-            files = [f.strip() for f in proc.stdout.strip().split("\n") if f.strip()]
-            return (files, True) if with_status else files
-        return ([], detection_ok) if with_status else []
+        return get_changed_files(self.project_root, self.state, self.logger, with_status)
 
     def _detect_test_command(self) -> str | None:
         return detect_test_command(self.project_root)
+
+    def _should_autosync(self) -> bool:
+        if not self.autosync_enabled or self.config.get("dry_run"):
+            return False
+        return self.state.implementation_cycles > 0 and (
+            self.state.implementation_cycles % self.autosync_every_cycles == 0
+        )
+
+    def _autosync_progress(self) -> None:
+        """Persist issue statuses, commit, push, and prune stale run artifacts."""
+        self.logger.info(
+            f"Autosync checkpoint at implementation cycle {self.state.implementation_cycles}"
+        )
+
+        if self.autosync_issue_status_sync:
+            self._sync_all_issue_markdown()
+
+        committed = self._git_commit_cycle_snapshot(self.state.implementation_cycles)
+        if committed and self.autosync_push_remote:
+            self._git_push_current_branch()
+
+        if self.autosync_prune_enabled:
+            self._prune_aidlc_data()
+
+    def _sync_issue_markdown(self, issue: Issue) -> None:
+        """Keep .aidlc issue markdown in sync with in-memory state status/notes."""
+        if not self.autosync_issue_status_sync:
+            return
+        try:
+            self.issues_dir.mkdir(parents=True, exist_ok=True)
+            issue_path = self.issues_dir / f"{issue.id}.md"
+            issue_path.write_text(render_issue_md(issue))
+        except OSError as e:
+            self.logger.warning(f"Failed to sync issue file for {issue.id}: {e}")
+
+    def _sync_all_issue_markdown(self) -> None:
+        for d in self.state.issues:
+            try:
+                self._sync_issue_markdown(Issue.from_dict(d))
+            except Exception as e:
+                issue_id = d.get("id", "unknown") if isinstance(d, dict) else "unknown"
+                self.logger.warning(f"Issue sync skipped for {issue_id}: {e}")
+
+    def _git_commit_cycle_snapshot(self, cycle_num: int) -> bool:
+        """Create an autosync commit when there are uncommitted changes."""
+        return git_commit_cycle_snapshot(
+            self.project_root,
+            cycle_num,
+            self.logger,
+            self.state,
+            self.autosync_commit_message_template,
+        )
+
+    def _git_push_current_branch(self) -> bool:
+        """Push the current branch to its configured upstream remote."""
+        return git_push_current_branch(self.project_root, self.logger, self.state)
+
+    def _git_current_branch(self) -> str | None:
+        return git_current_branch(self.project_root, self.state, self.logger)
+
+    def _git_has_changes(self) -> bool:
+        return git_has_changes(self.project_root, self.state, self.logger)
+
+    def _prune_aidlc_data(self) -> None:
+        """Prune stale .aidlc run artifacts while keeping current and most recent history."""
+        prune_aidlc_data(
+            self.project_root,
+            self.run_dir,
+            self.state,
+            self.logger,
+            self.autosync_runs_to_keep,
+            self.autosync_keep_claude_outputs,
+        )

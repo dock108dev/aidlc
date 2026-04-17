@@ -16,21 +16,19 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .finalize_prompts import (
+    ABEND_PROMPT,
+    CLEANUP_PROMPT,
+    DOCS_PROMPT,
     FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
     PASS_ORDER,
-    SSOT_PROMPT,
     SECURITY_PROMPT,
-    ABEND_PROMPT,
-    DOCS_PROMPT,
-    CLEANUP_PROMPT,
+    SSOT_PROMPT,
 )
-from .models import RunState, RunPhase
+from .models import RunPhase, RunState
 from .state_manager import save_state
 from .timing import add_console_time
-
 
 PASS_PROMPTS = {
     "ssot": SSOT_PROMPT,
@@ -49,7 +47,7 @@ class Finalizer:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
     ):
@@ -126,14 +124,12 @@ class Finalizer:
 
         # Execute Claude with edit permissions (no hard timeout — warns if long)
         start = time.time()
-        finalize_model = self.config.get("claude_model_finalization")
         result = self.cli.execute_prompt(
             prompt=prompt,
             working_dir=self.project_root,
             allow_edits=True,
-            model_override=finalize_model,
         )
-        self.state.record_claude_result(result, self.config)
+        self.state.record_provider_result(result, self.config, phase="finalization")
         duration = time.time() - start
 
         self.state.elapsed_seconds += duration
@@ -149,14 +145,13 @@ class Finalizer:
             self.state.finalize_passes_completed.append(pass_name)
             self.logger.info(f"Pass {pass_name} complete ({duration:.0f}s)")
         else:
-            self.logger.error(
-                f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)"
-            )
+            self.logger.error(f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)")
 
     def _refresh_config(self):
         """Re-detect project config after finalization (codebase may have changed)."""
         try:
             from .config_detect import detect_config, update_config_file
+
             detected = detect_config(self.project_root)
             if any(v for k, v in detected.items() if not k.startswith("_")):
                 self.logger.info("Refreshing config with post-finalization detection...")
@@ -216,8 +211,10 @@ class Finalizer:
             try:
                 result = subprocess.run(
                     ["git", "branch", "--show-current"],
-                    capture_output=True, text=True,
-                    cwd=str(self.project_root), timeout=10,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(self.project_root),
+                    timeout=10,
                 )
             finally:
                 add_console_time(self.state, t0)

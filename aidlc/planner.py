@@ -3,21 +3,15 @@
 Runs time-constrained planning sessions that:
 1. Scan repo docs to build project context
 2. Assess what planning work needs to be done
-3. Have Claude create issues with full specs and acceptance criteria
+3. Have the routed AI provider create issues with full specs and acceptance criteria
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
 import time
 from pathlib import Path
 
-from .models import RunState, RunPhase, Issue
-from .schemas import (
-    PlanningOutput, PlanningAction, parse_planning_output,
-)
-from .claude_cli import ClaudeCLI
-from .state_manager import save_state, checkpoint, save_cycle_snapshot
-from .reporting import generate_checkpoint_summary
 from .logger import log_checkpoint
+from .models import Issue, RunPhase, RunState
 from .planner_helpers import (
     assess_planning_foundation,
     build_prompt,
@@ -34,6 +28,13 @@ from .planner_text import (
     FINALIZATION_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
 )
+from .reporting import generate_checkpoint_summary
+from .schemas import (
+    PlanningAction,
+    PlanningOutput,
+    parse_planning_output,
+)
+from .state_manager import checkpoint, save_cycle_snapshot, save_state
 
 
 class Planner:
@@ -44,11 +45,12 @@ class Planner:
         state: RunState,
         run_dir: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         project_context: str,
         logger,
         doc_gaps: list | None = None,
         doc_files: list | None = None,
+        existing_issues: list | None = None,
     ):
         self.state = state
         self.run_dir = run_dir
@@ -57,6 +59,7 @@ class Planner:
         self.project_context = project_context
         self.doc_gaps = doc_gaps or []
         self.doc_files = doc_files or []
+        self.existing_issues = existing_issues or []
         self._research_count = 0
         self._last_cycle_notes = load_last_cycle_notes(self.run_dir)
         self.logger = logger
@@ -98,8 +101,7 @@ class Planner:
             budget_exhausted = self.state.is_plan_budget_exhausted()
             if (
                 not budget_exhausted
-                and
-                self.state.plan_elapsed_seconds
+                and self.state.plan_elapsed_seconds
                 >= self.state.plan_budget_seconds * finalization_threshold
                 and self.state.phase != RunPhase.PLAN_FINALIZATION
             ):
@@ -165,13 +167,15 @@ class Planner:
                     # Check if we've had enough empty cycles to trigger winding down
                     if (
                         len(recent_cycles) >= diminishing_returns_threshold
-                        and self.state.issues_created > 0
+                        and len(self.state.issues) > 0
                         and self._planning_foundation.get("ready", False)
                         and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                     ):
                         if not self._offer_completion:
                             self._offer_completion = True
-                            self.logger.info("Offering completion option after repeated empty cycles.")
+                            self.logger.info(
+                                "Offering completion option after repeated empty cycles."
+                            )
                         else:
                             self.state.stop_reason = "Planning frontier is clear"
                             self.logger.info("Planning complete after repeated empty cycles.")
@@ -179,7 +183,9 @@ class Planner:
             elif result is False:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
-                    self.state.stop_reason = f"{max_consecutive_failures} consecutive planning failures"
+                    self.state.stop_reason = (
+                        f"{max_consecutive_failures} consecutive planning failures"
+                    )
                     self.logger.error("Too many consecutive failures. Stopping planning.")
                     break
                 continue
@@ -196,7 +202,7 @@ class Planner:
                 # Check for winding down: last N cycles all had 0 new issues
                 if (
                     len(recent_cycles) >= diminishing_returns_threshold
-                    and self.state.issues_created > 0
+                    and len(self.state.issues) > 0
                     and self._planning_foundation.get("ready", False)
                     and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
                 ):
@@ -210,7 +216,9 @@ class Planner:
                     elif self._pending_completion_reason:
                         # Claude accepted the offer — honor it
                         self.state.stop_reason = self._pending_completion_reason
-                        self.logger.info(f"Planning complete (confirmed): {self._pending_completion_reason}")
+                        self.logger.info(
+                            f"Planning complete (confirmed): {self._pending_completion_reason}"
+                        )
                         break
                     else:
                         # Claude didn't declare complete but is still just updating
@@ -260,12 +268,14 @@ class Planner:
         self.logger.debug(f"Prompt size: {len(prompt)} chars")
 
         # Execute Claude with file access (can read project files + write issues/docs)
-        planning_model = self.config.get("claude_model_planning")
         start_time = time.time()
         result = self.cli.execute_prompt(
-            prompt, self.project_root, allow_edits=True, model_override=planning_model,
+            prompt,
+            self.project_root,
+            allow_edits=True,
         )
-        self.state.record_claude_result(result, self.config)
+        self._log_provider_result(cycle_num, result)
+        self.state.record_provider_result(result, self.config, phase="planning")
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
@@ -297,10 +307,20 @@ class Planner:
 
         # Validate — pre-register new issue IDs from this batch so
         # within-batch dependencies are allowed (e.g., ISSUE-018 depends on
-        # ISSUE-016, both created in the same cycle)
-        known_ids = {d["id"] for d in self.state.issues}
+        # ISSUE-016, both created in the same cycle).
+        # Include existing issues from previous runs so dependencies to them are valid.
+        # existing_issues are {"path": "...", "content": "..."} dicts — extract the
+        # issue ID from the filename stem (e.g. ".aidlc/issues/ISSUE-020.md" → "ISSUE-020").
+        from pathlib import Path as _Path
+
+        known_ids = {d["id"] for d in self.state.issues} | {
+            _Path(e["path"]).stem
+            for e in self.existing_issues
+            if e.get("path") and _Path(e["path"]).stem.upper().startswith("ISSUE")
+        }
         batch_new_ids = {
-            a.issue_id for a in planning_output.actions
+            a.issue_id
+            for a in planning_output.actions
             if a.action_type == "create_issue" and a.issue_id
         }
 
@@ -334,18 +354,18 @@ class Planner:
             and getattr(self, "_offer_completion", False)
             and foundation_ready
         ):
-            reason = planning_output.completion_reason or "Claude declared planning complete"
+            reason = planning_output.completion_reason or "planning completed"
             self._pending_completion_reason = f"Planning complete — {reason}"
-            self.logger.info(f"Claude signaled planning_complete (accepted): {reason}")
+            self.logger.info(f"Model signaled planning_complete (accepted): {reason}")
         elif planning_output.planning_complete:
             if not foundation_ready:
                 self.logger.warning(
-                    "Claude signaled planning_complete but planning docs are still incomplete "
+                    "Model signaled planning_complete but planning docs are still incomplete "
                     "(missing/thin foundation docs) — ignoring"
                 )
             else:
                 self.logger.info(
-                    "Claude signaled planning_complete but completion not yet offered — ignoring"
+                    "Model signaled planning_complete but completion not yet offered — ignoring"
                 )
 
         if not planning_output.actions:
@@ -386,9 +406,7 @@ class Planner:
                 action_errors.append(str(e))
 
         if action_errors and applied == 0:
-            self.logger.error(
-                f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored"
-            )
+            self.logger.error(f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored")
             return False
 
         if action_errors and total_actions:
@@ -404,6 +422,13 @@ class Planner:
             self.logger.warning(
                 f"Cycle {cycle_num} partial success: {len(action_errors)}/{total_actions} "
                 "actions failed but below failure threshold"
+            )
+
+        sanitized_changes = self._sanitize_issue_dependencies()
+        if sanitized_changes:
+            self.logger.info(
+                f"Cycle {cycle_num}: normalized dependency graph "
+                f"({sanitized_changes} change{'s' if sanitized_changes != 1 else ''})"
             )
 
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
@@ -464,7 +489,7 @@ class Planner:
                     existing.labels = action.labels
                 if action.acceptance_criteria:
                     existing.acceptance_criteria = action.acceptance_criteria
-                if action.dependencies:
+                if action.dependencies is not None:
                     existing.dependencies = action.dependencies
                 self.state.update_issue(existing)
 
@@ -483,12 +508,16 @@ class Planner:
             file_path.write_text(action.content)
             self._upsert_doc_file(action.file_path, action.content)
             self.state.files_created += 1
-            self.state.created_artifacts.append({
-                "path": action.file_path,
-                "type": "doc",
-                "action": "create" if action.action_type == "create_doc" else "update",
-            })
-            self.logger.info(f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}")
+            self.state.created_artifacts.append(
+                {
+                    "path": action.file_path,
+                    "type": "doc",
+                    "action": "create" if action.action_type == "create_doc" else "update",
+                }
+            )
+            self.logger.info(
+                f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}"
+            )
 
         elif action.action_type == "research":
             self._execute_research(action)
@@ -511,3 +540,156 @@ class Planner:
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""
         return render_issue_md(issue)
+
+    def _log_provider_result(self, cycle_num: int, result: dict) -> None:
+        """Log which provider/model handled the planning cycle."""
+        provider = str(result.get("provider_id") or "unknown")
+        model = str(result.get("model_used") or "unknown")
+        self.logger.info(f"  Planning Cycle {cycle_num} model: {provider}/{model}")
+
+    def _sanitize_issue_dependencies(self) -> int:
+        """Normalize dependency graph to avoid implementation stalls.
+
+        Rules:
+        - Remove self-dependencies.
+        - Remove dependencies pointing to missing issues.
+        - De-duplicate dependency lists while preserving order.
+        - Auto-break cycles by removing one circular edge per detected cycle.
+        """
+        if not self.state.issues:
+            return 0
+
+        priority_order = {"high": 0, "medium": 1, "low": 2}
+        id_to_issue = {d["id"]: d for d in self.state.issues if d.get("id")}
+        issue_ids = set(id_to_issue.keys())
+        touched: set[str] = set()
+        total_changes = 0
+
+        for issue_id, issue_data in id_to_issue.items():
+            deps = issue_data.get("dependencies") or []
+            if not isinstance(deps, list):
+                deps = []
+            cleaned: list[str] = []
+            seen: set[str] = set()
+            for dep in deps:
+                if not isinstance(dep, str):
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Dropped non-string dependency on {issue_id}: {dep!r}")
+                    continue
+                dep_norm = dep.strip().upper()
+                if not dep_norm:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Dropped empty dependency on {issue_id}")
+                    continue
+                if dep_norm == issue_id:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Removed self-dependency: {issue_id} -> {dep_norm}")
+                    continue
+                if dep_norm not in issue_ids:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(
+                        f"Removed unknown dependency: {issue_id} -> {dep_norm} (target missing)"
+                    )
+                    continue
+                if dep_norm in seen:
+                    total_changes += 1
+                    touched.add(issue_id)
+                    self.logger.warning(f"Removed duplicate dependency: {issue_id} -> {dep_norm}")
+                    continue
+                seen.add(dep_norm)
+                cleaned.append(dep_norm)
+            issue_data["dependencies"] = cleaned
+
+        def detect_cycles() -> list[list[str]]:
+            cycles: list[list[str]] = []
+            cycle_keys: set[tuple[str, ...]] = set()
+            visited: set[str] = set()
+            temp: set[str] = set()
+
+            def visit(issue_id: str, path: list[str]) -> None:
+                if issue_id in visited:
+                    return
+                if issue_id in temp:
+                    start = path.index(issue_id)
+                    cycle = path[start:] + [issue_id]
+                    key = tuple(sorted(cycle[:-1]))
+                    if key and key not in cycle_keys:
+                        cycle_keys.add(key)
+                        cycles.append(cycle)
+                    return
+                temp.add(issue_id)
+                for dep in id_to_issue.get(issue_id, {}).get("dependencies", []):
+                    if dep in id_to_issue:
+                        visit(dep, path + [issue_id])
+                temp.discard(issue_id)
+                visited.add(issue_id)
+
+            for issue_id in sorted(id_to_issue.keys()):
+                visit(issue_id, [])
+            return cycles
+
+        max_passes = max(1, len(id_to_issue) * 2)
+        for _ in range(max_passes):
+            cycles = detect_cycles()
+            if not cycles:
+                break
+
+            for cycle in cycles:
+                core = cycle[:-1]
+                if not core:
+                    continue
+                cycle_str = " -> ".join(cycle)
+                self.logger.warning(f"Circular dependency detected during planning: {cycle_str}")
+
+                candidate = max(
+                    core,
+                    key=lambda iid: (
+                        priority_order.get(id_to_issue.get(iid, {}).get("priority", "medium"), 1),
+                        len(id_to_issue.get(iid, {}).get("dependencies", [])),
+                        iid,
+                    ),
+                )
+                idx = core.index(candidate)
+                successor = cycle[idx + 1]
+                deps = list(id_to_issue.get(candidate, {}).get("dependencies", []))
+                removed = False
+                if successor in deps:
+                    deps.remove(successor)
+                    removed = True
+                else:
+                    for dep in deps:
+                        if dep in core:
+                            successor = dep
+                            deps.remove(dep)
+                            removed = True
+                            break
+                if removed:
+                    id_to_issue[candidate]["dependencies"] = deps
+                    touched.add(candidate)
+                    total_changes += 1
+                    self.logger.warning(
+                        f"Removed circular dependency edge during planning: {candidate} -> {successor}"
+                    )
+        else:
+            self.logger.error(
+                "Dependency sanitization exceeded max passes; unresolved cycles may remain."
+            )
+
+        if touched:
+            issues_dir = Path(self.config["_issues_dir"])
+            issues_dir.mkdir(parents=True, exist_ok=True)
+            for issue_id in sorted(touched):
+                issue_data = id_to_issue.get(issue_id)
+                if not issue_data:
+                    continue
+                issue = Issue.from_dict(issue_data)
+                self.state.update_issue(issue)
+                issue_path = issues_dir / f"{issue_id}.md"
+                issue_path.write_text(self._render_issue_md(issue))
+                self.logger.info(f"Updated issue dependencies: {issue_id}")
+
+        return total_changes

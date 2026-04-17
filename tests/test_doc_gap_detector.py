@@ -1,10 +1,11 @@
 """Tests for aidlc.doc_gap_detector module."""
 
-import pytest
 from pathlib import Path
+from unittest.mock import patch
 
-from aidlc.doc_gap_detector import detect_doc_gaps
+import pytest
 from aidlc.audit_models import DocGap
+from aidlc.doc_gap_detector import detect_doc_gaps
 
 
 @pytest.fixture
@@ -30,7 +31,9 @@ class TestDetectDocGaps:
         assert len(critical) >= 1
 
     def test_detects_needs_research(self, tmp_path, config):
-        (tmp_path / "ROADMAP.md").write_text("# Plan\n\nFormula needs research before implementation\n")
+        (tmp_path / "ROADMAP.md").write_text(
+            "# Plan\n\nFormula needs research before implementation\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 1
         assert any("research" in g.pattern.lower() for g in gaps)
@@ -81,6 +84,28 @@ class TestDetectDocGaps:
         gaps = detect_doc_gaps(tmp_path, config)
         assert gaps == []
 
+    def test_skips_doc_when_read_text_raises(self, tmp_path, config, caplog):
+        bad = tmp_path / "bad.md"
+        bad.write_text("ignored")
+        (tmp_path / "good.md").write_text("Still TBD here\n")
+        real_read = Path.read_text
+
+        def selective(self, *a, **kw):
+            if self.resolve() == bad.resolve():
+                raise OSError("unreadable")
+            return real_read(self, *a, **kw)
+
+        caplog.set_level("WARNING")
+        with patch.object(Path, "read_text", selective):
+            gaps = detect_doc_gaps(tmp_path, config)
+        assert any(g.doc_path == "good.md" for g in gaps)
+        assert "skipped" in caplog.text.lower()
+
+    def test_skips_backtick_wrapped_placeholder_info(self, tmp_path, config):
+        (tmp_path / "cfg.md").write_text("Set `{foo}` as the token.\n")
+        gaps = detect_doc_gaps(tmp_path, config)
+        assert gaps == []
+
     def test_no_gaps_in_clean_docs(self, tmp_path, config):
         (tmp_path / "README.md").write_text("# My Project\n\nA well-documented project.\n")
         (tmp_path / "ROADMAP.md").write_text("# Roadmap\n\n## Phase 1\nBuild the thing.\n")
@@ -89,15 +114,15 @@ class TestDetectDocGaps:
 
     def test_sorted_by_severity(self, tmp_path, config):
         (tmp_path / "mixed.md").write_text(
-            "Line 1: {placeholder}\n"
-            "Line 2: TBD\n"
-            "Line 3: design TBD\n"
+            "Line 1: {placeholder}\nLine 2: TBD\nLine 3: design TBD\n"
         )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 2
         # Critical should come first
         severities = [g.severity for g in gaps]
-        assert severities == sorted(severities, key=lambda s: {"critical": 0, "warning": 1, "info": 2}[s])
+        assert severities == sorted(
+            severities, key=lambda s: {"critical": 0, "warning": 1, "info": 2}[s]
+        )
 
     def test_max_items_cap(self, tmp_path, config):
         config["doc_gap_max_items"] = 3
@@ -114,7 +139,9 @@ class TestDetectDocGaps:
         assert gaps[0].doc_path == "test.md"
 
     def test_doc_gap_serialization(self):
-        gap = DocGap(doc_path="ROADMAP.md", line=10, pattern="TBD", text="Scoring: TBD", severity="warning")
+        gap = DocGap(
+            doc_path="ROADMAP.md", line=10, pattern="TBD", text="Scoring: TBD", severity="warning"
+        )
         d = gap.to_dict()
         restored = DocGap.from_dict(d)
         assert restored.doc_path == "ROADMAP.md"

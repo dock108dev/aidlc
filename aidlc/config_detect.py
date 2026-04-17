@@ -93,9 +93,7 @@ def update_config_file(project_root: Path, detected: dict, logger=None) -> dict:
                 logger.error(f"Failed reading config for auto-detect merge: {exc}")
             raise
         except json.JSONDecodeError as exc:
-            backup_path = config_path.with_suffix(
-                f".corrupt-{int(time.time())}.json.bak"
-            )
+            backup_path = config_path.with_suffix(f".corrupt-{int(time.time())}.json.bak")
             try:
                 backup_path.write_text(raw if "raw" in locals() else "")
             except OSError:
@@ -161,6 +159,7 @@ def _detect_lint_command(project_root: Path, project_type: str) -> str | None:
                 return "npm run lint:fix"
         except (OSError, json.JSONDecodeError):
             import logging
+
             logging.getLogger("aidlc").warning(
                 "Unable to parse package.json while detecting lint command."
             )
@@ -176,6 +175,7 @@ def _detect_lint_command(project_root: Path, project_type: str) -> str | None:
                     return "flake8 ."
             except OSError:
                 import logging
+
                 logging.getLogger("aidlc").warning(
                     "Unable to read pyproject.toml while detecting lint command."
                 )

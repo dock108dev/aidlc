@@ -5,8 +5,10 @@ design docs, etc. to build project context for planning.
 """
 
 import fnmatch
-import os
+import re
 from pathlib import Path
+
+from .models import Issue
 
 # Default max chars per doc (overridden by config["max_doc_chars"])
 DEFAULT_MAX_DOC_CHARS = 10000
@@ -78,10 +80,19 @@ class ProjectScanner:
         self.project_root = project_root
         self.config = config
         self.scan_patterns = config.get("doc_scan_patterns", ["**/*.md"])
-        self.exclude_patterns = config.get("doc_scan_exclude", [
-            "node_modules/**", ".git/**", "venv/**", ".venv/**",
-            "__pycache__/**", ".aidlc/**", "dist/**", "build/**",
-        ])
+        self.exclude_patterns = config.get(
+            "doc_scan_exclude",
+            [
+                "node_modules/**",
+                ".git/**",
+                "venv/**",
+                ".venv/**",
+                "__pycache__/**",
+                ".aidlc/**",
+                "dist/**",
+                "build/**",
+            ],
+        )
         self.max_doc_chars = config.get("max_doc_chars", DEFAULT_MAX_DOC_CHARS)
         self.max_context_chars = config.get("max_context_chars", 80000)
 
@@ -148,14 +159,16 @@ class ProjectScanner:
             try:
                 content = full_path.read_text(errors="replace")
                 if len(content) > self.max_doc_chars:
-                    content = content[:self.max_doc_chars] + "\n\n... (truncated)"
+                    content = content[: self.max_doc_chars] + "\n\n... (truncated)"
                 priority = self._doc_priority(rel_path)
-                docs.append({
-                    "path": rel_path,
-                    "content": content,
-                    "priority": priority,
-                    "size": len(content),
-                })
+                docs.append(
+                    {
+                        "path": rel_path,
+                        "content": content,
+                        "priority": priority,
+                        "size": len(content),
+                    }
+                )
             except (OSError, UnicodeDecodeError):
                 self._skipped_docs_count += 1
                 continue
@@ -229,15 +242,93 @@ class ProjectScanner:
                     try:
                         content = path.read_text(errors="replace")
                         rel = str(path.relative_to(self.project_root))
-                        issues.append({"path": rel, "content": content})
+                        parsed_issue = self._parse_issue_markdown(path, content)
+                        issues.append(
+                            {"path": rel, "content": content, "parsed_issue": parsed_issue}
+                        )
                     except (OSError, UnicodeDecodeError):
                         self._skipped_issue_reads += 1
                         continue
         return issues
 
+    def _parse_issue_markdown(self, path: Path, content: str) -> dict | None:
+        """Parse a markdown issue file into a structured Issue dict when possible."""
+        stem = path.stem
+        if not stem.upper().startswith("ISSUE-"):
+            return None
+
+        issue_id = stem.upper()
+        title = self._extract_issue_title(content) or issue_id
+        priority = self._extract_meta(content, "Priority", fallback="medium").lower()
+        labels_raw = self._extract_meta(content, "Labels", fallback="")
+        labels = [part.strip() for part in labels_raw.split(",") if part.strip()]
+        deps_raw = self._extract_meta(content, "Dependencies", fallback="none")
+        if deps_raw.strip().lower() == "none":
+            dependencies: list[str] = []
+        else:
+            dependencies = [part.strip() for part in deps_raw.split(",") if part.strip()]
+        status = self._extract_meta(content, "Status", fallback="pending").lower()
+        description = self._extract_section(content, "Description")
+        acceptance_criteria = self._extract_checklist(content, "Acceptance Criteria")
+        implementation_notes = self._extract_section(content, "Implementation Notes")
+        verification_result = self._extract_section(content, "Verification Result")
+
+        issue = Issue(
+            id=issue_id,
+            title=title,
+            description=description,
+            priority=priority or "medium",
+            labels=labels,
+            dependencies=dependencies,
+            acceptance_criteria=acceptance_criteria,
+        )
+        if status in {
+            "pending",
+            "in_progress",
+            "implemented",
+            "verified",
+            "failed",
+            "blocked",
+            "skipped",
+        }:
+            issue.status = issue.status.__class__(status)
+        issue.implementation_notes = implementation_notes
+        issue.verification_result = verification_result
+        return issue.to_dict()
+
+    @staticmethod
+    def _extract_issue_title(content: str) -> str:
+        match = re.search(r"^#\s+ISSUE-\d+:\s+(.+)$", content, re.MULTILINE)
+        return match.group(1).strip() if match else ""
+
+    @staticmethod
+    def _extract_meta(content: str, key: str, fallback: str = "") -> str:
+        pattern = rf"^\*\*{re.escape(key)}\*\*:\s*(.+)$"
+        match = re.search(pattern, content, re.MULTILINE)
+        return match.group(1).strip() if match else fallback
+
+    @staticmethod
+    def _extract_section(content: str, heading: str) -> str:
+        pattern = rf"^##\s+{re.escape(heading)}\s*$\n+(.+?)(?=\n##\s+|\Z)"
+        match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+        return match.group(1).strip() if match else ""
+
+    @classmethod
+    def _extract_checklist(cls, content: str, heading: str) -> list[str]:
+        body = cls._extract_section(content, heading)
+        if not body:
+            return []
+        items = []
+        for line in body.splitlines():
+            match = re.match(r"^\s*-\s+\[[ xX]\]\s+(.+)$", line)
+            if match:
+                items.append(match.group(1).strip())
+        return items
+
     def _load_audit_result(self) -> dict | None:
         """Load audit results from .aidlc/audit_result.json if present."""
         import json
+
         audit_path = self.project_root / ".aidlc" / "audit_result.json"
         self._audit_load_errors = 0
         if audit_path.exists():
@@ -280,7 +371,9 @@ class ProjectScanner:
 
         for doc in scan_result["doc_files"]:
             if total_chars + doc["size"] > max_context_chars:
-                sections.append(f"\n... ({scan_result['total_docs'] - included} more docs not shown)")
+                sections.append(
+                    f"\n... ({scan_result['total_docs'] - included} more docs not shown)"
+                )
                 break
             sections.append(f"### {doc['path']}\n")
             sections.append(doc["content"])
@@ -293,8 +386,12 @@ class ProjectScanner:
         if audit:
             sections.append("\n## Code Audit Findings\n")
             sections.append(f"**Audit depth**: {audit.get('depth', 'quick')}")
-            sections.append(f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}")
-            sections.append(f"**Entry points**: {', '.join(audit.get('entry_points', [])) or 'none'}")
+            sections.append(
+                f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}"
+            )
+            sections.append(
+                f"**Entry points**: {', '.join(audit.get('entry_points', [])) or 'none'}"
+            )
 
             modules = audit.get("modules", [])
             if modules:
@@ -308,11 +405,15 @@ class ProjectScanner:
 
             stats = audit.get("source_stats", {})
             if stats:
-                sections.append(f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines")
+                sections.append(
+                    f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines"
+                )
 
             tc = audit.get("test_coverage")
             if tc:
-                sections.append(f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)")
+                sections.append(
+                    f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)"
+                )
 
             features = audit.get("features")
             if features:
@@ -324,7 +425,9 @@ class ProjectScanner:
             if tech_debt:
                 sections.append(f"\n**Tech debt markers**: {len(tech_debt)} found")
                 for td in tech_debt[:10]:
-                    sections.append(f"- `{td.get('file', '?')}:{td.get('line', 0)}` [{td.get('type', '?')}] {td.get('text', '')[:100]}")
+                    sections.append(
+                        f"- `{td.get('file', '?')}:{td.get('line', 0)}` [{td.get('type', '?')}] {td.get('text', '')[:100]}"
+                    )
                 if len(tech_debt) > 10:
                     sections.append(f"- ... and {len(tech_debt) - 10} more")
 
@@ -333,9 +436,33 @@ class ProjectScanner:
         # Existing issues
         if scan_result["existing_issues"]:
             sections.append(f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n")
+            max_issue_lines = 25
+            shown = 0
             for issue in scan_result["existing_issues"]:
-                sections.append(f"### {issue['path']}\n")
-                sections.append(issue["content"])
-                sections.append("")
+                if shown >= max_issue_lines:
+                    break
+                parsed = (
+                    issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
+                )
+                issue_id = parsed.get("id") or Path(issue.get("path", "")).stem
+                title = (parsed.get("title") or "").strip()
+                if len(title) > 90:
+                    title = f"{title[:87]}..."
+                status = parsed.get("status", "unknown")
+                priority = parsed.get("priority", "unknown")
+                if title:
+                    sections.append(
+                        f"- {issue_id} [{priority}/{status}] — {title} (file: {issue.get('path', 'unknown')})"
+                    )
+                else:
+                    sections.append(
+                        f"- {issue_id} [{priority}/{status}] (file: {issue.get('path', 'unknown')})"
+                    )
+                shown += 1
+            omitted = len(scan_result["existing_issues"]) - shown
+            if omitted > 0:
+                sections.append(
+                    f"- ... and {omitted} more issues (read .aidlc/issues/*.md as needed)"
+                )
 
         return "\n".join(sections)

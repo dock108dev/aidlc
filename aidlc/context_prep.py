@@ -80,7 +80,7 @@ def build_project_brief(
         # Multiple batches: summarize each, then combine
         batch_summaries = []
         for i, batch in enumerate(batches):
-            logger.info(f"Summarizing doc batch {i+1}/{len(batches)}...")
+            logger.info(f"Summarizing doc batch {i + 1}/{len(batches)}...")
             summary = _summarize_batch(batch, i + 1, len(batches), cli, project_root, logger)
             if summary:
                 batch_summaries.append(summary)
@@ -109,7 +109,7 @@ def _extract_summary(content: str, max_len: int) -> str:
             continue
         # Found a content line — use it as summary
         if len(line) > max_len:
-            return line[:max_len - 3] + "..."
+            return line[: max_len - 3] + "..."
         return line
     return "(empty or header-only document)"
 
@@ -154,8 +154,7 @@ Write the PROJECT BRIEF now. Output as markdown. No JSON wrapping."""
 
 
 def _summarize_batch(
-    content: str, batch_num: int, total_batches: int,
-    cli, project_root: Path, logger
+    content: str, batch_num: int, total_batches: int, cli, project_root: Path, logger
 ) -> str | None:
     """Summarize a batch of docs."""
     prompt = f"""You are reading batch {batch_num} of {total_batches} of documentation

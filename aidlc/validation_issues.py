@@ -1,11 +1,11 @@
 """Generate fix issues from test failures for the validation loop."""
 
 from .models import Issue
-from .test_parser import TestFailure
+from .test_parser import FailureReport
 
 
 def create_fix_issues(
-    failures: list[TestFailure],
+    failures: list[FailureReport],
     existing_issue_ids: set[str],
     max_issues: int = 10,
     base_id_counter: int = 1,
@@ -57,7 +57,7 @@ def create_fix_issues(
     return issues
 
 
-def _build_description(failure: TestFailure) -> str:
+def _build_description(failure: FailureReport) -> str:
     """Build a detailed issue description from a test failure."""
     parts = [
         f"Test `{failure.test_name}` is failing and needs to be fixed.",
@@ -77,13 +77,15 @@ def _build_description(failure: TestFailure) -> str:
     if failure.stack_trace:
         parts.append(f"\n**Stack trace:**\n```\n{failure.stack_trace}\n```")
 
-    parts.extend([
-        "",
-        "**Instructions:**",
-        "- Read the test to understand what it expects",
-        "- Read the implementation code at the location above",
-        "- Fix the root cause — do not modify the test unless the test itself is wrong",
-        "- Ensure the fix doesn't break other tests",
-    ])
+    parts.extend(
+        [
+            "",
+            "**Instructions:**",
+            "- Read the test to understand what it expects",
+            "- Read the implementation code at the location above",
+            "- Fix the root cause — do not modify the test unless the test itself is wrong",
+            "- Ensure the fix doesn't break other tests",
+        ]
+    )
 
     return "\n".join(parts)

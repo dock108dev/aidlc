@@ -40,6 +40,7 @@ class IssueStatus(Enum):
 @dataclass
 class Issue:
     """A single work item created during planning."""
+
     id: str
     title: str
     description: str
@@ -94,6 +95,7 @@ class Issue:
 @dataclass
 class RunState:
     """Full state of an AIDLC run."""
+
     run_id: str
     config_name: str
     project_root: str = ""
@@ -126,6 +128,14 @@ class RunState:
     claude_estimated_cost_calls: int = 0
     claude_exact_cost_calls: int = 0
     claude_model_usage: dict = field(default_factory=dict)
+
+    # Multi-provider telemetry (Phase 1+)
+    # provider_account_usage: {provider_id: {account_id: {calls, tokens, cost_usd_exact, cost_usd_estimated}}}
+    provider_account_usage: dict = field(default_factory=dict)
+    # phase_usage: {phase_name: {provider_id, account_id, model, calls, input_tokens, output_tokens, cost_usd_exact, cost_usd_estimated}}
+    phase_usage: dict = field(default_factory=dict)
+    # routing_decisions: list of {phase, provider_id, account_id, model, reasoning, strategy, fallback}
+    routing_decisions: list = field(default_factory=list)
 
     # Planning stats
     planning_cycles: int = 0
@@ -191,10 +201,7 @@ class RunState:
 
     def get_pending_issues(self) -> list[Issue]:
         """Get issues ready for implementation (deps met, not done)."""
-        done_ids = {
-            d["id"] for d in self.issues
-            if d.get("status") in ("implemented", "verified")
-        }
+        done_ids = {d["id"] for d in self.issues if d.get("status") in ("implemented", "verified")}
         pending = []
         for d in self.issues:
             if d.get("status") not in ("pending", "failed"):
@@ -248,6 +255,9 @@ class RunState:
             "claude_estimated_cost_calls": self.claude_estimated_cost_calls,
             "claude_exact_cost_calls": self.claude_exact_cost_calls,
             "claude_model_usage": self.claude_model_usage,
+            "provider_account_usage": self.provider_account_usage,
+            "phase_usage": self.phase_usage,
+            "routing_decisions": self.routing_decisions,
             "planning_cycles": self.planning_cycles,
             "issues_created": self.issues_created,
             "docs_scanned": self.docs_scanned,
@@ -297,12 +307,8 @@ class RunState:
         state.claude_retries_total = data.get("claude_retries_total", 0)
         state.claude_input_tokens = data.get("claude_input_tokens", 0)
         state.claude_output_tokens = data.get("claude_output_tokens", 0)
-        state.claude_cache_creation_input_tokens = data.get(
-            "claude_cache_creation_input_tokens", 0
-        )
-        state.claude_cache_read_input_tokens = data.get(
-            "claude_cache_read_input_tokens", 0
-        )
+        state.claude_cache_creation_input_tokens = data.get("claude_cache_creation_input_tokens", 0)
+        state.claude_cache_read_input_tokens = data.get("claude_cache_read_input_tokens", 0)
         state.claude_total_input_tokens = data.get("claude_total_input_tokens", 0)
         state.claude_total_tokens = data.get("claude_total_tokens", 0)
         state.claude_web_search_requests = data.get("claude_web_search_requests", 0)
@@ -312,6 +318,9 @@ class RunState:
         state.claude_estimated_cost_calls = data.get("claude_estimated_cost_calls", 0)
         state.claude_exact_cost_calls = data.get("claude_exact_cost_calls", 0)
         state.claude_model_usage = data.get("claude_model_usage", {})
+        state.provider_account_usage = data.get("provider_account_usage", {})
+        state.phase_usage = data.get("phase_usage", {})
+        state.routing_decisions = data.get("routing_decisions", [])
         state.planning_cycles = data.get("planning_cycles", 0)
         state.issues_created = data.get("issues_created", 0)
         state.docs_scanned = data.get("docs_scanned", 0)
@@ -340,8 +349,13 @@ class RunState:
         state.validation_results = data.get("validation_results", [])
         return state
 
-    def record_claude_result(self, result: dict, config: dict | None = None) -> None:
-        """Accumulate telemetry from a Claude CLI result payload."""
+    def record_provider_result(
+        self,
+        result: dict,
+        config: dict | None = None,
+        phase: str | None = None,
+    ) -> None:
+        """Accumulate telemetry from any provider result payload."""
         self.claude_calls_total += 1
         if result.get("success"):
             self.claude_calls_succeeded += 1
@@ -416,9 +430,8 @@ class RunState:
             exact_cost_value = None
 
         should_track_exact = cost_mode in ("auto", "exact_only")
-        should_track_estimated = (
-            cost_mode in ("estimate_only", "auto")
-            and (exact_cost_value is None or cost_mode == "estimate_only")
+        should_track_estimated = cost_mode in ("estimate_only", "auto") and (
+            exact_cost_value is None or cost_mode == "estimate_only"
         )
 
         if should_track_exact and exact_cost_value is not None:
@@ -438,6 +451,69 @@ class RunState:
             self.claude_cost_usd_estimated += estimated_cost
             self.claude_estimated_cost_calls += 1
             model_usage["cost_usd_estimated"] += estimated_cost
+
+        provider_id = str(result.get("provider_id") or "claude")
+        account_id = str(result.get("account_id") or "default")
+
+        # Per-provider/account usage
+        prov_map = self.provider_account_usage.setdefault(provider_id, {})
+        acc_map = prov_map.setdefault(
+            account_id,
+            {
+                "calls": 0,
+                "calls_succeeded": 0,
+                "calls_failed": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "cost_usd_exact": 0.0,
+                "cost_usd_estimated": 0.0,
+            },
+        )
+        acc_map["calls"] += 1
+        acc_map["calls_succeeded"] += 1 if result.get("success") else 0
+        acc_map["calls_failed"] += 0 if result.get("success") else 1
+        acc_map["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+        acc_map["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+        acc_map["total_tokens"] += (
+            input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+        )
+        if should_track_estimated:
+            acc_map["cost_usd_estimated"] += estimated_cost
+        cost_exact = result.get("total_cost_usd")
+        if cost_exact is not None:
+            try:
+                acc_map["cost_usd_exact"] += float(cost_exact)
+            except (TypeError, ValueError):
+                pass
+
+        # Per-phase usage
+        if phase:
+            phase_entry = self.phase_usage.setdefault(
+                phase,
+                {
+                    "provider_id": provider_id,
+                    "account_id": account_id,
+                    "model": str(result.get("model_used") or "unknown"),
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd_exact": 0.0,
+                },
+            )
+            phase_entry["calls"] += 1
+            phase_entry["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+            phase_entry["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+            if cost_exact is not None:
+                try:
+                    phase_entry["cost_usd_exact"] += float(cost_exact)
+                except (TypeError, ValueError):
+                    pass
+
+        # Record routing decision if present
+        routing = result.get("routing_decision")
+        if isinstance(routing, dict):
+            self.routing_decisions.append(routing)
 
     @staticmethod
     def _estimate_usage_cost(
@@ -469,16 +545,12 @@ class RunState:
 
         input_rate = float(selected.get("input", 0.0) or 0.0)
         output_rate = float(selected.get("output", 0.0) or 0.0)
-        cache_creation_rate = float(
-            selected.get("cache_creation_input", input_rate * 1.25) or 0.0
-        )
-        cache_read_rate = float(
-            selected.get("cache_read_input", input_rate * 0.10) or 0.0
-        )
+        cache_creation_rate = float(selected.get("cache_creation_input", input_rate * 1.25) or 0.0)
+        cache_read_rate = float(selected.get("cache_read_input", input_rate * 0.10) or 0.0)
 
         return (
             (input_tokens / 1_000_000.0) * input_rate
-            + (output_tokens / 1_000_000.0) * output_rate
-            + (cache_creation_tokens / 1_000_000.0) * cache_creation_rate
-            + (cache_read_tokens / 1_000_000.0) * cache_read_rate
+            + ((output_tokens / 1_000_000.0) * output_rate)
+            + ((cache_creation_tokens / 1_000_000.0) * cache_creation_rate)
+            + ((cache_read_tokens / 1_000_000.0) * cache_read_rate)
         )

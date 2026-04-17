@@ -7,7 +7,6 @@ Users can override any command via .aidlc/config.json.
 import logging
 from pathlib import Path
 
-
 # Test command tiers — run in order, stop on first tier failure (unless progressive)
 # Each entry: (detection_files, command, description)
 TEST_PROFILES = {
@@ -144,6 +143,7 @@ def detect_test_profile(project_root: Path, project_type: str, config: dict) -> 
     if pkg_json.exists():
         try:
             import json
+
             data = json.loads(pkg_json.read_text(errors="replace"))
             scripts = data.get("scripts", {})
             if "test:unit" in scripts and not profile["unit"]:

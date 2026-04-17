@@ -2,7 +2,6 @@
 
 import re
 
-
 _PERMISSION_CHATTER_PATTERNS = (
     re.compile(r"\bwrite tool needs your permission\b", re.IGNORECASE),
     re.compile(r"\bapprove the write permission\b", re.IGNORECASE),

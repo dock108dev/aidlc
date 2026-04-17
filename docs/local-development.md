@@ -66,3 +66,13 @@ Build metadata is defined in `pyproject.toml` (`setuptools.build_meta` backend).
 
 - runtime state and generated artifacts are written under `.aidlc/` in the target repository
 - bundled planning templates are shipped as package data from `aidlc/project_template/**`
+
+## Optional lint (Ruff)
+
+With dev dependencies installed (`pip install -e ".[dev]"`):
+
+```bash
+ruff check aidlc tests
+```
+
+Ruff settings live in `pyproject.toml` under `[tool.ruff]`. There is no required pre-commit hook in this repository; CI can call `ruff check` the same way.

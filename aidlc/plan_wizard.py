@@ -7,11 +7,24 @@ import sys
 from pathlib import Path
 
 
-def _bold(t): return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
-def _dim(t): return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
-def _cyan(t): return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
-def _green(t): return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
-def _yellow(t): return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
+def _bold(t):
+    return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _dim(t):
+    return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _cyan(t):
+    return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _green(t):
+    return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _yellow(t):
+    return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
 
 
 def run_wizard(project_root: Path, auto_detect: bool = True) -> dict:
@@ -45,10 +58,10 @@ def run_wizard(project_root: Path, auto_detect: bool = True) -> dict:
     if has_existing:
         size = len(braindump_path.read_text(errors="replace"))
         print(f"  {_green('+')} Found existing {_cyan('BRAINDUMP.md')} ({size:,} chars)")
-        print(f"  Review or update it if needed.")
+        print("  Review or update it if needed.")
     else:
         print(f"  Created {_cyan('BRAINDUMP.md')} in your project root.")
-        print(f"  Open it and write everything about what you want to build.")
+        print("  Open it and write everything about what you want to build.")
     print()
     print(f"  {_dim('What is it? What should it do? Features, vibes, inspiration,')}")
     print(f"  {_dim('constraints, phases, whatever — dump it all in there.')}")
@@ -97,17 +110,19 @@ def _build_starter(project_root: Path, detected: dict) -> str:
         lines.append(f"> {detected['one_liner']}")
         lines.append("")
 
-    lines.extend([
-        "## What am I building?",
-        "",
-        "",
-        "## What should it do?",
-        "",
-        "",
-        "## What matters most?",
-        "",
-        "",
-    ])
+    lines.extend(
+        [
+            "## What am I building?",
+            "",
+            "",
+            "## What should it do?",
+            "",
+            "",
+            "## What matters most?",
+            "",
+            "",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -124,6 +139,7 @@ def _strip_starter_comments(content: str) -> str:
     result = "\n".join(lines).strip()
     # Remove empty ## sections
     import re
+
     result = re.sub(r"## .+?\n\n(?=## |\Z)", "", result)
     return result.strip()
 
@@ -153,9 +169,11 @@ def _auto_detect(project_root: Path) -> dict:
 
     source_exts = {".py", ".js", ".ts", ".gd", ".rs", ".go", ".java", ".rb", ".swift", ".cpp"}
     for entry in project_root.iterdir():
-        if entry.is_dir() and not entry.name.startswith(".") and entry.name not in {
-            "node_modules", "venv", ".venv", "dist", "build", "__pycache__"
-        }:
+        if (
+            entry.is_dir()
+            and not entry.name.startswith(".")
+            and entry.name not in {"node_modules", "venv", ".venv", "dist", "build", "__pycache__"}
+        ):
             for f in entry.rglob("*"):
                 if f.is_file() and f.suffix in source_exts:
                     defaults["has_code"] = True

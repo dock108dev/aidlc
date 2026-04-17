@@ -78,8 +78,7 @@ class CodeAuditor:
         degraded_total = sum(result.degraded_stats.values())
         if degraded_total:
             self.logger.warning(
-                f"Audit completed with degraded reads: {degraded_total} "
-                f"({result.degraded_stats})"
+                f"Audit completed with degraded reads: {degraded_total} ({result.degraded_stats})"
             )
         if result.conflicts:
             self.logger.warning(f"Found {len(result.conflicts)} conflict(s) with existing docs")

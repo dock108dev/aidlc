@@ -1,15 +1,166 @@
 {
-  "plan_budget_hours": 4,
+  "plan_budget_hours": 2.5,
   "checkpoint_interval_minutes": 15,
   "dry_run": false,
-  "claude_cli_command": "claude",
-  "claude_model": "opus",
-  "claude_model_planning": "sonnet",
-  "claude_model_research": "sonnet",
-  "claude_model_implementation": "sonnet",
-  "claude_model_implementation_complex": "opus",
-  "claude_model_finalization": "sonnet",
+  "routing_strategy": "balanced",
+  "providers": {
+    "claude": {
+      "enabled": true,
+      "cli_command": "claude",
+      "default_model": "sonnet",
+      "phase_models": {
+        "planning": "sonnet",
+        "research": "sonnet",
+        "implementation": "sonnet",
+        "implementation_complex": "opus",
+        "finalization": "sonnet",
+        "audit": "sonnet"
+      },
+      "accounts": [
+        {
+          "id": "default",
+          "display_name": "Claude (default)",
+          "tier": "unknown",
+          "role_tags": ["primary"],
+          "enabled": true
+        }
+      ]
+    },
+    "copilot": {
+      "enabled": false,
+      "cli_command": "copilot",
+      "default_model": "",
+      "phase_models": {
+        "planning": "",
+        "research": "",
+        "implementation": "",
+        "implementation_complex": "",
+        "finalization": "",
+        "audit": ""
+      },
+      "accounts": []
+    },
+    "openai": {
+      "enabled": false,
+      "cli_command": "codex",
+      "default_model": "gpt-5.4",
+      "phase_models": {
+        "planning": "gpt-5.4-mini",
+        "research": "gpt-5.4-mini",
+        "implementation": "gpt-5.4",
+        "implementation_complex": "gpt-5.3-codex",
+        "finalization": "gpt-5.4-mini",
+        "audit": "gpt-5.4-mini"
+      },
+      "accounts": []
+    }
+  },
   "claude_hard_timeout_seconds": 600,
+  "telemetry_cost_mode": "auto",
+  "telemetry_model_pricing_usd_per_million_tokens": {
+    "default": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_creation_input": 3.75,
+      "cache_read_input": 0.3
+    },
+    "sonnet": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_creation_input": 3.75,
+      "cache_read_input": 0.3
+    },
+    "opus": {
+      "input": 15.0,
+      "output": 75.0,
+      "cache_creation_input": 18.75,
+      "cache_read_input": 1.5
+    },
+    "haiku": {
+      "input": 0.8,
+      "output": 4.0,
+      "cache_creation_input": 1.0,
+      "cache_read_input": 0.08
+    },
+    "gpt-5.4": {
+      "input": 2.50,
+      "output": 15.0,
+      "cache_creation_input": 2.50,
+      "cache_read_input": 0.25
+    },
+    "gpt-5.4-mini": {
+      "input": 0.75,
+      "output": 4.50,
+      "cache_creation_input": 0.75,
+      "cache_read_input": 0.075
+    },
+    "gpt-5.4-nano": {
+      "input": 0.20,
+      "output": 1.25,
+      "cache_creation_input": 0.20,
+      "cache_read_input": 0.02
+    },
+    "gpt-5.3-codex": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_creation_input": 1.75,
+      "cache_read_input": 0.175
+    },
+    "gpt-4o": {
+      "input": 2.5,
+      "output": 10.0,
+      "cache_creation_input": 2.5,
+      "cache_read_input": 1.25
+    },
+    "gpt-4o-mini": {
+      "input": 0.15,
+      "output": 0.6,
+      "cache_creation_input": 0.15,
+      "cache_read_input": 0.075
+    }
+  },
+  "retry_max_attempts": 2,
+  "retry_base_delay_seconds": 30,
+  "retry_max_delay_seconds": 300,
+  "retry_backoff_factor": 2.0,
+  "claude_service_outage_max_wait_seconds": 7200,
+  "max_consecutive_failures": 3,
+  "finalization_budget_percent": 10,
+  "max_implementation_attempts": 3,
+  "implementation_escalate_on_retry": true,
+  "implementation_complexity_acceptance_criteria_threshold": 12,
+  "implementation_complexity_dependencies_threshold": 5,
+  "implementation_complexity_description_chars_threshold": 5000,
+  "implementation_complexity_labels": [
+    "architecture",
+    "security",
+    "migration",
+    "refactor-core",
+    "cross-cutting"
+  ],
+  "max_planning_cycles": 0,
+  "max_implementation_cycles": 0,
+  "run_tests_command": null,
+  "test_timeout_seconds": 300,
+  "max_doc_chars": 10000,
+  "max_context_chars": 80000,
+  "max_implementation_context_chars": 30000,
+  "doc_scan_patterns": [
+    "**/*.md",
+    "**/*.txt",
+    "**/*.rst"
+  ],
+  "doc_scan_exclude": [
+    "node_modules/**",
+    ".git/**",
+    "venv/**",
+    ".venv/**",
+    "__pycache__/**",
+    ".aidlc/**",
+    "dist/**",
+    "build/**"
+  ],
+
   "telemetry_cost_mode": "auto",
   "telemetry_model_pricing_usd_per_million_tokens": {
     "default": {

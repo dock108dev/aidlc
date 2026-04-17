@@ -1,7 +1,7 @@
 """Tests for aidlc.reporting module."""
 
-from aidlc.reporting import generate_run_report, generate_checkpoint_summary
-from aidlc.models import RunState, RunStatus, RunPhase
+from aidlc.models import RunPhase, RunState, RunStatus
+from aidlc.reporting import generate_checkpoint_summary, generate_run_report
 
 
 class TestGenerateRunReport:
@@ -21,14 +21,16 @@ class TestGenerateRunReport:
         state.issues_failed = 1
         state.claude_calls_total = 6
         state.claude_cost_usd_exact = 0.55
-        state.claude_model_usage = {"sonnet": {"calls": 6, "input_tokens": 100, "output_tokens": 50}}
+        state.claude_model_usage = {
+            "sonnet": {"calls": 6, "input_tokens": 100, "output_tokens": 50}
+        }
 
         path = generate_run_report(state, tmp_path)
         assert path.exists()
         content = path.read_text()
         assert "test_report" in content
         assert "complete" in content
-        assert "Claude Telemetry" in content
+        assert "AI Provider Telemetry" in content
         assert "Model Breakdown" in content
 
     def test_includes_issue_table(self, tmp_path):
@@ -95,4 +97,28 @@ class TestGenerateCheckpointSummary:
         assert "Checkpoint 3" in content
         assert "implementing" in content
         assert "ISSUE-005" in content
-        assert "Claude calls" in content
+        assert "Provider calls" in content
+        assert "All providers (totals) tokens" in content
+        assert "no breakdown recorded" in content
+
+    def test_checkpoint_includes_provider_table(self, tmp_path):
+        state = RunState(run_id="test_cp2", config_name="default")
+        state.checkpoint_count = 1
+        state.provider_account_usage = {
+            "copilot": {
+                "primary": {
+                    "calls": 2,
+                    "calls_succeeded": 2,
+                    "calls_failed": 0,
+                    "input_tokens": 50,
+                    "output_tokens": 25,
+                    "total_tokens": 75,
+                    "cost_usd_exact": 0.0,
+                    "cost_usd_estimated": 0.01,
+                }
+            }
+        }
+        path = generate_checkpoint_summary(state, tmp_path)
+        content = path.read_text()
+        assert "| copilot | primary |" in content
+        assert "| 2 | 2 | 0 |" in content

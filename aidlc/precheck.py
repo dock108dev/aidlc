@@ -5,7 +5,6 @@ to run a productive planning session. Auto-creates .aidlc/ with defaults
 if missing.
 """
 
-import json
 from pathlib import Path
 
 # Document tiers with descriptions and suggestions
@@ -91,12 +90,8 @@ class PrecheckResult:
     @property
     def score(self) -> str:
         """Readiness rating."""
-        total = (
-            len(self.required_found) + len(self.recommended_found) + len(self.optional_found)
-        )
-        possible = (
-            len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
-        )
+        total = len(self.required_found) + len(self.recommended_found) + len(self.optional_found)
+        possible = len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
         if not self.ready:
             return "not ready"
         if total >= possible * 0.7:
@@ -131,14 +126,27 @@ def run_precheck(project_root: Path, auto_init: bool = True) -> PrecheckResult:
 
     # Detect project type
     from .scanner import detect_project_type
+
     result.project_type = detect_project_type(project_root)
 
     # Check for source code
     source_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb"}
     for entry in project_root.iterdir():
-        if entry.is_dir() and entry.name not in {
-            "node_modules", ".git", "venv", ".venv", "__pycache__", ".aidlc", "dist", "build"
-        } and not entry.name.startswith("."):
+        if (
+            entry.is_dir()
+            and entry.name
+            not in {
+                "node_modules",
+                ".git",
+                "venv",
+                ".venv",
+                "__pycache__",
+                ".aidlc",
+                "dist",
+                "build",
+            }
+            and not entry.name.startswith(".")
+        ):
             for f in entry.rglob("*"):
                 if f.is_file() and f.suffix in source_extensions:
                     result.has_source_code = True
@@ -177,31 +185,6 @@ def run_precheck(project_root: Path, auto_init: bool = True) -> PrecheckResult:
 
 def _auto_init_aidlc(project_root: Path):
     """Create .aidlc/ directory with default config."""
-    aidlc_dir = project_root / ".aidlc"
-    aidlc_dir.mkdir(exist_ok=True)
-    (aidlc_dir / "issues").mkdir(exist_ok=True)
-    (aidlc_dir / "runs").mkdir(exist_ok=True)
-    (aidlc_dir / "reports").mkdir(exist_ok=True)
+    from .config import write_default_config
 
-    config_path = aidlc_dir / "config.json"
-    if not config_path.exists():
-        default_config = {
-            "plan_budget_hours": 4,
-            "checkpoint_interval_minutes": 15,
-            "claude_model": "opus",
-            "max_implementation_attempts": 3,
-            "run_tests_command": None,
-        }
-        with open(config_path, "w") as f:
-            json.dump(default_config, f, indent=2)
-
-    # Add to .gitignore
-    gitignore = project_root / ".gitignore"
-    ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
-    if gitignore.exists():
-        content = gitignore.read_text()
-        if ".aidlc/" not in content:
-            with open(gitignore, "a") as f:
-                f.write(ignore_entry)
-    elif not gitignore.exists():
-        gitignore.write_text(ignore_entry.lstrip())
+    write_default_config(project_root / ".aidlc")

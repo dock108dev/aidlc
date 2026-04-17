@@ -2,18 +2,22 @@
 
 import pytest
 from aidlc.schemas import (
-    PlanningAction, PlanningOutput, ImplementationResult,
-    parse_json_output, parse_planning_output, parse_implementation_result,
+    ImplementationResult,
+    PlanningAction,
+    PlanningOutput,
+    parse_implementation_result,
+    parse_json_output,
+    parse_planning_output,
 )
 
 
 class TestParseJsonOutput:
     def test_json_code_block(self):
-        raw = '''Some text before
+        raw = """Some text before
 ```json
 {"key": "value", "num": 42}
 ```
-Some text after'''
+Some text after"""
         result = parse_json_output(raw)
         assert result["key"] == "value"
         assert result["num"] == 42
@@ -28,16 +32,16 @@ Some text after'''
             parse_json_output("This has no JSON at all")
 
     def test_invalid_json_raises(self):
-        raw = '```json\n{invalid json here}\n```'
+        raw = "```json\n{invalid json here}\n```"
         with pytest.raises(ValueError, match="Failed to parse JSON"):
             parse_json_output(raw)
 
     def test_nested_json(self):
-        raw = '''```json
+        raw = """```json
 {
   "actions": [{"type": "create", "data": {"nested": true}}]
 }
-```'''
+```"""
         result = parse_json_output(raw)
         assert result["actions"][0]["data"]["nested"] is True
 
@@ -170,6 +174,18 @@ class TestPlanningAction:
         assert any("file_path" in e for e in errors)
         assert any("content" in e for e in errors)
 
+    def test_update_doc_missing_fields(self):
+        action = PlanningAction(action_type="update_doc", rationale="r")
+        errors = action.validate()
+        assert any("file_path" in e for e in errors)
+        assert any("content" in e for e in errors)
+
+    def test_research_missing_topic_and_question(self):
+        action = PlanningAction(action_type="research", rationale="explore")
+        errors = action.validate()
+        assert any("research_topic" in e for e in errors)
+        assert any("research_question" in e for e in errors)
+
     def test_unknown_action_type(self):
         action = PlanningAction(action_type="delete_issue", rationale="R")
         errors = action.validate()
@@ -198,6 +214,19 @@ class TestPlanningAction:
 
 
 class TestPlanningOutput:
+    def test_validate_flags_issue_id_already_in_known_set(self):
+        action = PlanningAction(
+            action_type="create_issue",
+            rationale="dup",
+            issue_id="ISSUE-NEW",
+            title="T",
+            description="D",
+            acceptance_criteria=["a"],
+        )
+        output = PlanningOutput(frontier_assessment="f", actions=[action])
+        errors = output.validate(known_issue_ids={"ISSUE-NEW"})
+        assert any("already exists" in e for e in errors)
+
     def test_valid(self):
         output = PlanningOutput(
             frontier_assessment="Assessed",
@@ -219,10 +248,22 @@ class TestPlanningOutput:
         output = PlanningOutput(
             frontier_assessment="Assessed",
             actions=[
-                PlanningAction(action_type="create_issue", rationale="A", issue_id="ISSUE-001",
-                               title="T1", description="D1", acceptance_criteria=["AC"]),
-                PlanningAction(action_type="create_issue", rationale="B", issue_id="ISSUE-001",
-                               title="T2", description="D2", acceptance_criteria=["AC"]),
+                PlanningAction(
+                    action_type="create_issue",
+                    rationale="A",
+                    issue_id="ISSUE-001",
+                    title="T1",
+                    description="D1",
+                    acceptance_criteria=["AC"],
+                ),
+                PlanningAction(
+                    action_type="create_issue",
+                    rationale="B",
+                    issue_id="ISSUE-001",
+                    title="T2",
+                    description="D2",
+                    acceptance_criteria=["AC"],
+                ),
             ],
         )
         errors = output.validate(known_issue_ids=set())
@@ -232,8 +273,14 @@ class TestPlanningOutput:
         data = {
             "frontier_assessment": "Test",
             "actions": [
-                {"action_type": "create_issue", "rationale": "R", "issue_id": "ISSUE-001",
-                 "title": "T", "description": "D", "acceptance_criteria": ["AC"]},
+                {
+                    "action_type": "create_issue",
+                    "rationale": "R",
+                    "issue_id": "ISSUE-001",
+                    "title": "T",
+                    "description": "D",
+                    "acceptance_criteria": ["AC"],
+                },
             ],
             "cycle_notes": "Notes",
         }
@@ -265,7 +312,7 @@ class TestImplementationResult:
 
 class TestParsePlanningOutput:
     def test_parse(self):
-        raw = '''```json
+        raw = """```json
 {
   "frontier_assessment": "Initial scan",
   "actions": [
@@ -281,7 +328,7 @@ class TestParsePlanningOutput:
   ],
   "cycle_notes": "First cycle"
 }
-```'''
+```"""
         output = parse_planning_output(raw)
         assert len(output.actions) == 1
         assert output.actions[0].issue_id == "ISSUE-001"
@@ -289,7 +336,7 @@ class TestParsePlanningOutput:
 
 class TestParseImplementationResult:
     def test_parse(self):
-        raw = '''I implemented the feature.
+        raw = """I implemented the feature.
 ```json
 {
   "issue_id": "ISSUE-001",
@@ -299,7 +346,7 @@ class TestParseImplementationResult:
   "tests_passed": true,
   "notes": ""
 }
-```'''
+```"""
         result = parse_implementation_result(raw)
         assert result.success is True
         assert result.issue_id == "ISSUE-001"

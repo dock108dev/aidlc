@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from ..audit_models import AuditConflict, ModuleInfo, TechDebtItem, TestCoverageInfo
+from ..audit_models import AuditConflict, CoverageInfo, ModuleInfo, TechDebtItem
 from .constants import EXCLUDE_DIRS
 
 
@@ -91,8 +91,8 @@ class AuditOutputEngine:
         if result.test_coverage:
             tc = (
                 result.test_coverage
-                if isinstance(result.test_coverage, TestCoverageInfo)
-                else TestCoverageInfo.from_dict(result.test_coverage)
+                if isinstance(result.test_coverage, CoverageInfo)
+                else CoverageInfo.from_dict(result.test_coverage)
             )
             lines.append("## Test Coverage")
             lines.append("")
@@ -173,9 +173,7 @@ class AuditOutputEngine:
         """Render workload-capped BRAINDUMP.md ready for planning handoff."""
         runtime = result.runtime_checks or {}
         tier_results = runtime.get("tier_results", [])
-        coverage_threshold = float(
-            self.auditor.config.get("audit_coverage_threshold_percent", 85)
-        )
+        coverage_threshold = float(self.auditor.config.get("audit_coverage_threshold_percent", 85))
         coverage_percent = runtime.get("coverage_percent")
         build_health = runtime.get("build_health", "unknown")
         has_failures = any(not item.get("passed") for item in tier_results)
@@ -504,7 +502,9 @@ class AuditOutputEngine:
                 lines.append(f"- **Role**: {mod.role}")
                 lines.append(f"- **Files**: {mod.file_count} ({mod.line_count:,} lines)")
                 if mod.key_files:
-                    lines.append(f"- **Key files**: {', '.join(f'`{f}`' for f in mod.key_files[:3])}")
+                    lines.append(
+                        f"- **Key files**: {', '.join(f'`{f}`' for f in mod.key_files[:3])}"
+                    )
                 lines.append("")
 
         return "\n".join(lines)
@@ -520,11 +520,25 @@ class AuditOutputEngine:
                 content = arch_path.read_text(errors="replace").lower()
                 audit_types = set(result.project_type.lower().replace(",", " ").split())
                 type_keywords = {
-                    "python", "javascript", "typescript", "rust", "go", "java",
-                    "ruby", "swift", "kotlin", "c++", "c#", "php",
+                    "python",
+                    "javascript",
+                    "typescript",
+                    "rust",
+                    "go",
+                    "java",
+                    "ruby",
+                    "swift",
+                    "kotlin",
+                    "c++",
+                    "c#",
+                    "php",
                 }
                 mentioned_types = type_keywords & set(content.split())
-                if mentioned_types and not (mentioned_types & audit_types) and result.project_type != "unknown":
+                if (
+                    mentioned_types
+                    and not (mentioned_types & audit_types)
+                    and result.project_type != "unknown"
+                ):
                     conflicts.append(
                         AuditConflict(
                             doc_path="ARCHITECTURE.md",
@@ -599,7 +613,11 @@ class AuditOutputEngine:
             "",
         ]
         for idx, conflict in enumerate(conflicts, 1):
-            item = conflict if isinstance(conflict, AuditConflict) else AuditConflict.from_dict(conflict)
+            item = (
+                conflict
+                if isinstance(conflict, AuditConflict)
+                else AuditConflict.from_dict(conflict)
+            )
             severity_label = "ERROR" if item.severity == "error" else "WARNING"
             lines.append(f"## {idx}. [{severity_label}] {item.field}")
             lines.append(f"- **Document**: `{item.doc_path}`")

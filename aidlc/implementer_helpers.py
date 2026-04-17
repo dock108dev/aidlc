@@ -35,11 +35,10 @@ def build_implementation_prompt(impl, issue) -> str:
     """Build prompt: static instructions + schema first (cache-friendly), then volatile context."""
     issue_file = Path(impl.config["_issues_dir"]) / f"{issue.id}.md"
     issue_content = issue_file.read_text() if issue_file.exists() else ""
+    previous_notes = issue.implementation_notes or ""
 
     completed = [
-        data
-        for data in impl.state.issues
-        if data.get("status") in ("implemented", "verified")
+        data for data in impl.state.issues if data.get("status") in ("implemented", "verified")
     ]
     cap_done = max(1, int(impl.config.get("implementation_completed_issues_max", 12)))
 
@@ -48,12 +47,26 @@ def build_implementation_prompt(impl, issue) -> str:
         IMPLEMENTATION_SCHEMA_DESCRIPTION,
     ]
 
+    context_cap = max(1, int(impl.max_impl_context_chars or 12000))
+    project_context = impl.project_context
+    if len(project_context) > context_cap:
+        head = int(context_cap * 0.7)
+        tail = max(0, context_cap - head - 140)
+        tail_text = project_context[-tail:] if tail else ""
+        project_context = "".join(
+            [
+                project_context[:head],
+                "\n\n... [context truncated; read repository files directly when needed] ...\n\n",
+                tail_text,
+            ]
+        )
+
     volatile_sections = [
         "# Implementation Task\n",
         f"Issue **{issue.id}** — read full spec in `.aidlc/issues/{issue.id}.md` when present.",
         "",
         "## Project Context\n",
-        impl.project_context[: impl.max_impl_context_chars],
+        project_context,
         "",
         f"## Issue header: {issue.id} — {issue.title}\n",
         f"- priority: {issue.priority} | labels: {', '.join(issue.labels) if issue.labels else 'none'}",
@@ -64,15 +77,17 @@ def build_implementation_prompt(impl, issue) -> str:
     if issue_content:
         volatile_sections.extend(["### Issue file content\n", issue_content])
     else:
-        volatile_sections.extend(["### Description\n", issue.description, "\n### Acceptance Criteria\n"])
+        volatile_sections.extend(
+            ["### Description\n", issue.description, "\n### Acceptance Criteria\n"]
+        )
         for criterion in issue.acceptance_criteria:
             volatile_sections.append(f"- {criterion}")
 
-    if issue.attempt_count > 1:
+    if issue.attempt_count > 1 and not issue_content:
         volatile_sections.extend(
             [
                 "\n### Previous attempt notes\n",
-                issue.implementation_notes,
+                previous_notes,
                 "\nAddress failures above.",
             ]
         )
@@ -153,12 +168,16 @@ def ensure_test_deps(
 
     for dep_file, command in dep_install.items():
         if command and (project_root / dep_file).exists():
-            if dep_file in (
-                "package.json",
-                "package-lock.json",
-                "yarn.lock",
-                "pnpm-lock.yaml",
-            ) and (project_root / "node_modules").exists():
+            if (
+                dep_file
+                in (
+                    "package.json",
+                    "package-lock.json",
+                    "yarn.lock",
+                    "pnpm-lock.yaml",
+                )
+                and (project_root / "node_modules").exists()
+            ):
                 continue
             if dep_file in ("requirements.txt", "Gemfile"):
                 continue
@@ -211,9 +230,7 @@ def ensure_test_deps(
                         if state is not None:
                             add_console_time(state, t1)
             except (subprocess.TimeoutExpired, OSError):
-                logger.warning(
-                    f"Unable to verify/install test tool '{tool_name}' automatically."
-                )
+                logger.warning(f"Unable to verify/install test tool '{tool_name}' automatically.")
             break
 
 
@@ -234,7 +251,7 @@ Tests are failing after implementing issue {issue.id}: {issue.title}
 ## Instructions
 
 Fix the failing tests. The implementation should match the acceptance criteria:
-{chr(10).join(f'- {ac}' for ac in issue.acceptance_criteria)}
+{chr(10).join(f"- {ac}" for ac in issue.acceptance_criteria)}
 
 Fix the code or tests so everything passes. Do not remove or skip tests.
 
@@ -246,7 +263,7 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
         allow_edits=True,
         model_override=model_override,
     )
-    impl.state.record_claude_result(result, impl.config)
+    impl.state.record_provider_result(result, impl.config, phase="fix_tests")
     if result["success"]:
         impl.state.elapsed_seconds += result.get("duration_seconds", 0)
         return impl._run_tests()

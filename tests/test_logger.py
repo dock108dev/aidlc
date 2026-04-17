@@ -2,7 +2,7 @@
 
 import logging
 
-from aidlc.logger import setup_logger, log_checkpoint
+from aidlc.logger import log_checkpoint, setup_logger
 
 
 class TestSetupLogger:
@@ -28,7 +28,8 @@ class TestSetupLogger:
         logger = setup_logger("test_verbose", tmp_path, verbose=True)
         # Check console handler is DEBUG level
         console_handlers = [
-            h for h in logger.handlers
+            h
+            for h in logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1
@@ -37,7 +38,8 @@ class TestSetupLogger:
     def test_normal_mode(self, tmp_path):
         logger = setup_logger("test_normal", tmp_path, verbose=False)
         console_handlers = [
-            h for h in logger.handlers
+            h
+            for h in logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1
@@ -74,11 +76,70 @@ class TestLogCheckpoint:
             "claude_web_fetch_requests": 1,
             "claude_cost_usd_exact": 1.23,
             "claude_cost_usd_estimated": 1.11,
+            "provider_account_usage": {
+                "claude": {
+                    "default": {
+                        "calls": 8,
+                        "calls_succeeded": 7,
+                        "calls_failed": 1,
+                        "input_tokens": 900,
+                        "output_tokens": 300,
+                        "total_tokens": 1200,
+                        "cost_usd_exact": 1.0,
+                        "cost_usd_estimated": 0.9,
+                    }
+                },
+                "openai": {
+                    "budget": {
+                        "calls": 4,
+                        "calls_succeeded": 3,
+                        "calls_failed": 1,
+                        "input_tokens": 100,
+                        "output_tokens": 100,
+                        "total_tokens": 200,
+                        "cost_usd_exact": 0.23,
+                        "cost_usd_estimated": 0.21,
+                    }
+                },
+            },
         }
         log_checkpoint(logger, state_dict)
         content = (tmp_path / "cp_test.log").read_text()
         assert "CHECKPOINT" in content
         assert "implementing" in content
-        assert "Claude calls" in content
-        assert "Claude tokens" in content
-        assert "Claude cost (USD)" in content
+        assert "Provider calls" in content
+        assert "All providers (totals) tokens" in content
+        assert "Per provider:" in content
+        assert "claude/default:" in content
+        assert "openai/budget:" in content
+        assert "Provider cost (USD)" in content
+
+    def test_logs_checkpoint_no_provider_breakdown(self, tmp_path):
+        logger = setup_logger("cp_empty", tmp_path)
+        state_dict = {
+            "elapsed_seconds": 0,
+            "console_seconds": 0,
+            "phase": "init",
+            "planning_cycles": 0,
+            "issues_created": 0,
+            "implementation_cycles": 0,
+            "issues_implemented": 0,
+            "issues_verified": 0,
+            "claude_calls_total": 0,
+            "claude_calls_succeeded": 0,
+            "claude_calls_failed": 0,
+            "claude_retries_total": 0,
+            "claude_input_tokens": 0,
+            "claude_output_tokens": 0,
+            "claude_cache_creation_input_tokens": 0,
+            "claude_cache_read_input_tokens": 0,
+            "claude_total_tokens": 0,
+            "claude_web_search_requests": 0,
+            "claude_web_fetch_requests": 0,
+            "claude_cost_usd_exact": 0.0,
+            "claude_cost_usd_estimated": 0.0,
+            "provider_account_usage": {},
+        }
+        log_checkpoint(logger, state_dict)
+        content = (tmp_path / "cp_empty.log").read_text()
+        assert "Per provider: (no breakdown recorded)" in content

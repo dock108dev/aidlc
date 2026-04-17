@@ -5,17 +5,35 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .cli.accounts import cmd_accounts as _cmd_accounts
+from .cli.config_cmd import cmd_config_show as _cmd_config_show
+from .cli.provider import cmd_provider as _cmd_provider
+from .cli.usage_cmd import cmd_usage as _cmd_usage
 from .cli_commands import (
     _cyan,
     _print_banner,
     _print_precheck,
     _red,
+)
+from .cli_commands import (
     cmd_audit as _cmd_audit,
+)
+from .cli_commands import (
     cmd_finalize as _cmd_finalize,
+)
+from .cli_commands import (
     cmd_improve as _cmd_improve,
+)
+from .cli_commands import (
     cmd_init as _cmd_init,
+)
+from .cli_commands import (
     cmd_plan as _cmd_plan,
+)
+from .cli_commands import (
     cmd_precheck as _cmd_precheck,
+)
+from .cli_commands import (
     cmd_status as _cmd_status,
 )
 from .cli_parser import build_parser
@@ -61,6 +79,22 @@ def cmd_status(args: argparse.Namespace) -> None:
     _cmd_status(args, __version__)
 
 
+def cmd_accounts(args: argparse.Namespace) -> None:
+    _cmd_accounts(args, __version__)
+
+
+def cmd_provider(args: argparse.Namespace) -> None:
+    _cmd_provider(args, __version__)
+
+
+def cmd_usage(args: argparse.Namespace) -> None:
+    _cmd_usage(args, __version__)
+
+
+def cmd_config_show(args: argparse.Namespace) -> None:
+    _cmd_config_show(args, __version__)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
     project_root = args.project or str(Path.cwd())
@@ -74,6 +108,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             find_latest_run,
             list_cycle_snapshots,
             load_cycle_snapshot,
+        )
+        from .state_manager import (
             save_state as _save,
         )
 
@@ -176,6 +212,15 @@ def main() -> None:
         cmd_finalize(args)
     elif args.command == "status":
         cmd_status(args)
+    elif args.command == "accounts":
+        cmd_accounts(args)
+    elif args.command == "provider":
+        cmd_provider(args)
+    elif args.command == "usage":
+        cmd_usage(args)
+    elif args.command == "config":
+        # config show (and future config subcommands)
+        cmd_config_show(args)
     else:
         parser.print_help()
         print()

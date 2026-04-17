@@ -1,132 +1,41 @@
 """CLI command handlers and display helpers."""
 
 import argparse
-import json
 import shutil
 import sys
 from pathlib import Path
 
-from .config import load_config
+from .cli.config_cmd import run_config_wizard
+from .cli.display import (
+    bold as _bold,
+)
+from .cli.display import (
+    cyan as _cyan,
+)
+from .cli.display import (
+    dim as _dim,
+)
+from .cli.display import (
+    get_template_dir as _get_template_dir,
+)
+from .cli.display import (
+    green as _green,
+)
+from .cli.display import (
+    print_banner as _print_banner,
+)
+from .cli.display import (
+    print_precheck as _print_precheck,
+)
+from .cli.display import (
+    red as _red,
+)
+from .cli.display import (
+    yellow as _yellow,
+)
+from .cli.provider import cmd_provider_auth
+from .config import load_config, write_default_config
 from .state_manager import find_latest_run, load_state
-
-_USE_COLOR = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
-
-
-def _bold(text: str) -> str:
-    return f"\033[1m{text}\033[0m" if _USE_COLOR else text
-
-
-def _green(text: str) -> str:
-    return f"\033[32m{text}\033[0m" if _USE_COLOR else text
-
-
-def _yellow(text: str) -> str:
-    return f"\033[33m{text}\033[0m" if _USE_COLOR else text
-
-
-def _red(text: str) -> str:
-    return f"\033[31m{text}\033[0m" if _USE_COLOR else text
-
-
-def _dim(text: str) -> str:
-    return f"\033[2m{text}\033[0m" if _USE_COLOR else text
-
-
-def _cyan(text: str) -> str:
-    return f"\033[36m{text}\033[0m" if _USE_COLOR else text
-
-
-def _get_template_dir() -> Path:
-    """Return bundled project_template directory path."""
-    pkg_template = Path(__file__).parent / "project_template"
-    if pkg_template.exists():
-        return pkg_template
-    repo_template = Path(__file__).parent.parent / "project_template"
-    if repo_template.exists():
-        return repo_template
-    raise FileNotFoundError("project_template directory not found")
-
-
-def _print_banner(version: str):
-    print(_bold("AIDLC") + _dim(f" v{version}") + " — AI Development Life Cycle")
-    print()
-
-
-def _print_precheck(result, project_root: Path, verbose: bool = False) -> None:
-    """Print precheck results to console."""
-    from .precheck import REQUIRED_DOCS, RECOMMENDED_DOCS, OPTIONAL_DOCS
-
-    if result.config_created:
-        print(f"  {_green('+')} Auto-created {_cyan('.aidlc/')} with default config")
-        print(f"    Config: {_dim(str(project_root / '.aidlc' / 'config.json'))}")
-        print("    Edit to set plan_budget_hours, run_tests_command, etc.")
-        print()
-
-    if result.has_source_code:
-        print(f"  {_bold('Project:')} {result.project_type} {_dim('(source code detected)')}")
-        if "STATUS.md" not in [
-            *result.optional_found,
-            *result.recommended_found,
-            *result.required_found,
-        ]:
-            print(
-                f"    Tip: run {_cyan('aidlc audit')} to auto-generate STATUS.md + ARCHITECTURE.md"
-            )
-    else:
-        print(f"  {_bold('Project:')} {_dim('no source code detected (new project?)')}")
-    print()
-
-    print(f"  {_bold('Required')}")
-    for doc in REQUIRED_DOCS:
-        if doc in result.required_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = REQUIRED_DOCS[doc]
-            print(f"    {_red('x')} {doc} — {info['purpose']}")
-            for line in info["suggestion"].split("\n"):
-                print(f"      {_dim(line)}")
-    print()
-
-    print(f"  {_bold('Recommended')}")
-    for doc in RECOMMENDED_DOCS:
-        if doc in result.recommended_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = RECOMMENDED_DOCS[doc]
-            print(f"    {_yellow('-')} {doc} — {info['purpose']}")
-            if verbose:
-                for line in info["suggestion"].split("\n"):
-                    print(f"      {_dim(line)}")
-    print()
-
-    print(f"  {_bold('Optional')}")
-    for doc in OPTIONAL_DOCS:
-        if doc in result.optional_found:
-            print(f"    {_green('v')} {doc}")
-        else:
-            info = OPTIONAL_DOCS[doc]
-            print(f"    {_dim('-')} {doc} — {info['purpose']}")
-    print()
-
-    found = sum(
-        [len(result.required_found), len(result.recommended_found), len(result.optional_found)]
-    )
-    total = len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
-    score = result.score
-
-    if score == "not ready":
-        print(f"  {_bold('Readiness:')} {_red('NOT READY')} — missing required doc(s)")
-        print(
-            f"    Create the required files above, then run {_cyan('aidlc precheck')} again."
-        )
-    elif score == "excellent":
-        print(f"  {_bold('Readiness:')} {_green('EXCELLENT')} ({found}/{total} docs) — ready to run")
-    elif score == "good":
-        print(f"  {_bold('Readiness:')} {_green('GOOD')} ({found}/{total} docs) — ready to run")
-    else:
-        print(
-            f"  {_bold('Readiness:')} {_yellow('MINIMAL')} ({found}/{total} docs) — can run, but more docs = better plans"
-        )
 
 
 def cmd_precheck(args: argparse.Namespace, version: str) -> None:
@@ -153,33 +62,14 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
 
     if aidlc_dir.exists() and not args.with_docs:
         print(f"{_yellow('!')} .aidlc/ already exists at {project_root}")
-        print(
-            f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh."
-        )
+        print(f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh.")
         return
 
     if not aidlc_dir.exists():
-        aidlc_dir.mkdir()
-        (aidlc_dir / "issues").mkdir()
-        (aidlc_dir / "runs").mkdir()
-        (aidlc_dir / "reports").mkdir()
+        from .config_detect import describe_detected, detect_config
 
-        from .config_detect import detect_config, describe_detected
-
-        default_config = {
-            "plan_budget_hours": 4,
-            "checkpoint_interval_minutes": 15,
-            "claude_model": "opus",
-            "max_implementation_attempts": 3,
-            "run_tests_command": None,
-        }
         detected = detect_config(project_root)
-        for key, value in detected.items():
-            if not key.startswith("_") and value is not None:
-                default_config[key] = value
-
-        with open(aidlc_dir / "config.json", "w") as config_file:
-            json.dump(default_config, config_file, indent=2)
+        write_default_config(aidlc_dir, detected_overrides=detected)
 
         desc = describe_detected(detected)
         if desc:
@@ -206,9 +96,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
         template_dir = _get_template_dir()
         if not template_dir.exists():
             print(f"{_red('x')} Template directory not found at {template_dir}")
-            print(
-                "  This can happen if aidlc was installed from a wheel without package data."
-            )
+            print("  This can happen if aidlc was installed from a wheel without package data.")
             sys.exit(1)
 
         copied = 0
@@ -234,24 +122,77 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     print("Next steps:")
     if args.with_docs:
         print(f"  1. Edit {_cyan('ARCHITECTURE.md')} and {_cyan('DESIGN.md')} as needed")
-        print(
-            f"  2. Optionally edit {_cyan('ROADMAP.md')} if you want phase-based planning"
-        )
+        print(f"  2. Optionally edit {_cyan('ROADMAP.md')} if you want phase-based planning")
         print(f"  3. Run {_cyan('aidlc run')}")
     else:
-        print(
-            "  1. Add architecture/design context docs (README.md, ARCHITECTURE.md, DESIGN.md)"
-        )
+        print("  1. Add architecture/design context docs (README.md, ARCHITECTURE.md, DESIGN.md)")
         print(f"     Or run {_cyan('aidlc init --with-docs')} to copy templates")
         print("  2. ROADMAP.md is optional and can be generated/refined later")
         print(f"  3. Run {_cyan('aidlc run')}")
+
+    # Provider setup wizard (--providers flag)
+    if getattr(args, "providers", False) is True:
+        import json
+        import logging
+
+        from .routing.engine import ProviderRouter
+
+        config_path = aidlc_dir / "config.json"
+        print()
+        print(f"  {_bold('--- Provider Setup ---')}")
+        print()
+
+        # Step 1: config wizard for provider enable/disable
+        run_config_wizard(config_path)
+
+        # Step 2: validate all enabled providers
+        print()
+        print(f"  {_bold('Validating providers...')}")
+        print()
+
+        with open(config_path) as f:
+            current_config = json.load(f)
+
+        config_loaded = load_config(project_root=str(project_root))
+        logger = logging.getLogger("aidlc.init.providers")
+        router = ProviderRouter(config_loaded, logger)
+
+        providers_cfg = current_config.get("providers", {})
+        for pname, pcfg in providers_cfg.items():
+            if not isinstance(pcfg, dict) or not pcfg.get("enabled", False):
+                continue
+            adapter = router._adapters.get(pname)
+            if adapter is None:
+                continue
+            health = adapter.validate_health()
+            icon = _green("●") if health.is_usable else _red("●")
+            print(f"  {icon} {pname}: {health.status.value}")
+
+            if not health.is_usable:
+                try:
+                    raw = (
+                        input(
+                            f"\n  {_yellow('!')} {pname} is not authenticated. Run auth now? (y/n) [y]: "
+                        )
+                        .strip()
+                        .lower()
+                    )
+                except EOFError:
+                    raw = "n"
+                if raw in ("", "y", "yes"):
+                    print()
+                    cmd_provider_auth(pname, config_loaded, show_health=False)
+
+        print()
+        print(f"  {_green('Provider setup complete.')}")
+        print(f"  Check status anytime: {_cyan('aidlc provider list')}")
 
 
 def cmd_audit(args: argparse.Namespace, version: str) -> None:
     """Run standalone code audit."""
     from .auditor import CodeAuditor
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .routing import ProviderRouter
 
     project_root = Path(args.project or ".").resolve()
     config = load_config(config_path=getattr(args, "config", None), project_root=str(project_root))
@@ -266,7 +207,7 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
 
     cli = None
     if depth == "full":
-        cli = ClaudeCLI(config, logger)
+        cli = ProviderRouter(config, logger)
         if not cli.check_available():
             print(f"{_red('x')} Claude CLI not available.")
             print("  Use quick scan (without --full) or install Claude CLI.")
@@ -299,14 +240,16 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
     else:
         print(f"  {_green('No conflicts')} with existing docs.")
     print()
-    print(f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first.")
+    print(
+        f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first."
+    )
 
 
 def cmd_improve(args: argparse.Namespace, version: str) -> None:
     """Run targeted improvement cycle."""
     from .improve import ImprovementCycle
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .routing import ProviderRouter
     from .scanner import ProjectScanner
 
     project_root = Path(args.project or ".").resolve()
@@ -328,7 +271,7 @@ def cmd_improve(args: argparse.Namespace, version: str) -> None:
 
     (project_root / ".aidlc").mkdir(exist_ok=True)
     logger = setup_logger("improve", project_root / ".aidlc", verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -346,9 +289,9 @@ def cmd_improve(args: argparse.Namespace, version: str) -> None:
 
 def cmd_plan(args: argparse.Namespace, version: str) -> None:
     """Run interactive planning session."""
-    from .plan_session import PlanSession
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
+    from .plan_session import PlanSession
+    from .routing import ProviderRouter
 
     project_root = Path(args.project or ".").resolve()
     config = load_config(config_path=getattr(args, "config", None), project_root=str(project_root))
@@ -356,7 +299,7 @@ def cmd_plan(args: argparse.Namespace, version: str) -> None:
 
     (project_root / ".aidlc").mkdir(exist_ok=True)
     logger = setup_logger("plan", project_root / ".aidlc", verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -373,7 +316,6 @@ def cmd_finalize(args: argparse.Namespace, version: str) -> None:
     """Run finalization passes standalone."""
     from .finalizer import Finalizer
     from .logger import setup_logger
-    from .claude_cli import ClaudeCLI
     from .scanner import ProjectScanner
     from .state_manager import save_state as _save
 
@@ -392,7 +334,9 @@ def cmd_finalize(args: argparse.Namespace, version: str) -> None:
 
     state = load_state(run_dir)
     logger = setup_logger(state.run_id, run_dir, verbose=args.verbose)
-    cli = ClaudeCLI(config, logger)
+    from .routing import ProviderRouter
+
+    cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
         sys.exit(1)
@@ -454,10 +398,14 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     print(f"  {_bold('Phase:')}     {state.phase.value}")
     print(f"  {_bold('Planning:')}  {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
     print(f"  {_bold('Time:')}      {elapsed_h:.1f}h Claude CLI, {console_h:.1f}h console")
-    print(f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed")
+    print(
+        f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed"
+    )
 
     if state.audit_depth != "none":
-        print(f"  {_bold('Audit:')}     {state.audit_depth} ({'complete' if state.audit_completed else 'incomplete'})")
+        print(
+            f"  {_bold('Audit:')}     {state.audit_depth} ({'complete' if state.audit_completed else 'incomplete'})"
+        )
     if state.stop_reason:
         print(f"  {_bold('Stopped:')}   {state.stop_reason}")
 
@@ -478,3 +426,15 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
             icon = icon_map.get(status, "?")
             title = issue.get("title", "untitled")
             print(f"    [{icon}] {issue['id']}: {title} {_dim(f'({status})')}")
+
+
+# ---------------------------------------------------------------------------
+# Accounts commands (delegate to aidlc.cli.accounts)
+# ---------------------------------------------------------------------------
+
+
+def cmd_accounts(args: argparse.Namespace, version: str) -> None:
+    """Manage provider accounts."""
+    from .cli.accounts import cmd_accounts as _cmd_accounts
+
+    return _cmd_accounts(args, version)

@@ -2,14 +2,21 @@
 
 import json
 import os
-import pytest
-from pathlib import Path
+from unittest.mock import patch
 
+import pytest
+from aidlc.models import RunPhase, RunState, RunStatus
 from aidlc.state_manager import (
-    generate_run_id, save_state, load_state, checkpoint,
-    find_latest_run, RunLock,
+    RunLock,
+    checkpoint,
+    find_latest_run,
+    generate_run_id,
+    list_cycle_snapshots,
+    load_cycle_snapshot,
+    load_state,
+    save_cycle_snapshot,
+    save_state,
 )
-from aidlc.models import RunState, RunStatus, RunPhase
 
 
 class TestGenerateRunId:
@@ -51,6 +58,12 @@ class TestSaveAndLoadState:
         save_state(state, tmp_path)
         assert state.last_updated is not None
 
+    @patch("aidlc.state_manager.os.chmod")
+    def test_save_restricts_permissions(self, mock_chmod, tmp_path):
+        state = RunState(run_id="test_001", config_name="default")
+        path = save_state(state, tmp_path)
+        mock_chmod.assert_called_once_with(path, 0o600)
+
     def test_load_roundtrip(self, tmp_path):
         state = RunState(run_id="test_rt", config_name="myconfig")
         state.status = RunStatus.RUNNING
@@ -81,6 +94,24 @@ class TestSaveAndLoadState:
         with pytest.raises(FileNotFoundError):
             load_state(tmp_path)
 
+    def test_load_state_raises_when_checkpoints_also_corrupt(self, tmp_path):
+        (tmp_path / "state.json").write_text("{bad")
+        cp = tmp_path / "checkpoints"
+        cp.mkdir()
+        (cp / "checkpoint_0001.json").write_text("{bad")
+        with pytest.raises(FileNotFoundError):
+            load_state(tmp_path)
+
+    def test_load_skips_corrupt_checkpoints(self, tmp_path):
+        cp_dir = tmp_path / "checkpoints"
+        cp_dir.mkdir(parents=True)
+        (cp_dir / "checkpoint_0001.json").write_text("{not json")
+        state_ok = RunState(run_id="recovered", config_name="default")
+        (cp_dir / "checkpoint_0002.json").write_text(json.dumps(state_ok.to_dict()))
+        (tmp_path / "state.json").write_text("{corrupt")
+        loaded = load_state(tmp_path)
+        assert loaded.run_id == "recovered"
+
 
 class TestCheckpoint:
     def test_creates_checkpoint_file(self, tmp_path):
@@ -107,6 +138,14 @@ class TestCheckpoint:
         cp_file = list((tmp_path / "checkpoints").glob("checkpoint_*.json"))[0]
         data = json.loads(cp_file.read_text())
         assert data["run_id"] == "cp_test"
+
+    @patch("aidlc.state_manager.os.chmod")
+    def test_checkpoint_restricts_permissions(self, mock_chmod, tmp_path):
+        state = RunState(run_id="cp_test", config_name="default")
+        checkpoint(state, tmp_path)
+        chmod_paths = [call.args[0].name for call in mock_chmod.call_args_list]
+        assert "checkpoint_0001.json" in chmod_paths
+        assert "state.json" in chmod_paths
 
 
 class TestFindLatestRun:
@@ -147,6 +186,12 @@ class TestRunLock:
         assert str(os.getpid()) in content
         lock.release()
         assert not lock.lock_path.exists()
+
+    @patch("aidlc.state_manager.os.chmod")
+    def test_acquire_restricts_permissions(self, mock_chmod, tmp_path):
+        lock = RunLock(tmp_path)
+        lock.acquire()
+        mock_chmod.assert_called_once_with(lock.lock_path, 0o600)
 
     def test_context_manager(self, tmp_path):
         with RunLock(tmp_path) as lock:
@@ -189,3 +234,67 @@ class TestRunLock:
         lock = RunLock(tmp_path)
         lock.release()  # Should not delete — different PID
         assert lock_path.exists()
+
+    def test_release_swallows_corrupt_lock_file(self, tmp_path):
+        lock_path = tmp_path / "run.lock"
+        lock_path.write_text("not-a-pid\n")
+        RunLock(tmp_path).release()
+        assert lock_path.exists()
+
+    @patch("aidlc.state_manager.os.chmod", side_effect=OSError("chmod"))
+    def test_chmod_owner_only_swallows_oserror(self, _mock_chmod, tmp_path):
+        state = RunState(run_id="c", config_name="default")
+        save_state(state, tmp_path)
+        assert (tmp_path / "state.json").exists()
+
+
+class TestCycleSnapshots:
+    def test_save_and_load_cycle_snapshot(self, tmp_path):
+        state = RunState(run_id="snap", config_name="default")
+        save_cycle_snapshot(state, tmp_path, 3)
+        loaded = load_cycle_snapshot(tmp_path, 3)
+        assert loaded.run_id == "snap"
+        assert list_cycle_snapshots(tmp_path) == [3]
+
+    def test_load_cycle_snapshot_missing_shows_available(self, tmp_path):
+        state = RunState(run_id="s", config_name="default")
+        save_cycle_snapshot(state, tmp_path, 1)
+        with pytest.raises(FileNotFoundError, match="Available"):
+            load_cycle_snapshot(tmp_path, 99)
+
+    def test_load_cycle_snapshot_missing_no_dir(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="No cycle snapshots"):
+            load_cycle_snapshot(tmp_path, 1)
+
+    def test_list_cycle_snapshots_skips_malformed_names(self, tmp_path):
+        snap_dir = tmp_path / "cycle_snapshots"
+        snap_dir.mkdir()
+        (snap_dir / "cycle_0007.json").write_text("{}")
+        (snap_dir / "cycle_bad.json").write_text("{}")
+        assert list_cycle_snapshots(tmp_path) == [7]
+
+
+class TestListCycleSnapshotsEmpty:
+    def test_list_cycle_snapshots_missing_dir(self, tmp_path):
+        assert list_cycle_snapshots(tmp_path) == []
+
+
+class TestFindLatestRunFilter:
+    def test_find_latest_respects_config_name_prefix(self, tmp_path):
+        older = tmp_path / "default_20240101_000000"
+        older.mkdir()
+        (older / "state.json").write_text("{}")
+
+        newer = tmp_path / "other_20240102_000000"
+        newer.mkdir()
+        (newer / "state.json").write_text("{}")
+
+        found = find_latest_run(tmp_path, config_name="default")
+        assert found is not None
+        assert found.name.startswith("default")
+
+    def test_find_latest_returns_none_when_prefix_matches_nothing(self, tmp_path):
+        d = tmp_path / "solo_20240101"
+        d.mkdir()
+        (d / "state.json").write_text("{}")
+        assert find_latest_run(tmp_path, config_name="nomatch") is None

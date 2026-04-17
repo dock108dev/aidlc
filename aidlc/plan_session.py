@@ -10,11 +10,9 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .claude_cli import ClaudeCLI
 from .plan_templates import (
     ARCHITECTURE_GENERATION_PROMPT,
     CLAUDE_MD_GENERATION_PROMPT,
@@ -32,11 +30,24 @@ from .research_output import (
 
 
 # ANSI helpers
-def _bold(t): return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
-def _dim(t): return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
-def _cyan(t): return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
-def _green(t): return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
-def _yellow(t): return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
+def _bold(t):
+    return f"\033[1m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _dim(t):
+    return f"\033[2m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _cyan(t):
+    return f"\033[36m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _green(t):
+    return f"\033[32m{t}\033[0m" if sys.stdout.isatty() else t
+
+
+def _yellow(t):
+    return f"\033[33m{t}\033[0m" if sys.stdout.isatty() else t
 
 
 class PlanSession:
@@ -46,7 +57,7 @@ class PlanSession:
         self,
         project_root: Path,
         config: dict,
-        cli: ClaudeCLI,
+        cli,
         logger,
     ):
         self.project_root = project_root
@@ -106,7 +117,9 @@ class PlanSession:
         print()
         print(f"  {_bold('Launching Claude for interactive refinement...')}")
         print()
-        print(f"  {_dim('Talk through your design with Claude. Claude can edit your docs directly.')}")
+        print(
+            f"  {_dim('Talk through your design with Claude. Claude can edit your docs directly.')}"
+        )
         hint = 'Try: "Expand Phase 2" or "What am I missing for MVP?"'
         print(f"  {_dim(hint)}")
         print(f"  {_dim('Exit Claude (Ctrl+C or /exit) when done.')}")
@@ -117,7 +130,7 @@ class PlanSession:
         print()
         print(f"  {_green('Planning session complete!')}")
         print()
-        print(f"  Next steps:")
+        print("  Next steps:")
         print(f"    {_cyan('aidlc precheck')}       Verify readiness")
         print(f"    {_cyan('aidlc run')}            Start planning and implementation")
         print(f"    {_cyan('aidlc plan --review')}   Get an audit of your docs")
@@ -147,10 +160,10 @@ class PlanSession:
 
         # Parse JSON from response
         try:
-            from .schemas import parse_json_output
             output = result.get("output", "")
             # Try to extract JSON array
             import re
+
             match = re.search(r"\[.*\]", output, re.DOTALL)
             if match:
                 topics = json.loads(match.group())
@@ -332,14 +345,15 @@ class PlanSession:
 
         # Launch claude interactively
         cmd = [
-            self.config.get("claude_cli_command", "claude"),
-            "--append-system-prompt", system_prompt,
+            self.config.get("providers", {}).get("claude", {}).get("cli_command", "claude"),
+            "--append-system-prompt",
+            system_prompt,
             "--dangerously-skip-permissions",
             initial_msg,
         ]
 
         try:
-            proc = subprocess.run(
+            subprocess.run(
                 cmd,
                 cwd=str(self.project_root),
                 stdin=sys.stdin,
@@ -360,8 +374,12 @@ class PlanSession:
                 data = json.loads(audit_path.read_text())
                 parts.append("## Existing Codebase Analysis")
                 parts.append(f"- Project type: {data.get('project_type', 'unknown')}")
-                parts.append(f"- Source files: {data.get('source_stats', {}).get('total_files', 0)}")
-                parts.append(f"- Total lines: {data.get('source_stats', {}).get('total_lines', 0):,}")
+                parts.append(
+                    f"- Source files: {data.get('source_stats', {}).get('total_files', 0)}"
+                )
+                parts.append(
+                    f"- Total lines: {data.get('source_stats', {}).get('total_lines', 0):,}"
+                )
 
                 frameworks = data.get("frameworks", [])
                 if frameworks:
@@ -371,7 +389,9 @@ class PlanSession:
                 if modules:
                     parts.append("\nModules:")
                     for m in modules:
-                        parts.append(f"  - {m.get('name', '?')} ({m.get('role', '?')}, {m.get('file_count', 0)} files)")
+                        parts.append(
+                            f"  - {m.get('name', '?')} ({m.get('role', '?')}, {m.get('file_count', 0)} files)"
+                        )
             except (OSError, json.JSONDecodeError):
                 pass
 
@@ -426,8 +446,8 @@ class PlanSession:
 
         prompt = (
             "Review these project documents and provide a structured assessment:\n\n"
-            + "\n\n".join(doc_content) +
-            "\n\n## Review Criteria\n"
+            + "\n\n".join(doc_content)
+            + "\n\n## Review Criteria\n"
             "1. **Completeness** — are all necessary sections filled in?\n"
             "2. **Specificity** — are items concrete enough to create issues from?\n"
             "3. **Gaps** — what's missing that should be there?\n"
@@ -449,7 +469,7 @@ class PlanSession:
             )
             print(f"\n  {_green('+')} Review saved to docs/audits/doc-review.md")
             print(f"\n{result['output'][:2000]}")
-            if len(result['output']) > 2000:
+            if len(result["output"]) > 2000:
                 print(f"\n  {_dim('... (full review in docs/audits/doc-review.md)')}")
         else:
             print(f"  {_yellow('!')} Review failed: {result.get('error')}")

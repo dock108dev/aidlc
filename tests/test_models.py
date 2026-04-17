@@ -1,7 +1,7 @@
 """Tests for aidlc.models module."""
 
 import pytest
-from aidlc.models import Issue, IssueStatus, RunState, RunStatus, RunPhase
+from aidlc.models import Issue, IssueStatus, RunPhase, RunState, RunStatus
 
 
 class TestIssue:
@@ -145,10 +145,38 @@ class TestRunState:
     def test_get_pending_issues(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "pending", "dependencies": [], "attempt_count": 0, "max_attempts": 3},
-            {"id": "ISSUE-002", "title": "B", "status": "implemented", "dependencies": [], "attempt_count": 1, "max_attempts": 3},
-            {"id": "ISSUE-003", "title": "C", "status": "pending", "dependencies": ["ISSUE-002"], "attempt_count": 0, "max_attempts": 3},
-            {"id": "ISSUE-004", "title": "D", "status": "pending", "dependencies": ["ISSUE-999"], "attempt_count": 0, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "pending",
+                "dependencies": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "status": "implemented",
+                "dependencies": [],
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-003",
+                "title": "C",
+                "status": "pending",
+                "dependencies": ["ISSUE-002"],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-004",
+                "title": "D",
+                "status": "pending",
+                "dependencies": ["ISSUE-999"],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
         ]
         pending = state.get_pending_issues()
         ids = [i.id for i in pending]
@@ -159,7 +187,14 @@ class TestRunState:
     def test_get_pending_excludes_exhausted(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "failed", "dependencies": [], "attempt_count": 3, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "failed",
+                "dependencies": [],
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
         ]
         assert state.get_pending_issues() == []
 
@@ -176,15 +211,33 @@ class TestRunState:
     def test_all_issues_resolved_with_failed_exhausted(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "verified", "attempt_count": 1, "max_attempts": 3},
-            {"id": "ISSUE-002", "title": "B", "status": "failed", "attempt_count": 3, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "verified",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "status": "failed",
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
         ]
         assert state.all_issues_resolved()  # Failed but exhausted
 
     def test_all_issues_not_resolved_with_retryable_failed(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "failed", "attempt_count": 1, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "failed",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
         ]
         assert not state.all_issues_resolved()  # Can still retry
 
@@ -212,11 +265,13 @@ class TestRunState:
         assert restored.claude_model_usage["sonnet"]["calls"] == 4
         assert len(restored.issues) == 1
 
-    def test_record_claude_result_uses_exact_cost_when_available(self):
+    def test_record_provider_result_uses_exact_cost_when_available(self):
         state = RunState(run_id="t", config_name="c")
         result = {
             "success": True,
             "retries": 1,
+            "provider_id": "openai",
+            "account_id": "acct-1",
             "model_used": "sonnet",
             "total_cost_usd": 0.42,
             "usage": {
@@ -228,7 +283,11 @@ class TestRunState:
                 "web_fetch_requests": 1,
             },
         }
-        state.record_claude_result(result, {"telemetry_cost_mode": "auto"})
+        state.record_provider_result(
+            result,
+            {"telemetry_cost_mode": "auto"},
+            phase="planning",
+        )
         assert state.claude_calls_total == 1
         assert state.claude_calls_succeeded == 1
         assert state.claude_retries_total == 1
@@ -238,12 +297,20 @@ class TestRunState:
         assert state.claude_web_fetch_requests == 1
         assert state.claude_cost_usd_exact == pytest.approx(0.42)
         assert state.claude_cost_usd_estimated == pytest.approx(0.0)
+        assert state.provider_account_usage["openai"]["acct-1"]["calls"] == 1
+        assert (
+            state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 200
+        )  # 100+50+20+30
+        assert state.phase_usage["planning"]["calls"] == 1
+        assert state.phase_usage["planning"]["provider_id"] == "openai"
 
-    def test_record_claude_result_estimates_cost_without_exact(self):
+    def test_record_provider_result_estimates_cost_without_exact(self):
         state = RunState(run_id="t", config_name="c")
         result = {
             "success": False,
             "retries": 0,
+            "provider_id": "copilot",
+            "account_id": "primary",
             "model_used": "sonnet",
             "usage": {
                 "input_tokens": 1_000_000,
@@ -252,7 +319,7 @@ class TestRunState:
                 "cache_read_input_tokens": 0,
             },
         }
-        state.record_claude_result(
+        state.record_provider_result(
             result,
             {
                 "telemetry_cost_mode": "auto",
@@ -260,8 +327,11 @@ class TestRunState:
                     "sonnet": {"input": 2.0, "output": 8.0}
                 },
             },
+            phase="research",
         )
         assert state.claude_calls_total == 1
         assert state.claude_calls_failed == 1
         assert state.claude_cost_usd_exact == pytest.approx(0.0)
         assert state.claude_cost_usd_estimated == pytest.approx(10.0)
+        assert state.provider_account_usage["copilot"]["primary"]["calls_failed"] == 1
+        assert state.phase_usage["research"]["calls"] == 1
