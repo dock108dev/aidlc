@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.implementer_helpers import (
+    _looks_like_pre_existing_unrelated_debt,
+    _resolve_follow_up_documentation,
     build_implementation_prompt,
     detect_test_command,
     ensure_test_deps,
@@ -170,6 +172,25 @@ def test_fix_failing_tests_cli_fails(mock_impl_module):
     assert out.tests_now_passing is False
 
 
+def test_looks_like_pre_existing_user_log_sample():
+    msg = (
+        "Focused GUT coverage passes for `test_x.gd`, but the required broader GUT gate is "
+        "blocked by pre-existing unrelated suite issues: parse errors, unrelated failing tests."
+    )
+    assert _looks_like_pre_existing_unrelated_debt(msg) is True
+
+
+def test_resolve_follow_up_prose_when_no_json():
+    doc = _resolve_follow_up_documentation(
+        None,
+        "Focused coverage passes but gate is blocked by pre-existing unrelated suite issues.",
+        "",
+        40,
+        True,
+    )
+    assert "pre-existing" in doc.lower()
+
+
 def test_fix_failing_tests_accept_pre_existing_debt(mock_impl_module):
     impl, issue = mock_impl_module
     impl.config = {
@@ -192,6 +213,28 @@ def test_fix_failing_tests_accept_pre_existing_debt(mock_impl_module):
     assert out.tests_now_passing is False
     assert out.accepted_pre_existing_debt is True
     assert "unrelated" in out.follow_up_documentation.lower()
+
+
+def test_fix_failing_tests_prose_only_no_json(mock_impl_module):
+    impl, issue = mock_impl_module
+    impl.config = {
+        "implementation_accept_pre_existing_suite_failures": True,
+        "implementation_pre_existing_debt_min_chars": 40,
+        "implementation_pre_existing_prose_heuristic": True,
+    }
+    prose = (
+        "Focused GUT coverage passes for res://tests/gut/test_foo.gd, but the broader GUT gate "
+        "is blocked by pre-existing unrelated suite issues: parse errors in other files."
+    )
+    impl._run_tests = MagicMock(side_effect=["fail", False])
+    impl.cli.execute_prompt.return_value = {
+        "success": True,
+        "output": prose,
+        "duration_seconds": 0.5,
+    }
+    out = fix_failing_tests(impl, issue)
+    assert out.accepted_pre_existing_debt is True
+    assert "pre-existing" in out.follow_up_documentation.lower()
 
 
 @pytest.fixture

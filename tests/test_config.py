@@ -87,6 +87,7 @@ class TestLoadConfig:
             "implementation_escalate_on_retry",
             "implementation_accept_pre_existing_suite_failures",
             "implementation_pre_existing_debt_min_chars",
+            "implementation_pre_existing_prose_heuristic",
             "implementation_complexity_acceptance_criteria_threshold",
             "implementation_complexity_dependencies_threshold",
             "implementation_complexity_description_chars_threshold",

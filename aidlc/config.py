@@ -154,6 +154,8 @@ DEFAULTS = {
     # pre-existing unrelated failures and follow_up_documentation meets min length.
     "implementation_accept_pre_existing_suite_failures": True,
     "implementation_pre_existing_debt_min_chars": 40,
+    # If fix response has no valid JSON, infer pre-existing debt from prose (models often skip JSON).
+    "implementation_pre_existing_prose_heuristic": True,
     "implementation_complexity_acceptance_criteria_threshold": 12,
     "implementation_complexity_dependencies_threshold": 5,
     "implementation_complexity_description_chars_threshold": 5000,

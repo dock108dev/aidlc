@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.implementer import Implementer
+from aidlc.implementer_helpers import FixTestsOutcome
 from aidlc.models import Issue, IssueStatus, RunState
 
 
@@ -763,6 +764,50 @@ class TestImplementerMoreBranches:
         impl.test_command = "pytest"
         out = impl._run_tests(capture_output=True)
         assert "timed out" in out.lower()
+
+    @patch.object(Implementer, "_fix_failing_tests")
+    @patch("aidlc.implementer.parse_implementation_result")
+    @patch.object(Implementer, "_get_changed_files")
+    @patch.object(Implementer, "_run_tests")
+    def test_implement_issue_success_when_json_success_false_but_debt_accepted(
+        self, mock_rt, mock_gcf, mock_parse, mock_fix, config, logger, tmp_path
+    ):
+        from aidlc.schemas import ImplementationResult
+
+        mock_parse.return_value = ImplementationResult(
+            issue_id="ISSUE-001",
+            success=False,
+            summary="done",
+            files_changed=["a.gd"],
+            tests_passed=False,
+        )
+        mock_gcf.return_value = (["a.gd"], True)
+        mock_rt.return_value = False
+        mock_fix.return_value = FixTestsOutcome(
+            tests_now_passing=False,
+            accepted_pre_existing_debt=True,
+            follow_up_documentation="pre-existing unrelated suite issues " * 3,
+        )
+        config["dry_run"] = False
+        config["run_tests_command"] = "pytest"
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": "{}",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.test_command = "pytest"
+        issue = Issue.from_dict(state.issues[0])
+        assert impl._implement_issue(issue) is True
+        assert issue.status == IssueStatus.IMPLEMENTED
 
     @patch("aidlc.implementer.parse_implementation_result")
     @patch.object(Implementer, "_get_changed_files")

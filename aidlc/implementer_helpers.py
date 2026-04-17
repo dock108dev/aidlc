@@ -27,6 +27,45 @@ class FixTestsOutcome:
     follow_up_documentation: str = ""
 
 
+def _looks_like_pre_existing_unrelated_debt(text: str) -> bool:
+    """True when prose (no JSON) describes unrelated / pre-existing suite blockers."""
+    low = (text or "").lower()
+    if len(low) < 24:
+        return False
+    if "pre-existing" in low and "unrelated" in low:
+        return True
+    if "unrelated suite" in low:
+        return True
+    if "gate" in low and "blocked" in low and ("unrelated" in low or "pre-existing" in low):
+        return True
+    if "broader" in low and "gate" in low and "blocked" in low:
+        return True
+    if "focused" in low and "passes" in low and "blocked" in low:
+        return True
+    return False
+
+
+def _resolve_follow_up_documentation(
+    parsed: dict | None,
+    raw_output: str,
+    raw_error: str,
+    min_chars: int,
+    allow_prose_heuristic: bool,
+) -> str:
+    """Prefer JSON follow_up_documentation; else accept matching prose (models often skip JSON)."""
+    doc = ""
+    if isinstance(parsed, dict) and parsed.get("failures_are_pre_existing_unrelated") is True:
+        doc = str(parsed.get("follow_up_documentation") or "").strip()
+    if len(doc) >= min_chars:
+        return doc
+    if not allow_prose_heuristic:
+        return ""
+    combined = ((raw_output or "") + "\n" + str(raw_error or "")).strip()
+    if len(combined) >= min_chars and _looks_like_pre_existing_unrelated_debt(combined):
+        return combined
+    return ""
+
+
 def implementation_instructions(test_command: str | None) -> str:
     """Return implementation instruction block (dense; same rules, fewer tokens)."""
     test_line = ""
@@ -296,10 +335,15 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
         return FixTestsOutcome()
 
     min_chars = max(10, int(cfg.get("implementation_pre_existing_debt_min_chars", 40) or 40))
-    doc = ""
-    if isinstance(out, dict) and out.get("failures_are_pre_existing_unrelated") is True:
-        doc = str(out.get("follow_up_documentation") or "").strip()
-    if len(doc) >= min_chars:
+    prose_ok = bool(cfg.get("implementation_pre_existing_prose_heuristic", True))
+    doc = _resolve_follow_up_documentation(
+        out,
+        result.get("output") or "",
+        str(result.get("error") or ""),
+        min_chars,
+        prose_ok,
+    )
+    if doc:
         impl.logger.info(
             f"{issue.id}: fix attempt documents pre-existing/unrelated suite failures; "
             "implementation may be accepted with follow-up notes."

@@ -106,6 +106,7 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `implementation_escalate_on_retry` | `true` |
 | `implementation_accept_pre_existing_suite_failures` | `true` |
 | `implementation_pre_existing_debt_min_chars` | `40` |
+| `implementation_pre_existing_prose_heuristic` | `true` |
 | `implementation_complexity_acceptance_criteria_threshold` | `12` |
 | `implementation_complexity_dependencies_threshold` | `5` |
 | `implementation_complexity_description_chars_threshold` | `5000` |
@@ -116,7 +117,7 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `strict_change_detection` | `false` |
 | `fail_on_final_test_failure` | `false` |
 
-After implementation, if `run_tests_command` fails, AIDLC runs a **fix-tests** prompt. If tests still fail, but the model returns structured JSON documenting **pre-existing / unrelated** suite failures (`failures_are_pre_existing_unrelated` + `follow_up_documentation`), the issue can still be marked **implemented** when `implementation_accept_pre_existing_suite_failures` is `true` and the documentation is at least `implementation_pre_existing_debt_min_chars` long — notes are appended for follow-up issues. Set `implementation_accept_pre_existing_suite_failures` to `false` to require a green test command for every issue.
+After implementation, if `run_tests_command` fails, AIDLC runs a **fix-tests** prompt. If tests still fail, but the model documents **pre-existing / unrelated** suite failures — ideally via structured JSON (`failures_are_pre_existing_unrelated` + `follow_up_documentation`) — the issue can still be marked **implemented** when `implementation_accept_pre_existing_suite_failures` is `true` and the documentation is at least `implementation_pre_existing_debt_min_chars` long — notes are appended for follow-up issues. If the model omits JSON, `implementation_pre_existing_prose_heuristic` (default `true`) treats clear prose (e.g. “pre-existing unrelated suite”, “gate is blocked”) as documentation. Set `implementation_accept_pre_existing_suite_failures` to `false` to require a green test command for every issue.
 
 ### Validation Loop
 

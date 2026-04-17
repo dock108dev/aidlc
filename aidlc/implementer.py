@@ -386,11 +386,12 @@ class Implementer:
                 fix_outcome = self._fix_failing_tests(issue)
                 if fix_outcome.tests_now_passing:
                     impl_result.tests_passed = True
-                elif (
-                    fix_outcome.accepted_pre_existing_debt
-                    and fix_outcome.follow_up_documentation
-                ):
+                    # Model JSON often has success=false while tests were red; we verified green.
+                    impl_result.success = True
+                elif fix_outcome.accepted_pre_existing_debt and fix_outcome.follow_up_documentation:
                     impl_result.tests_passed = False
+                    # Same: JSON may say success=false because the full command failed; we explicitly accept.
+                    impl_result.success = True
                     debt = fix_outcome.follow_up_documentation.strip()
                     extra = (
                         "\n\nPre-existing / unrelated suite debt "
