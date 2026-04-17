@@ -85,6 +85,8 @@ class TestLoadConfig:
             "planning_finalization_grace_cycles",
             "max_implementation_attempts",
             "implementation_escalate_on_retry",
+            "implementation_accept_pre_existing_suite_failures",
+            "implementation_pre_existing_debt_min_chars",
             "implementation_complexity_acceptance_criteria_threshold",
             "implementation_complexity_dependencies_threshold",
             "implementation_complexity_description_chars_threshold",

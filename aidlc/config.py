@@ -150,6 +150,10 @@ DEFAULTS = {
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
     "implementation_escalate_on_retry": True,  # escalate retries to complex implementation model
+    # If true, allow ISSUE implemented when full test cmd still fails but fix prompt documents
+    # pre-existing unrelated failures and follow_up_documentation meets min length.
+    "implementation_accept_pre_existing_suite_failures": True,
+    "implementation_pre_existing_debt_min_chars": 40,
     "implementation_complexity_acceptance_criteria_threshold": 12,
     "implementation_complexity_dependencies_threshold": 5,
     "implementation_complexity_description_chars_threshold": 5000,

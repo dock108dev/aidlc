@@ -158,14 +158,40 @@ def test_fix_failing_tests_success_reruns(mock_impl_module):
         "output": "{}",
         "duration_seconds": 0.5,
     }
-    assert fix_failing_tests(impl, issue) is True
+    out = fix_failing_tests(impl, issue)
+    assert out.tests_now_passing is True
 
 
 def test_fix_failing_tests_cli_fails(mock_impl_module):
     impl, issue = mock_impl_module
     impl._run_tests = MagicMock(return_value="errors")
     impl.cli.execute_prompt.return_value = {"success": False}
-    assert fix_failing_tests(impl, issue) is False
+    out = fix_failing_tests(impl, issue)
+    assert out.tests_now_passing is False
+
+
+def test_fix_failing_tests_accept_pre_existing_debt(mock_impl_module):
+    impl, issue = mock_impl_module
+    impl.config = {
+        "implementation_accept_pre_existing_suite_failures": True,
+        "implementation_pre_existing_debt_min_chars": 20,
+    }
+    impl._run_tests = MagicMock(side_effect=["fail", False])
+    impl.cli.execute_prompt.return_value = {
+        "success": True,
+        "output": """```json
+{
+  "tests_now_passing": false,
+  "failures_are_pre_existing_unrelated": true,
+  "follow_up_documentation": "Unrelated parse errors in other_test.gd block the gate."
+}
+```""",
+        "duration_seconds": 0.5,
+    }
+    out = fix_failing_tests(impl, issue)
+    assert out.tests_now_passing is False
+    assert out.accepted_pre_existing_debt is True
+    assert "unrelated" in out.follow_up_documentation.lower()
 
 
 @pytest.fixture

@@ -1,9 +1,15 @@
 """Tests for the OpenAI provider adapter."""
 
+import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from aidlc.providers.openai_adapter import OpenAIAdapter, _parse_codex_jsonl
+from aidlc.providers.openai_adapter import (
+    OpenAIAdapter,
+    _classify_openai_cli_failure,
+    _extract_codex_failure_diagnostics,
+    _parse_codex_jsonl,
+)
 
 
 def _mock_popen_success(stdout="ok", stderr=""):
@@ -38,6 +44,50 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
     logger.info.assert_any_call("OpenAI CLI still running (elapsed=0s, model=gpt-5.4)")
 
 
+def test_extract_codex_failure_diagnostics_prefers_stderr_then_jsonl():
+    j = json.dumps({"type": "error", "message": "Rate limit exceeded — try again in 60s"})
+    assert "Rate limit" in _extract_codex_failure_diagnostics("", f"{j}\n")
+    combined = _extract_codex_failure_diagnostics("outerr", j)
+    assert "outerr" in combined
+    assert "Rate limit" in combined
+
+
+def test_extract_codex_failure_diagnostics_codex_plaintext_tui():
+    """Simulates `codex exec` stderr empty, stdout = formatted TUI + usage message (no JSONL)."""
+    stdout = """╭──────────────────────────────────────────────╮
+│ model:     gpt-5.4 medium   /model to change │
+╰──────────────────────────────────────────────╯
+
+  Tip: Try the Codex App.
+
+• Model changed to gpt-5.4 medium
+
+
+› testy
+
+
+■ You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro),
+visit https://chatgpt.com/codex/settings/usage to purchase more credits or try
+again at 5:41 PM.
+"""
+    d = _extract_codex_failure_diagnostics("", stdout)
+    assert "usage limit" in d.lower()
+    assert "5:41 pm" in d.lower()
+    assert _classify_openai_cli_failure(d) == "rate_limited"
+
+
+def test_extract_codex_failure_diagnostics_nested_openai_error():
+    payload = {"error": {"type": "rate_limit_error", "message": "Too many requests"}}
+    text = json.dumps(payload)
+    diag = _extract_codex_failure_diagnostics("", text)
+    assert "too many" in diag.lower() or "rate_limit" in diag.lower()
+
+
+def test_classify_openai_cli_failure_rate_limited():
+    assert _classify_openai_cli_failure("429 too many requests") == "rate_limited"
+    assert _classify_openai_cli_failure("something else") == "issue"
+
+
 def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
     raw = (
         '{"type":"thread.started"}\n'
@@ -49,6 +99,29 @@ def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
     assert usage["input_tokens"] == 100
     assert usage["output_tokens"] == 20
     assert usage["cache_read_input_tokens"] == 40
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_path):
+    err_line = json.dumps(
+        {"type": "error", "message": "Rate limit reached for gpt-5.4 in organization org-x"}
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (f"{err_line}\n", "")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {
+            "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
+            "claude_hard_timeout_seconds": 30,
+        },
+        MagicMock(),
+    )
+    result = adapter.execute_prompt("hello", tmp_path)
+    assert result["success"] is False
+    assert result["failure_type"] == "rate_limited"
+    assert "rate limit" in result["error"].lower()
+    assert result["output"] is not None
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")

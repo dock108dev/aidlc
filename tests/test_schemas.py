@@ -8,6 +8,7 @@ from aidlc.schemas import (
     parse_implementation_result,
     parse_json_output,
     parse_planning_output,
+    parse_test_fix_outcome,
 )
 
 
@@ -360,3 +361,22 @@ class TestParseImplementationResult:
         result = parse_implementation_result(raw)
         assert result.success is True
         assert result.issue_id == "ISSUE-001"
+
+
+class TestParseTestFixOutcome:
+    def test_parses_block(self):
+        raw = """Done.
+```json
+{
+  "tests_now_passing": false,
+  "failures_are_pre_existing_unrelated": true,
+  "follow_up_documentation": "Other suite has parse errors unrelated to this issue."
+}
+```"""
+        out = parse_test_fix_outcome(raw)
+        assert out is not None
+        assert out["tests_now_passing"] is False
+        assert out["failures_are_pre_existing_unrelated"] is True
+
+    def test_invalid_returns_none(self):
+        assert parse_test_fix_outcome("no json") is None

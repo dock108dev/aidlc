@@ -72,6 +72,14 @@ def test_parse_restore_clock_time_pm():
     assert t is not None
 
 
+def test_parse_restore_clock_time_codex_wrapped_again_at():
+    """Codex often line-wraps so the clock is only on `again at 5:41 PM.`"""
+    now = datetime(2024, 6, 15, 10, 0, 0, tzinfo=timezone.utc).timestamp()
+    msg = "purchase more credits or try\nagain at 5:41 PM."
+    t = rs.parse_restore_clock_time(msg, now)
+    assert t is not None
+
+
 def test_extract_restore_retry_after_seconds():
     now = time.time()
     r = {"retry_after_seconds": 30}

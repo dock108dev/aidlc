@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from .implementer_helpers import (
+    FixTestsOutcome,
     build_implementation_prompt,
     detect_test_command,
     ensure_test_deps,
@@ -112,6 +113,14 @@ class Implementer:
         self.stop_on_all_models_token_exhausted = bool(
             config.get("stop_on_all_models_token_exhausted", True)
         )
+
+    def _emit_run_checkpoint_summary(self) -> None:
+        """Snapshot state to checkpoints/, write markdown summary, log CHECKPOINT block."""
+        checkpoint(self.state, self.run_dir)
+        reports_dir = Path(self.config["_reports_dir"]) / self.state.run_id
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        generate_checkpoint_summary(self.state, reports_dir)
+        log_checkpoint(self.logger, self.state.to_dict())
 
     def run(self) -> bool:
         """Run implementation loop until all issues are resolved.
@@ -225,15 +234,12 @@ class Implementer:
             save_state(self.state, self.run_dir)
 
             if self._should_autosync():
-                self._autosync_progress()
+                if self._autosync_progress():
+                    self._emit_run_checkpoint_summary()
+                    last_checkpoint_time = time.time()
 
-            # Checkpoint
             if time.time() - last_checkpoint_time >= checkpoint_interval:
-                checkpoint(self.state, self.run_dir)
-                reports_dir = Path(self.config["_reports_dir"]) / self.state.run_id
-                reports_dir.mkdir(parents=True, exist_ok=True)
-                generate_checkpoint_summary(self.state, reports_dir)
-                log_checkpoint(self.logger, self.state.to_dict())
+                self._emit_run_checkpoint_summary()
                 last_checkpoint_time = time.time()
 
         if self.state.stop_reason and not self.state.all_issues_resolved():
@@ -261,7 +267,9 @@ class Implementer:
 
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
-        self.logger.debug(f"Implementation prompt: {len(prompt)} chars")
+        self.logger.info(
+            f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)"
+        )
         is_complex = self._is_complex_issue(issue)
         # Signal complexity to router so it can apply phase-aware model selection
         if hasattr(self.cli, "set_complexity"):
@@ -375,10 +383,25 @@ class Implementer:
             impl_result.tests_passed = tests_pass
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
-                # Give Claude a chance to fix
-                fix_success = self._fix_failing_tests(issue)
-                if fix_success:
+                fix_outcome = self._fix_failing_tests(issue)
+                if fix_outcome.tests_now_passing:
                     impl_result.tests_passed = True
+                elif (
+                    fix_outcome.accepted_pre_existing_debt
+                    and fix_outcome.follow_up_documentation
+                ):
+                    impl_result.tests_passed = False
+                    debt = fix_outcome.follow_up_documentation.strip()
+                    extra = (
+                        "\n\nPre-existing / unrelated suite debt "
+                        "(track in follow-up issues):\n"
+                        f"{debt}"
+                    )
+                    impl_result.notes = ((impl_result.notes or "") + extra).strip()
+                    self.logger.info(
+                        f"{issue.id}: implementation accepted; full test command still fails — "
+                        "documented pre-existing/unrelated failures in notes for follow-up."
+                    )
                 else:
                     impl_result.success = False
 
@@ -441,7 +464,7 @@ class Implementer:
     def _implementation_instructions(self) -> str:
         return implementation_instructions(self.test_command)
 
-    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> bool:
+    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> FixTestsOutcome:
         """Give Claude a chance to fix failing tests."""
         return fix_failing_tests(self, issue, model_override=model_override)
 
@@ -492,6 +515,18 @@ class Implementer:
             )
         else:
             self.logger.info(f"{issue.id}: model {provider}/{requested_model}")
+
+        usage = result.get("usage")
+        if isinstance(usage, dict):
+            inp = int(usage.get("input_tokens", 0) or 0)
+            out = int(usage.get("output_tokens", 0) or 0)
+            cc = int(usage.get("cache_creation_input_tokens", 0) or 0)
+            cr = int(usage.get("cache_read_input_tokens", 0) or 0)
+            if inp or out or cc or cr:
+                self.logger.info(
+                    f"  {issue.id}: tokens (this call) in={inp:,} out={out:,} "
+                    f"cache_write={cc:,} cache_read={cr:,}"
+                )
 
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
@@ -613,8 +648,11 @@ class Implementer:
         self.state.phase = RunPhase.IMPLEMENTING
         save_state(self.state, self.run_dir)
 
-    def _autosync_progress(self) -> None:
-        """Persist issue statuses, commit, push, and prune stale run artifacts."""
+    def _autosync_progress(self) -> bool:
+        """Persist issue statuses, commit, push, and prune stale run artifacts.
+
+        Returns True when a new git commit was created (caller may emit checkpoint summary).
+        """
         self.logger.info(
             f"Autosync checkpoint at implementation cycle {self.state.implementation_cycles}"
         )
@@ -630,6 +668,8 @@ class Implementer:
 
         if self.autosync_prune_enabled:
             self._prune_aidlc_data()
+
+        return committed
 
     def _sync_issue_markdown(self, issue: Issue) -> None:
         """Keep .aidlc issue markdown in sync with in-memory state status/notes."""

@@ -240,6 +240,22 @@ def parse_implementation_result(raw_text: str) -> ImplementationResult:
     return ImplementationResult.from_dict(data)
 
 
+def parse_test_fix_outcome(raw_text: str) -> dict | None:
+    """Parse test-fix response JSON (tests_now_passing, failures, follow-up).
+
+    Returns None if no valid outcome object is present.
+    """
+    if not (raw_text or "").strip():
+        return None
+    try:
+        data = parse_json_output(raw_text)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or "tests_now_passing" not in data:
+        return None
+    return data
+
+
 # --- SCHEMA DESCRIPTIONS FOR PROMPTS ---
 
 PLANNING_SCHEMA_DESCRIPTION = """\
@@ -280,6 +296,25 @@ After coding, output **only** a ```json``` block (minimal prose outside it).
   "files_changed": ["src/auth.py", "tests/test_auth.py"],
   "tests_passed": true,
   "notes": ""
+}
+```
+"""
+
+TEST_FIX_OUTCOME_SCHEMA_DESCRIPTION = """\
+After attempting fixes, end with **only** one ```json``` block (minimal prose outside it).
+
+Use this **only** in the "fix failing tests" follow-up prompt — not for normal implementation.
+
+Fields:
+- `tests_now_passing`: boolean — `true` **only** if the project's configured test command would exit 0 **after your edits**.
+- `failures_are_pre_existing_unrelated`: boolean — `true` **only** if the test command still fails, but the failures are clearly **unrelated** to this issue's scope (e.g. other suites, parse errors in other tests, pre-existing integration breakage). Do **not** set `true` to avoid work you could fix in scope.
+- `follow_up_documentation`: string — If `failures_are_pre_existing_unrelated` is `true`, **required**: concrete description of what still fails and why it should become separate follow-up work. Empty if not applicable.
+
+```
+{
+  "tests_now_passing": false,
+  "failures_are_pre_existing_unrelated": true,
+  "follow_up_documentation": "Broader GUT gate fails due to ... (unrelated to ISSUE-NNN); file X has parse error ..."
 }
 ```
 """

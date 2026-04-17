@@ -3,14 +3,28 @@
 import json
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .schemas import IMPLEMENTATION_SCHEMA_DESCRIPTION
+from .schemas import (
+    IMPLEMENTATION_SCHEMA_DESCRIPTION,
+    TEST_FIX_OUTCOME_SCHEMA_DESCRIPTION,
+    parse_test_fix_outcome,
+)
 from .timing import add_console_time
 
 if TYPE_CHECKING:
     from .models import RunState
+
+
+@dataclass
+class FixTestsOutcome:
+    """Result of a test-fix attempt after an implementation."""
+
+    tests_now_passing: bool = False
+    accepted_pre_existing_debt: bool = False
+    follow_up_documentation: str = ""
 
 
 def implementation_instructions(test_command: str | None) -> str:
@@ -234,8 +248,8 @@ def ensure_test_deps(
             break
 
 
-def fix_failing_tests(impl, issue, model_override: str | None = None) -> bool:
-    """Run test-fix prompt and re-run tests."""
+def fix_failing_tests(impl, issue, model_override: str | None = None) -> FixTestsOutcome:
+    """Run test-fix prompt, re-run tests, optionally accept documented pre-existing debt."""
     impl.logger.info(f"Attempting to fix failing tests for {issue.id}")
     test_output = impl._run_tests(capture_output=True)
     fix_prompt = f"""# Fix Failing Tests
@@ -250,12 +264,16 @@ Tests are failing after implementing issue {issue.id}: {issue.title}
 
 ## Instructions
 
-Fix the failing tests. The implementation should match the acceptance criteria:
-{chr(10).join(f"- {ac}" for ac in issue.acceptance_criteria)}
+Prefer fixing the failure so the configured test command passes. Stay within this issue's scope;
+only broaden edits when obviously required by the failing output.
 
-Fix the code or tests so everything passes. Do not remove or skip tests.
+If the **only** blockers are **pre-existing, unrelated** suite failures (other files' parse errors,
+unrelated integration tests, global gates broken before this issue), do **not** rewrite half the repo —
+document them for follow-up instead.
 
-{IMPLEMENTATION_SCHEMA_DESCRIPTION}
+Do not delete or weaken tests to get green unless the test is objectively wrong for this change.
+
+{TEST_FIX_OUTCOME_SCHEMA_DESCRIPTION}
 """
     result = impl.cli.execute_prompt(
         fix_prompt,
@@ -264,7 +282,31 @@ Fix the code or tests so everything passes. Do not remove or skip tests.
         model_override=model_override,
     )
     impl.state.record_provider_result(result, impl.config, phase="fix_tests")
-    if result["success"]:
-        impl.state.elapsed_seconds += result.get("duration_seconds", 0)
-        return impl._run_tests()
-    return False
+    if not result.get("success"):
+        return FixTestsOutcome()
+
+    impl.state.elapsed_seconds += float(result.get("duration_seconds") or 0)
+
+    if impl._run_tests():
+        return FixTestsOutcome(tests_now_passing=True)
+
+    out = parse_test_fix_outcome(result.get("output") or "")
+    cfg = impl.config if isinstance(impl.config, dict) else {}
+    if not cfg.get("implementation_accept_pre_existing_suite_failures", True):
+        return FixTestsOutcome()
+
+    min_chars = max(10, int(cfg.get("implementation_pre_existing_debt_min_chars", 40) or 40))
+    doc = ""
+    if isinstance(out, dict) and out.get("failures_are_pre_existing_unrelated") is True:
+        doc = str(out.get("follow_up_documentation") or "").strip()
+    if len(doc) >= min_chars:
+        impl.logger.info(
+            f"{issue.id}: fix attempt documents pre-existing/unrelated suite failures; "
+            "implementation may be accepted with follow-up notes."
+        )
+        return FixTestsOutcome(
+            tests_now_passing=False,
+            accepted_pre_existing_debt=True,
+            follow_up_documentation=doc,
+        )
+    return FixTestsOutcome()

@@ -57,13 +57,29 @@ def is_rate_limited_result(result: dict) -> bool:
 
     patterns = (
         r"rate.?limit",
+        r"rate_limit",
+        r"ratelimit",
         r"usage.?limit",
+        # Codex CLI plain text: "You've hit your usage limit … try again at 5:41 PM"
+        r"hit your usage",
+        r"purchase more credits",
         r"too many requests",
+        r"too_many_requests",
         r"\b429\b",
         r"try again later",
         r"try again at",
+        r"try again in",
+        r"\bagain at\s+\d",  # line-wrapped "… try" + "again at 5:41 PM"
         r"request limit",
         r"throttl",
+        r"resource.?exhausted",
+        r"capacity",
+        r"overloaded",
+        r"slow down",
+        r"requests.*per.*minute",
+        r"tokens.*per.*minute",
+        r"\btpm\b",
+        r"\brpm\b",
     )
     return any(re.search(pat, message) for pat in patterns)
 
@@ -114,7 +130,7 @@ def parse_restore_clock_time(message: str, now_epoch: float) -> float | None:
 
     now_dt = datetime.fromtimestamp(now_epoch)
     match_12h = re.search(
-        r"try\s+again\s+at\s+(\d{1,2}):(\d{2})\s*([AaPp][Mm])\b",
+        r"(?:try\s+again\s+at|again\s+at)\s+(\d{1,2}):(\d{2})\s*([AaPp][Mm])\b",
         message,
     )
     if match_12h:
@@ -131,7 +147,7 @@ def parse_restore_clock_time(message: str, now_epoch: float) -> float | None:
         return candidate.timestamp()
 
     match_24h = re.search(
-        r"try\s+again\s+at\s+([01]?\d|2[0-3]):([0-5]\d)\b",
+        r"(?:try\s+again\s+at|again\s+at)\s+([01]?\d|2[0-3]):([0-5]\d)\b",
         message,
     )
     if match_24h:

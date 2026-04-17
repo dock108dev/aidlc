@@ -56,6 +56,114 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
     return output_text, usage
 
 
+def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
+    """Best-effort: stderr first; then JSONL error payloads from codex --json stdout."""
+    parts: list[str] = []
+    err = (stderr or "").strip()
+    if err:
+        parts.append(err)
+
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+
+        typ = str(obj.get("type") or "").lower()
+        if "error" in typ:
+            for key in ("message", "text", "detail"):
+                val = obj.get(key)
+                if isinstance(val, str) and val.strip():
+                    parts.append(val.strip())
+
+        nested = obj.get("error")
+        if isinstance(nested, dict):
+            for key in ("message", "type", "code", "param"):
+                val = nested.get(key)
+                if val is not None and str(val).strip():
+                    parts.append(str(val).strip())
+        elif isinstance(nested, str) and nested.strip():
+            parts.append(nested.strip())
+
+        msg = obj.get("message")
+        if isinstance(msg, str) and msg.strip() and typ not in (
+            "turn.completed",
+            "item.completed",
+            "thread.started",
+        ):
+            parts.append(msg.strip())
+
+        item = obj.get("item")
+        if isinstance(item, dict):
+            itype = str(item.get("item_type") or item.get("type") or "").lower()
+            if "error" in itype or "failed" in itype:
+                for key in ("text", "message", "error"):
+                    val = item.get(key)
+                    if isinstance(val, str) and val.strip():
+                        parts.append(val.strip())
+
+    # Codex TUI: usage limits are often plain text (bullets / box chars), not JSONL.
+    _plain_hints = (
+        "usage limit",
+        "rate limit",
+        "try again at",
+        "try again in",
+        "again at",  # line-wrap: "… or try" / "again at 5:41 PM"
+        "too many requests",
+        "purchase more credit",
+        "hit your usage",
+    )
+    for raw_line in (stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        low = line.lower()
+        if any(h in low for h in _plain_hints):
+            parts.append(line)
+
+    combined = "\n".join(dict.fromkeys(parts))
+    if not combined.strip():
+        tail = (stdout or "").strip()
+        if tail:
+            combined = tail[-12000:] if len(tail) > 12000 else tail
+    return combined.strip()
+
+
+def _classify_openai_cli_failure(diagnostic: str) -> str:
+    """Map combined stderr/stdout diagnostic to a normalized failure_type."""
+    from ..routing import result_signals as rs
+
+    if not diagnostic.strip():
+        return "issue"
+    probe = {"error": diagnostic, "output": ""}
+    if rs.is_rate_limited_result(probe):
+        return "rate_limited"
+    if rs.is_token_exhaustion_result(probe):
+        return "token_exhausted"
+    low = diagnostic.lower()
+    if any(
+        kw in low
+        for kw in (
+            "503",
+            "502",
+            "504",
+            "timeout",
+            "timed out",
+            "connection reset",
+            "econnreset",
+            "unavailable",
+            "bad gateway",
+        )
+    ):
+        return "transient"
+    return "issue"
+
+
 class OpenAIAdapter(ProviderAdapter):
     """Provider adapter for OpenAI / Codex CLI."""
 
@@ -134,18 +242,18 @@ class OpenAIAdapter(ProviderAdapter):
                     "account_id": account_id,
                 }
             else:
-                err = stderr.strip() or "OpenAI CLI returned non-zero exit code"
-                failure_type = (
-                    "transient"
-                    if any(kw in err.lower() for kw in ("rate limit", "429", "503", "timeout"))
-                    else "issue"
-                )
+                diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
+                if not diagnostic:
+                    diagnostic = "OpenAI CLI returned non-zero exit code"
+                failure_type = _classify_openai_cli_failure(diagnostic)
+                out_tail = (stdout or "")[-16000:] if stdout else None
                 return self._failure_result(
                     model,
                     account_id,
                     duration,
-                    error=err,
+                    error=diagnostic,
                     failure_type=failure_type,
+                    output=out_tail,
                 )
 
         except FileNotFoundError:
@@ -242,10 +350,11 @@ class OpenAIAdapter(ProviderAdapter):
         duration: float,
         error: str,
         failure_type: str,
+        output: str | None = None,
     ) -> dict:
         return {
             "success": False,
-            "output": None,
+            "output": output,
             "error": error,
             "failure_type": failure_type,
             "duration_seconds": duration,
