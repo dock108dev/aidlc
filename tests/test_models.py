@@ -346,6 +346,7 @@ class TestRunState:
             result,
             {
                 "telemetry_cost_mode": "auto",
+                "telemetry_estimate_usd": True,
                 "telemetry_model_pricing_usd_per_million_tokens": {
                     "sonnet": {"input": 2.0, "output": 8.0}
                 },
@@ -358,3 +359,84 @@ class TestRunState:
         assert state.claude_cost_usd_estimated == pytest.approx(10.0)
         assert state.provider_account_usage["copilot"]["primary"]["calls_failed"] == 1
         assert state.phase_usage["research"]["calls"] == 1
+
+    def test_record_provider_result_auto_still_estimates_when_exact_is_zero(self):
+        """total_cost_usd=0 often means unknown billing, not a free run — still estimate from tokens."""
+        state = RunState(run_id="t", config_name="c")
+        result = {
+            "success": True,
+            "provider_id": "openai",
+            "account_id": "default",
+            "model_used": "sonnet",
+            "total_cost_usd": 0.0,
+            "usage": {
+                "input_tokens": 1_000_000,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        }
+        state.record_provider_result(
+            result,
+            {
+                "telemetry_cost_mode": "auto",
+                "telemetry_estimate_usd": True,
+                "telemetry_model_pricing_usd_per_million_tokens": {
+                    "sonnet": {"input": 3.0, "output": 15.0}
+                },
+            },
+        )
+        assert state.claude_cost_usd_estimated > 0
+
+    def test_record_provider_result_auto_skips_estimate_when_telemetry_estimate_usd_false(self):
+        state = RunState(run_id="t", config_name="c")
+        result = {
+            "success": True,
+            "provider_id": "openai",
+            "account_id": "default",
+            "model_used": "sonnet",
+            "usage": {
+                "input_tokens": 1_000_000,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        }
+        state.record_provider_result(
+            result,
+            {
+                "telemetry_cost_mode": "auto",
+                "telemetry_estimate_usd": False,
+                "telemetry_model_pricing_usd_per_million_tokens": {
+                    "sonnet": {"input": 3.0, "output": 15.0}
+                },
+            },
+        )
+        assert state.claude_cost_usd_estimated == pytest.approx(0.0)
+        assert state.claude_total_input_tokens == 1_000_000
+
+    def test_record_provider_result_estimate_only_still_estimates_without_flag(self):
+        state = RunState(run_id="t", config_name="c")
+        result = {
+            "success": True,
+            "provider_id": "openai",
+            "account_id": "default",
+            "model_used": "sonnet",
+            "usage": {
+                "input_tokens": 1_000_000,
+                "output_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+            },
+        }
+        state.record_provider_result(
+            result,
+            {
+                "telemetry_cost_mode": "estimate_only",
+                "telemetry_estimate_usd": False,
+                "telemetry_model_pricing_usd_per_million_tokens": {
+                    "sonnet": {"input": 3.0, "output": 15.0}
+                },
+            },
+        )
+        assert state.claude_cost_usd_estimated == pytest.approx(3.0)

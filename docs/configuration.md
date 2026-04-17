@@ -59,6 +59,7 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `claude_hard_timeout_seconds` | `1800` (30 minutes) |
 | `claude_timeout_grace_seconds` | `30` |
 | `telemetry_cost_mode` | `"auto"` |
+| `telemetry_estimate_usd` | `false` |
 | `telemetry_model_pricing_usd_per_million_tokens` | `{"default": {"input": 3.0, "output": 15.0, "cache_creation_input": 3.75, "cache_read_input": 0.30}, "sonnet": {...}, "opus": {...}, "haiku": {...}}` |
 | `retry_max_attempts` | `2` |
 | `retry_base_delay_seconds` | `30` |
@@ -68,9 +69,11 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 
 `telemetry_cost_mode` values:
 
-- `auto`: use exact CLI cost metadata when available, estimate otherwise
+- `auto`: use exact CLI cost metadata when available, estimate otherwise (only if `telemetry_estimate_usd` is true)
 - `exact_only`: track only exact cost metadata (no fallback estimates)
-- `estimate_only`: always estimate using pricing table and token counts
+- `estimate_only`: always estimate using pricing table and token counts (ignores `telemetry_estimate_usd`)
+
+`telemetry_estimate_usd`: when `false` (default), token counts are still recorded but **no** USD is computed from `telemetry_model_pricing_*` in `auto` mode (API list $/M is not a subscription bill). Set `true` if you want rough API-reference dollar estimates.
 
 ### Planning and Context
 

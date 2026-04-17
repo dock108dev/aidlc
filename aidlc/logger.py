@@ -94,8 +94,9 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
         f"{state_dict.get('claude_calls_failed', 0)} failed, "
         f"{state_dict.get('claude_retries_total', 0)} retries"
     )
+    # Field names are historical (claude_*); values are sums across all providers.
     logger.info(
-        "  All providers (totals) tokens: "
+        "  Aggregate usage (all providers; internal fields claude_*): "
         f"in={state_dict.get('claude_input_tokens', 0)}, "
         f"out={state_dict.get('claude_output_tokens', 0)}, "
         f"cache_write={state_dict.get('claude_cache_creation_input_tokens', 0)}, "
@@ -109,7 +110,7 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
         f"web_fetch={state_dict.get('claude_web_fetch_requests', 0)}"
     )
     logger.info(
-        "  Provider cost (USD): "
+        "  Provider cost (USD, all providers; exact only if CLI reported billing): "
         f"exact={state_dict.get('claude_cost_usd_exact', 0.0):.4f}, "
         f"estimated={state_dict.get('claude_cost_usd_estimated', 0.0):.4f}"
     )

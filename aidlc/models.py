@@ -359,8 +359,10 @@ class RunState:
         model_usage["web_fetch_requests"] += web_fetch_requests
 
         cost_mode = "auto"
-        if isinstance(config, dict):
-            cost_mode = str(config.get("telemetry_cost_mode", "auto") or "auto").lower()
+        cfg = config if isinstance(config, dict) else {}
+        cost_mode = str(cfg.get("telemetry_cost_mode", "auto") or "auto").lower()
+        # API-style $/M estimates are not subscription bills (Copilot/Codex flat plans). Off unless opted in.
+        estimate_usd_enabled = bool(cfg.get("telemetry_estimate_usd", False))
 
         exact_cost = result.get("total_cost_usd")
         exact_cost_value = None
@@ -370,9 +372,17 @@ class RunState:
             exact_cost_value = None
 
         should_track_exact = cost_mode in ("auto", "exact_only")
-        should_track_estimated = cost_mode in ("estimate_only", "auto") and (
-            exact_cost_value is None or cost_mode == "estimate_only"
-        )
+        # In auto mode, estimate from tokens unless we have positive exact billing from the CLI.
+        # (Some adapters return total_cost_usd=0 when billing is unknown — still estimate.)
+        has_positive_exact = exact_cost_value is not None and exact_cost_value > 0
+        if cost_mode == "estimate_only":
+            should_track_estimated = True
+        elif cost_mode == "exact_only":
+            should_track_estimated = False
+        elif not estimate_usd_enabled:
+            should_track_estimated = False
+        else:
+            should_track_estimated = not has_positive_exact
 
         if should_track_exact and exact_cost_value is not None:
             self.claude_cost_usd_exact += exact_cost_value

@@ -26,23 +26,52 @@ def _parse_int_loose(s: str) -> int:
 
 
 def _parse_copilot_usage_blob(blob: str) -> dict:
-    """Best-effort token counts from combined Copilot CLI stdout/stderr."""
+    """Best-effort token counts from combined Copilot CLI stdout/stderr.
+
+    Formats differ by version (plain text, tables, box-drawing). Prefer **separate**
+    regexes for input vs output so we do not require both on one line.
+    """
     if not blob or not blob.strip():
         return {}
     inp = out = 0
-    m = re.search(
-        r"(?i)(?:input|prompt)\s*tokens?\s*[:=]\s*([\d,_]+).*?(?:output|completion)\s*tokens?\s*[:=]\s*([\d,_]+)",
-        blob,
-        re.DOTALL,
-    )
-    if m:
-        inp = _parse_int_loose(m.group(1))
-        out = _parse_int_loose(m.group(2))
-    else:
+
+    # 1) Independent labels (works when input/output are on different lines or table rows)
+    inp_m = re.search(r"(?i)(?:input|prompt)\s*tokens?\s*[:=]\s*([\d,_]+)", blob)
+    out_m = re.search(r"(?i)(?:output|completion)\s*tokens?\s*[:=]\s*([\d,_]+)", blob)
+    if inp_m:
+        inp = _parse_int_loose(inp_m.group(1))
+    if out_m:
+        out = _parse_int_loose(out_m.group(1))
+
+    # 2) Single-line "input ... output" (original behavior)
+    if inp == 0 and out == 0:
+        m = re.search(
+            r"(?i)(?:input|prompt)\s*tokens?\s*[:=]\s*([\d,_]+).*?(?:output|completion)\s*tokens?\s*[:=]\s*([\d,_]+)",
+            blob,
+            re.DOTALL,
+        )
+        if m:
+            inp = _parse_int_loose(m.group(1))
+            out = _parse_int_loose(m.group(2))
+
+    # 3) Slash form: 1,000 in / 2,000 out
+    if inp == 0 and out == 0:
         m2 = re.search(r"(?i)(\d[\d,_]*)\s*(?:input|in)\s*/\s*(\d[\d,_]*)\s*(?:output|out)", blob)
         if m2:
             inp = _parse_int_loose(m2.group(1))
             out = _parse_int_loose(m2.group(2))
+
+    # 4) "N tokens in | M tokens out" or similar
+    if inp == 0 and out == 0:
+        m3 = re.search(
+            r"(?i)([\d,_]+)\s*tokens?\s*(?:in|input)\D{0,40}([\d,_]+)\s*tokens?\s*(?:out|output)",
+            blob,
+        )
+        if m3:
+            inp = _parse_int_loose(m3.group(1))
+            out = _parse_int_loose(m3.group(2))
+
+    # 5) Fallback: lines with "input/output/total" token labels
     if inp == 0 and out == 0:
         nums = re.findall(r"(?i)(?:input|output|total)\s*tokens?\s*[:=]\s*([\d,_]+)", blob)
         if len(nums) >= 2:
@@ -52,6 +81,7 @@ def _parse_copilot_usage_blob(blob: str) -> dict:
             tot = _parse_int_loose(nums[0])
             if tot:
                 inp = tot
+
     if inp == 0 and out == 0:
         return {}
     return {

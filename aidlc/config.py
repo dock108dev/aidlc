@@ -71,6 +71,8 @@ DEFAULTS = {
     # - exact_only: track only exact cost values from CLI metadata
     # - estimate_only: always estimate from token rates
     "telemetry_cost_mode": "auto",
+    # If false (default): do not add USD from telemetry_model_pricing_* (API list $/M ≠ subscription plans).
+    "telemetry_estimate_usd": False,
     # Estimated USD per million tokens for fallback cost tracking.
     # These are budgeting estimates only and may differ from provider billing.
     "telemetry_model_pricing_usd_per_million_tokens": {

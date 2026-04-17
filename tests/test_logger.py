@@ -108,11 +108,11 @@ class TestLogCheckpoint:
         assert "CHECKPOINT" in content
         assert "implementing" in content
         assert "Provider calls" in content
-        assert "All providers (totals) tokens" in content
+        assert "Aggregate usage (all providers" in content
         assert "Per provider:" in content
         assert "claude/default:" in content
         assert "openai/budget:" in content
-        assert "Provider cost (USD)" in content
+        assert "Provider cost (USD, all providers" in content
 
     def test_logs_checkpoint_no_provider_breakdown(self, tmp_path):
         logger = setup_logger("cp_empty", tmp_path)

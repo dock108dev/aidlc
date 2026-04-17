@@ -53,6 +53,21 @@ def test_parse_usage_two_total_lines():
     assert u["output_tokens"] == 7
 
 
+def test_parse_usage_split_lines_table_like():
+    """Input and output on separate lines (no single-line bridge match)."""
+    blob = "some noise\nInput tokens: 1,234\nmore noise\nCompletion tokens: 56\n"
+    u = _parse_copilot_usage_blob(blob)
+    assert u["input_tokens"] == 1234
+    assert u["output_tokens"] == 56
+
+
+def test_parse_usage_tokens_in_pipe_form():
+    blob = "Summary: 99 tokens in  |  12 tokens out"
+    u = _parse_copilot_usage_blob(blob)
+    assert u["input_tokens"] == 99
+    assert u["output_tokens"] == 12
+
+
 def test_parse_usage_single_total_allocates_input():
     blob = "total tokens: 99"
     u = _parse_copilot_usage_blob(blob)
