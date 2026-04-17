@@ -14,13 +14,20 @@ from . import helpers
 from .types import RouteDecision, UsagePressure
 
 
+def _provider_max_capacity_flag(cfg: dict) -> bool:
+    """``max_capacity`` (preferred) or legacy ``premium``."""
+    if "max_capacity" in cfg:
+        return bool(cfg.get("max_capacity"))
+    return bool(cfg.get("premium"))
+
+
 def provider_max_capacity_tagged(config: dict, provider_id: str) -> bool:
-    """True when this provider has ``max_capacity: true`` in config (sole capacity flag)."""
+    """True when this provider is marked high token-capacity (``max_capacity: true``) in config."""
     p = config.get("providers", {})
     if not isinstance(p, dict):
         return False
     cfg = p.get(provider_id)
-    return isinstance(cfg, dict) and bool(cfg.get("max_capacity"))
+    return isinstance(cfg, dict) and _provider_max_capacity_flag(cfg)
 
 
 def provider_max_capacity_weight(config: dict, provider_id: str) -> float:
@@ -32,11 +39,23 @@ def provider_max_capacity_weight(config: dict, provider_id: str) -> float:
     if not isinstance(cfg, dict):
         return 1.0
     raw = cfg.get("max_capacity_weight")
+    if raw is None:
+        raw = cfg.get("premium_capacity_weight")
     if raw is not None:
         return max(float(raw), 1e-9)
-    if bool(cfg.get("max_capacity")):
+    if _provider_max_capacity_flag(cfg):
         return 20.0
     return 1.0
+
+
+def provider_premium_tagged(config: dict, provider_id: str) -> bool:
+    """Deprecated alias for :func:`provider_max_capacity_tagged`."""
+    return provider_max_capacity_tagged(config, provider_id)
+
+
+def provider_premium_capacity_weight(config: dict, provider_id: str) -> float:
+    """Deprecated alias for :func:`provider_max_capacity_weight`."""
+    return provider_max_capacity_weight(config, provider_id)
 
 
 def _reference_ordered_subset(ids: set[str], reference: list[str]) -> list[str]:
@@ -105,6 +124,14 @@ def tier_aware_provider_order(
             )
         # No max_capacity providers — same fairness as other phases
         return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
+
+    # Legacy: complex implementation previously mapped to implementation_complex phase only.
+    legacy_premium_first = phase in helpers.get_premium_phases() or (
+        phase == "implementation" and complexity_level == "complex"
+    )
+    if legacy_premium_first and "claude" in enabled:
+        rest = enabled - {"claude"}
+        return ["claude"] + _reference_ordered_subset(rest, ref)
 
     return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 
