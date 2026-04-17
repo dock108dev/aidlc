@@ -26,12 +26,14 @@ python -m pytest --cov=aidlc --cov-report=html -q
 
 **Latest snapshot (re-run after changes):**
 
-| Metric | Value (example from a recent run) |
+| Metric | Value |
 |--------|------:|
-| Statements (`aidlc/`) | ~7,831 |
+| Statements (`aidlc/`) | 7,831 |
 | Missed | ~3,029 |
 | **Line coverage** | **~61%** |
 | `pyproject.toml` `fail_under` | 58 until you complete the next milestone |
+
+Already covered in this tree (re-check with `term-missing`): `context_prep.py`, `plan_templates.py` — treat as done; do not duplicate work there.
 
 **Gap to long-term ~90%:** still on the order of **~2,000+** newly covered statements (honest measurement, minimal `omit`). The **next** milestone below breaks off only the next **~780** hits.
 
@@ -75,9 +77,9 @@ These modules drive most of the gap. Tackle in order of **missed statements × e
 |--------|--------------:|--------|
 | `aidlc/plan_session.py` | ~244 | Interactive / session flow; needs orchestration tests or refactor for testability |
 | `aidlc/improve.py` | ~189 | CLI-style flow; similar |
-| `aidlc/plan_wizard.py` | ~104 | Wizard prompts; use `stdin`/`pytest` monkeypatch |
-| `aidlc/context_prep.py` | ~73 | Context assembly; pure functions → unit tests |
-| `aidlc/plan_templates.py` | ~6 | Template strings; trivial to cover once invoked |
+| `aidlc/plan_wizard.py` | ~104 | Wizard prompts; use `stdin`/`pytest` monkeypatch (**still open** — top item for 61→71%) |
+| ~~`aidlc/context_prep.py`~~ | — | Covered |
+| ~~`aidlc/plan_templates.py`~~ | — | Covered |
 
 **Plan:** For each, either (1) add **thin integration tests** that call the public entry with fakes/mocks, or (2) **extract pure logic** into testable helpers and keep I/O at the edges.
 

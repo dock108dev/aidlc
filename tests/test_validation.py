@@ -1,10 +1,11 @@
 """Tests for validation loop: test_profiles, test_parser, validation_issues, validator."""
 
 import json
-from unittest.mock import MagicMock
+import subprocess
+from unittest.mock import MagicMock, patch
 
 import pytest
-from aidlc.models import RunPhase, RunState
+from aidlc.models import Issue, IssueStatus, RunPhase, RunState
 from aidlc.test_parser import FailureReport, parse_test_failures
 from aidlc.test_profiles import detect_test_profile
 from aidlc.validation_issues import create_fix_issues
@@ -251,3 +252,188 @@ class TestValidator:
 
         with pytest.raises(RuntimeError, match="Legacy path removed"):
             Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
+
+
+class TestValidatorInternals:
+    def test_render_fix_issue_md(self, tmp_path):
+        from aidlc.validator import Validator
+
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+        }
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock())
+        issue = Issue(
+            id="VFIX-009",
+            title="Fix login",
+            description="Broken",
+            priority="high",
+            labels=["validation"],
+            acceptance_criteria=["tests pass"],
+            status=IssueStatus.PENDING,
+        )
+        md = v._render_fix_issue_md(issue)
+        assert "VFIX-009" in md
+        assert "Fix login" in md
+        assert "- [ ] tests pass" in md
+
+    @patch("aidlc.validator.subprocess.run")
+    def test_run_command_timeout(self, mock_run, tmp_path):
+        from aidlc.validator import Validator
+
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+        }
+        logger = MagicMock()
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        ok, out = v._run_command("any")
+        assert ok is False
+        assert "timed out" in out.lower()
+        logger.warning.assert_called()
+
+    @patch("aidlc.validator.subprocess.run")
+    def test_run_command_file_not_found(self, mock_run, tmp_path):
+        from aidlc.validator import Validator
+
+        mock_run.side_effect = FileNotFoundError()
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+        }
+        logger = MagicMock()
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        ok, out = v._run_command("missing-binary-xyz")
+        assert ok is False
+        assert out == ""
+        logger.warning.assert_called()
+
+    def test_run_test_tiers_empty_failure_output(self, tmp_path):
+        from aidlc.validator import Validator
+
+        state = RunState(run_id="test", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 10,
+        }
+        logger = MagicMock()
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v.test_profile = {"build": "x", "unit": None, "integration": None, "e2e": None}
+        v._run_command = lambda _cmd: (False, "")
+        _passed, failures, _tier_results = v._run_test_tiers()
+        assert len(failures) == 1
+        assert "Command exited non-zero" in failures[0].stack_trace
+
+
+class TestValidatorRunLoop:
+    @staticmethod
+    def _python_project(tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        (tmp_path / "conftest.py").write_text("")
+
+    @patch("aidlc.validator.save_state")
+    @patch("aidlc.implementer.Implementer")
+    def test_run_returns_true_after_fail_then_pass(self, mock_impl, mock_save, tmp_path):
+        from aidlc.validator import Validator
+        from aidlc.test_parser import FailureReport
+
+        self._python_project(tmp_path)
+        state = RunState(run_id="vr1", config_name="default")
+        state.issues = []
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 3,
+            "test_timeout_seconds": 30,
+            "validation_batch_size": 10,
+        }
+        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        mock_impl.return_value._implement_issue = MagicMock()
+        n = {"c": 0}
+
+        def fake_tiers():
+            n["c"] += 1
+            if n["c"] == 1:
+                return (
+                    False,
+                    [FailureReport(test_name="t_one", assertion="boom")],
+                    [{"tier": "unit", "passed": False, "command": "pytest"}],
+                )
+            return True, [], [{"tier": "unit", "passed": True, "command": "pytest"}]
+
+        v._run_test_tiers = fake_tiers
+        assert v.run() is True
+
+    @patch("aidlc.validator.save_state")
+    @patch("aidlc.implementer.Implementer")
+    def test_run_stops_when_not_making_progress(self, mock_impl, mock_save, tmp_path):
+        from aidlc.validator import Validator
+        from aidlc.test_parser import FailureReport
+
+        self._python_project(tmp_path)
+        state = RunState(run_id="vr2", config_name="default")
+        state.issues = []
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 5,
+            "test_timeout_seconds": 30,
+            "validation_batch_size": 10,
+        }
+        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        mock_impl.return_value._implement_issue = MagicMock()
+        fails = [
+            FailureReport(test_name="a", assertion="1"),
+            FailureReport(test_name="b", assertion="2"),
+        ]
+
+        def always_fail():
+            return (False, fails, [{"tier": "unit", "passed": False, "command": "pytest"}])
+
+        v._run_test_tiers = always_fail
+        assert v.run() is False
+
+    @patch("aidlc.validator.save_state")
+    def test_run_stops_when_no_fix_issues_generated(self, mock_save, tmp_path):
+        from aidlc.validator import Validator
+        from aidlc.test_parser import FailureReport
+
+        self._python_project(tmp_path)
+        state = RunState(run_id="vr3", config_name="default")
+        state.issues = []
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 3,
+            "test_timeout_seconds": 30,
+        }
+        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+
+        def always_fail():
+            return (
+                False,
+                [FailureReport(test_name="only", assertion="x")],
+                [{"tier": "unit", "passed": False, "command": "pytest"}],
+            )
+
+        v._run_test_tiers = always_fail
+        with patch("aidlc.validator.create_fix_issues", return_value=[]):
+            assert v.run() is False
