@@ -29,13 +29,13 @@ python -m pytest --cov=aidlc --cov-report=html -q
 | Metric | Value |
 |--------|------:|
 | Statements (`aidlc/`) | 7,831 |
-| Missed | ~2,297 |
-| **Line coverage** | **~70.7%** |
-| `pyproject.toml` `fail_under` | 69 (slack below steady total; ratchet next milestone) |
+| Missed | ~1,507 |
+| **Line coverage** | **~80.8%** |
+| `pyproject.toml` `fail_under` | 79 (~1 pp slack below steady total) |
 
-Already covered in this tree (re-check with `term-missing`): `context_prep.py`, `plan_templates.py`, `plan_wizard.py`, `cli/usage_cmd.py`, `cli/display.py`, `routing/result_signals.py`, `routing/strategy_resolution.py`, `validator.py`, `implementer_workspace.py`, `accounts/credentials.py`, `accounts/manager.py` — most paths for the prior **61→71** milestone are in place; use `term-missing` for remaining gaps.
+Recent high-yield additions include `planner_helpers` (research + planning index), `reporting`, `config_detect`, `__main__` dispatch and `cmd_run` branches, `runner` orchestration (audit, doc gaps, interrupts, errors), `implementer` / `implementer_helpers`, `claude_cli._extract_cli_metadata`, `test_profiles`, and supporting tests across `plan_session`, `improve`, and `doc_gap_detector`.
 
-**Gap to long-term ~90%:** on the order of **~1,500+** newly covered statements (honest measurement, minimal `omit`).
+**Gap to long-term ~90%:** on the order of **~700+** newly covered statements (honest measurement, minimal `omit`).
 
 ---
 
@@ -59,24 +59,31 @@ At ~7,831 statements, **+10 percentage points** means roughly **~780 fewer misse
 
 **Defer to the following +10% milestone** if timeboxed: `plan_session.py`, `improve.py`, `cli_commands.py` deep paths (heavy I/O / subprocess), `full_engine.py` / `runtime_engine.py` (large integration surface).
 
-**Gate:** `fail_under` is set to **69** in `pyproject.toml` (~1.7 pp slack vs ~70.7% measured).
+**Gate (historical):** the **61→71** milestone used `fail_under` **69** in `pyproject.toml`.
 
 ---
 
-## Next milestone only: **~71% → ~81%** (+10 points)
+## Completed milestone: **~71% → ~81%** (+10 points; steady **~80.8%**)
 
-Re-run `python -m pytest --cov=aidlc --cov-report=term-missing -q` and refresh this shortlist; at the time of the last ratchet, high-yield targets included:
+This cycle focused on `planner_helpers`, `plan_session` / `improve` (from earlier work in this tree), `runner`, `reporting`, `config` merge/load, `__main__`, `implementer` edge paths, `claude_cli` metadata parsing, `config_detect`, `test_profiles`, `doc_gap_detector`, and small gaps in `scanner` / `research_output` / `context_utils`.
+
+**Gate:** `fail_under` is set to **79** in `pyproject.toml` (~1 pp slack vs ~80.8% measured).
+
+---
+
+## Next milestone only: **~81% → ~91%** (+10 points)
+
+Re-run `python -m pytest --cov=aidlc --cov-report=term-missing -q` and refresh this shortlist; likely high-yield targets include:
 
 | Priority | Module | Notes |
 |----------|--------|--------|
-| 1 | `aidlc/plan_session.py` | Large interactive surface |
-| 2 | `aidlc/improve.py` | CLI-style flow |
-| 3 | `aidlc/planner_helpers.py` | Many branches; pure helpers vs I/O |
-| 4 | `aidlc/runner.py` | Orchestration + mocks |
-| 5 | `aidlc/cli_commands.py` / `cli/config_cmd.py` | argv + subprocess smoke where needed |
-| 6 | `aidlc/audit/full_engine.py`, `runtime_engine.py` | Fixture projects |
+| 1 | `aidlc/cli_commands.py` / `cli/config_cmd.py` / `cli/accounts.py` | argv + subprocess / large CLI surface |
+| 2 | `aidlc/audit/full_engine.py`, `runtime_engine.py` | fixture projects + engine table tests |
+| 3 | `aidlc/__main__.py` | remaining `cmd_run` branches |
+| 4 | `aidlc/implementer.py` | autosync / workspace paths not yet saturated |
+| 5 | `aidlc/providers/*.py` | adapter matrix with fakes |
 
-**When ~81% is real:** set `fail_under` to **79** or **80**, update this table, and add “**~81% → ~91%**.”
+**When ~91% is real:** set `fail_under` to **~89**, update this table, and add “**~91% → ~100%**” (or declare ~90% the practical ceiling if diminishing returns).
 
 ---
 

@@ -336,3 +336,69 @@ class TestClassifyFailure:
 
     def test_service_outage_detection_from_network_message(self):
         assert ClaudeCLI._is_service_outage(1, "", "temporary DNS failure") is True
+
+
+class TestExtractCliMetadataBranches:
+    def test_whitespace_only_stdout(self):
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata("  \n  ", "fb")
+        assert src == "none"
+        assert usage == {}
+
+    def test_message_dict_usage_when_top_usage_missing(self):
+        payload = {
+            "message": {
+                "usage": {"input_tokens": 2, "output_tokens": 1},
+                "content": [{"type": "text", "text": "hello"}],
+                "model": "opus-2",
+                "total_cost_usd": "0.01",
+            }
+        }
+        blob = json.dumps(payload)
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata(blob, "fb")
+        assert text == "hello"
+        assert usage.get("input_tokens") == 2
+        assert model == "opus-2"
+        assert cost == 0.01
+        assert src == "claude_cli_json"
+
+    def test_non_dict_top_level_scans_json_lines(self):
+        blob = "prefix\n" + json.dumps({"usage": {"output_tokens": 7}, "result": "r2"})
+        text, usage, _, model, src = ClaudeCLI._extract_cli_metadata(blob, "fb")
+        assert text == "r2"
+        assert usage["output_tokens"] == 7
+        assert src == "claude_cli_json"
+        assert model == "fb"
+
+    def test_usage_with_server_tool_use_dict(self):
+        payload = {
+            "result": "ok",
+            "usage": {
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "server_tool_use": {"web_search_requests": 2, "web_fetch_requests": 3},
+            },
+            "model": "m",
+        }
+        text, usage, _, _, src = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
+        assert text == "ok"
+        assert usage["web_search_requests"] == 2
+        assert usage["web_fetch_requests"] == 3
+        assert src == "claude_cli_json"
+
+    def test_invalid_total_cost_and_model_ignored(self):
+        payload = {"result": "x", "usage": {}, "total_cost_usd": "nope", "model": ""}
+        _, _, cost, model, _ = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
+        assert cost is None
+        assert model == "fb"
+
+    def test_extract_text_from_message_non_list_content(self):
+        assert ClaudeCLI._extract_text_from_message({"content": "bad"}) == ""
+
+    def test_extract_text_from_message_skips_non_text_blocks(self):
+        msg = {
+            "content": [
+                {"type": "tool_use", "name": "x"},
+                {"type": "text", "text": "only"},
+            ]
+        }
+        assert ClaudeCLI._extract_text_from_message(msg) == "only"

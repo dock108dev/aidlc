@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -694,3 +695,248 @@ class TestErrorPayloadSampling:
         assert len(sampled_lines) == 50
         assert sampled_lines[0] == "info 551"
         assert sampled_lines[-1] == "info 600"
+
+
+class TestImplementerMoreBranches:
+    @patch("aidlc.implementer.sort_issues_for_implementation", return_value=False)
+    def test_run_stops_when_initial_sort_detects_cycle(self, _mock_sort, config, logger, tmp_path):
+        config["dry_run"] = True
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, make_cli_success(), "ctx", logger)
+        assert impl.run() is False
+        assert "Dependency cycle" in (state.stop_reason or "")
+
+    def test_is_complex_issue_logs_reasons(self, config, logger, tmp_path, caplog):
+        config["dry_run"] = True
+        state = RunState(run_id="t", config_name="c")
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
+        impl.escalate_on_retry = True
+        impl.complexity_ac_threshold = 2
+        impl.complexity_dep_threshold = 2
+        impl.complexity_description_threshold = 5
+        impl.complexity_labels = {"hot"}
+        issue = Issue(
+            id="I-1",
+            title="T",
+            description="x" * 10,
+            labels=["hot"],
+            dependencies=["A", "B"],
+            acceptance_criteria=["a", "b", "c"],
+            attempt_count=2,
+        )
+        with caplog.at_level(logging.INFO):
+            assert impl._is_complex_issue(issue) is True
+        assert "implementation_complex" in caplog.text
+
+    def test_log_provider_result_requested_vs_actual(self, config, logger, tmp_path, caplog):
+        config["dry_run"] = True
+        state = RunState(run_id="t", config_name="c")
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
+        issue = Issue(id="I-1", title="t", description="d")
+        with caplog.at_level(logging.INFO):
+            impl._log_provider_result(
+                issue,
+                {
+                    "provider_id": "openai",
+                    "model_used": "gpt-small",
+                    "routing_decision": {"model": "gpt-large"},
+                },
+            )
+        assert "requested" in caplog.text
+
+    @patch("aidlc.implementer.subprocess.run")
+    def test_run_tests_timeout_capture_output(self, mock_run, config, logger, tmp_path):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
+        config["dry_run"] = False
+        config["run_tests_command"] = "pytest"
+        state = RunState(run_id="t", config_name="c")
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
+        impl.test_command = "pytest"
+        out = impl._run_tests(capture_output=True)
+        assert "timed out" in out.lower()
+
+    @patch("aidlc.implementer.parse_implementation_result")
+    @patch.object(Implementer, "_get_changed_files")
+    @patch.object(Implementer, "_run_tests", return_value=True)
+    def test_implement_issue_bad_json_with_file_changes_rejected(
+        self, _rt, mock_gcf, mock_parse, config, logger, tmp_path
+    ):
+        mock_parse.side_effect = ValueError("bad")
+        mock_gcf.return_value = (["x.py"], True)
+        config["dry_run"] = False
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": "not json",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.test_command = None
+        issue = Issue.from_dict(state.issues[0])
+        assert impl._implement_issue(issue) is False
+
+    @patch("aidlc.implementer.parse_implementation_result")
+    @patch.object(Implementer, "_get_changed_files")
+    @patch.object(Implementer, "_run_tests", return_value=True)
+    def test_implement_issue_bad_json_change_detection_broken(
+        self, _rt, mock_gcf, mock_parse, config, logger, tmp_path
+    ):
+        mock_parse.side_effect = ValueError("bad")
+        mock_gcf.return_value = (["x.py"], False)
+        config["dry_run"] = False
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": "x",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.test_command = None
+        issue = Issue.from_dict(state.issues[0])
+        assert impl._implement_issue(issue) is False
+
+    @patch("aidlc.implementer.parse_implementation_result")
+    @patch.object(Implementer, "_get_changed_files")
+    @patch.object(Implementer, "_run_tests", return_value=True)
+    def test_implement_issue_success_strict_change_detection_no_changes_fails(
+        self, _rt, mock_gcf, mock_parse, config, logger, tmp_path
+    ):
+        from aidlc.schemas import ImplementationResult
+
+        mock_parse.return_value = ImplementationResult(
+            issue_id="ISSUE-001",
+            success=True,
+            summary="ok",
+            files_changed=[],
+            tests_passed=True,
+        )
+        mock_gcf.return_value = ([], True)
+        config["dry_run"] = False
+        config["strict_change_detection"] = True
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": "{}",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.test_command = None
+        issue = Issue.from_dict(state.issues[0])
+        assert impl._implement_issue(issue) is False
+
+    @patch.object(Implementer, "_run_tests", return_value=False)
+    def test_verification_pass_fail_on_final_test(self, mock_rt, config, logger, tmp_path):
+        config["fail_on_final_test_failure"] = True
+        config["run_tests_command"] = "pytest"
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            {
+                "id": "ISSUE-001",
+                "title": "T",
+                "description": "D",
+                "priority": "high",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["A"],
+                "status": "implemented",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": ["a.py"],
+                "attempt_count": 1,
+                "max_attempts": 3,
+            }
+        ]
+        state.total_issues = 1
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
+        impl.test_command = "pytest"
+        assert impl._verification_pass() is False
+        assert "Final verification failed" in (state.stop_reason or "")
+
+
+class TestSyncIssueMarkdown:
+    def test_sync_issue_logs_oserror(self, config, logger, tmp_path):
+        config["dry_run"] = True
+        state = RunState(run_id="t", config_name="c")
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        impl = Implementer(state, run_dir, config, MagicMock(), "ctx", logger)
+        impl.autosync_issue_status_sync = True
+        issue = Issue(
+            id="ISSUE-001",
+            title="T",
+            description="D",
+            status=IssueStatus.IMPLEMENTED,
+            acceptance_criteria=["a"],
+        )
+        real_write = Path.write_text
+
+        def selective_write(self, *a, **kw):
+            if self.name == "ISSUE-001.md":
+                raise OSError("full disk")
+            return real_write(self, *a, **kw)
+
+        with patch.object(Path, "write_text", selective_write):
+            impl._sync_issue_markdown(issue)
+
+
+class TestAutosyncProgress:
+    @patch("aidlc.implementer.prune_aidlc_data")
+    @patch("aidlc.implementer.git_push_current_branch")
+    @patch("aidlc.implementer.git_commit_cycle_snapshot")
+    def test_autosync_runs_after_each_cycle_when_interval_is_one(
+        self, mock_commit, mock_push, mock_prune, config, logger, tmp_path
+    ):
+        config["dry_run"] = False
+        config["autosync_every_implementation_cycles"] = 1
+        mock_commit.return_value = False
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.run()
+        mock_commit.assert_called()
+        mock_prune.assert_called()
+        mock_push.assert_not_called()

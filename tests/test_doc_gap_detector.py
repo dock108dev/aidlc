@@ -1,5 +1,8 @@
 """Tests for aidlc.doc_gap_detector module."""
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 from aidlc.audit_models import DocGap
 from aidlc.doc_gap_detector import detect_doc_gaps
@@ -78,6 +81,28 @@ class TestDetectDocGaps:
         assert len(gaps) == 0
 
     def test_empty_project_returns_empty(self, tmp_path, config):
+        gaps = detect_doc_gaps(tmp_path, config)
+        assert gaps == []
+
+    def test_skips_doc_when_read_text_raises(self, tmp_path, config, caplog):
+        bad = tmp_path / "bad.md"
+        bad.write_text("ignored")
+        (tmp_path / "good.md").write_text("Still TBD here\n")
+        real_read = Path.read_text
+
+        def selective(self, *a, **kw):
+            if self.resolve() == bad.resolve():
+                raise OSError("unreadable")
+            return real_read(self, *a, **kw)
+
+        caplog.set_level("WARNING")
+        with patch.object(Path, "read_text", selective):
+            gaps = detect_doc_gaps(tmp_path, config)
+        assert any(g.doc_path == "good.md" for g in gaps)
+        assert "skipped" in caplog.text.lower()
+
+    def test_skips_backtick_wrapped_placeholder_info(self, tmp_path, config):
+        (tmp_path / "cfg.md").write_text("Set `{foo}` as the token.\n")
         gaps = detect_doc_gaps(tmp_path, config)
         assert gaps == []
 

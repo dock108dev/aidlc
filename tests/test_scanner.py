@@ -62,6 +62,10 @@ class TestProjectScanner:
         paths = [d["path"] for d in result["doc_files"]]
         assert not any("node_modules" in p for p in paths)
 
+    def test_is_excluded_matches_nested_segment(self, project, config):
+        scanner = ProjectScanner(project, config)
+        assert scanner._is_excluded("lib/node_modules/some-pkg/readme.md") is True
+
     def test_doc_priority_root_readme(self, project, config):
         scanner = ProjectScanner(project, config)
         result = scanner.scan()

@@ -4,7 +4,8 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidlc.models import IssueStatus, RunState
+from aidlc.audit_models import AuditResult, DocGap
+from aidlc.models import IssueStatus, RunPhase, RunState
 from aidlc.runner import hydrate_existing_issues, init_run, run_full, scan_project
 
 
@@ -72,6 +73,11 @@ class TestInitRun:
             call.args for call in mock_chmod.call_args_list
         ]
 
+    @patch("aidlc.runner.os.chmod", side_effect=OSError("chmod not supported"))
+    def test_config_snapshot_ignores_chmod_oserror(self, mock_chmod, config):
+        state, run_dir = init_run(config, resume=False, dry_run=True)
+        assert (run_dir / "config_snapshot.json").exists()
+
 
 class TestScanProject:
     def test_scans_docs(self, config, tmp_path):
@@ -81,6 +87,27 @@ class TestScanProject:
         context, scan_result = scan_project(state, config, logger)
         assert "Test Project" in context
         assert state.docs_scanned >= 1
+
+    @patch("aidlc.runner.ProjectScanner")
+    def test_logs_when_doc_chars_exceed_threshold(self, MockScanner, config, tmp_path, caplog):
+        (tmp_path / "README.md").write_text("# x")
+        mock_inst = MagicMock()
+        mock_inst.scan.return_value = {
+            "total_docs": 2,
+            "doc_files": [
+                {"path": "a.md", "size": 50000},
+                {"path": "b.md", "size": 35000},
+            ],
+            "project_type": "python",
+            "existing_issues": [],
+        }
+        mock_inst.build_context_prompt.return_value = "context"
+        MockScanner.return_value = mock_inst
+        logger = logging.getLogger("test_scan_large")
+        state = RunState(run_id="t", config_name="c")
+        with caplog.at_level(logging.INFO):
+            scan_project(state, config, logger)
+        assert "Large project" in caplog.text
 
 
 class TestHydrateExistingIssues:
@@ -117,6 +144,17 @@ class TestHydrateExistingIssues:
         assert issue.status == IssueStatus.VERIFIED
         assert state.total_issues == 1
 
+    def test_skips_entries_without_valid_parsed_issue(self):
+        state = RunState(run_id="t", config_name="c")
+        scan_result = {
+            "existing_issues": [
+                {"parsed_issue": None},
+                {"parsed_issue": {"title": "no id"}},
+            ]
+        }
+        hydrate_existing_issues(state, scan_result, logging.getLogger("h"))
+        assert state.total_issues == 0
+
 
 class TestRunFull:
     @patch("aidlc.runner.RunLock")
@@ -136,4 +174,99 @@ class TestRunFull:
         MockLock.return_value = mock_lock
 
         run_full(config=config, dry_run=True, plan_only=True, verbose=False)
+        mock_lock.release.assert_called()
+
+    @patch("aidlc.runner.sys.exit")
+    @patch("aidlc.runner.ProviderRouter")
+    @patch("aidlc.runner.RunLock")
+    def test_exits_when_no_ai_provider_and_not_dry_run(
+        self, MockLock, MockRouter, mock_exit, config, tmp_path
+    ):
+        (tmp_path / "README.md").write_text("# T")
+        cfg = {**config, "dry_run": False}
+        mock_lock = MagicMock()
+        MockLock.return_value = mock_lock
+        mock_cli = MagicMock()
+        mock_cli.check_available.return_value = False
+        MockRouter.return_value = mock_cli
+        mock_exit.side_effect = SystemExit(1)
+        with pytest.raises(SystemExit):
+            run_full(config=cfg, dry_run=False, verbose=False)
+        mock_exit.assert_called_with(1)
+        mock_lock.release.assert_called()
+
+    @patch("aidlc.doc_gap_detector.detect_doc_gaps")
+    @patch("aidlc.runner.scan_project")
+    @patch("aidlc.auditor.CodeAuditor")
+    @patch("aidlc.runner.ProviderRouter")
+    @patch("aidlc.runner.RunLock")
+    def test_run_full_quick_audit_no_conflicts_plan_only(
+        self, MockLock, MockRouter, MockAuditor, mock_scan, mock_doc_gaps, config, tmp_path
+    ):
+        (tmp_path / "README.md").write_text("# T")
+        cfg = {**config, "dry_run": True, "plan_only": True, "doc_gap_detection_enabled": True}
+        MockLock.return_value = MagicMock()
+        mock_cli = MagicMock()
+        mock_cli.check_available.return_value = True
+        MockRouter.return_value = mock_cli
+
+        res = AuditResult()
+        res.conflicts = []
+        aud = MagicMock()
+        aud.run.return_value = res
+        MockAuditor.return_value = aud
+
+        def _fake_scan(state, cfg, logger, cli=None):
+            state.phase = RunPhase.SCANNING
+            state.docs_scanned = 0
+            state.scanned_docs = []
+            return (
+                "ctx",
+                {"doc_files": [], "existing_issues": [], "total_docs": 0, "project_type": "py"},
+            )
+
+        mock_scan.side_effect = _fake_scan
+        mock_doc_gaps.return_value = [
+            DocGap("a.md", 1, "TBD", "text", severity="critical"),
+            DocGap("b.md", 2, "x", "y", severity="warning"),
+        ]
+
+        with patch("aidlc.runner.Planner") as MockPlanner:
+            MockPlanner.return_value.run = MagicMock()
+            run_full(config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False)
+
+        aud.run.assert_called_once_with(depth="quick")
+        mock_cli.set_phase.assert_any_call("audit")
+        mock_cli.set_phase.assert_any_call("planning")
+
+    @patch("aidlc.runner.scan_project", side_effect=KeyboardInterrupt)
+    @patch("aidlc.runner.ProviderRouter")
+    @patch("aidlc.runner.RunLock")
+    def test_keyboard_interrupt_still_releases_lock(
+        self, MockLock, MockRouter, _mock_scan, config, tmp_path
+    ):
+        (tmp_path / "README.md").write_text("# T")
+        cfg = {**config, "dry_run": True}
+        mock_lock = MagicMock()
+        MockLock.return_value = mock_lock
+        mock_cli = MagicMock()
+        mock_cli.check_available.return_value = True
+        MockRouter.return_value = mock_cli
+        run_full(config=cfg, dry_run=True, verbose=False)
+        mock_lock.release.assert_called()
+
+    @patch("aidlc.runner.scan_project", side_effect=RuntimeError("boom"))
+    @patch("aidlc.runner.ProviderRouter")
+    @patch("aidlc.runner.RunLock")
+    def test_unhandled_exception_marks_failed_and_releases(
+        self, MockLock, MockRouter, _mock_scan, config, tmp_path
+    ):
+        (tmp_path / "README.md").write_text("# T")
+        cfg = {**config, "dry_run": True}
+        mock_lock = MagicMock()
+        MockLock.return_value = mock_lock
+        mock_cli = MagicMock()
+        mock_cli.check_available.return_value = True
+        MockRouter.return_value = mock_cli
+        run_full(config=cfg, dry_run=True, verbose=False)
         mock_lock.release.assert_called()
