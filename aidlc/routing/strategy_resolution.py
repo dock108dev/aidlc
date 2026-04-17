@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from . import context, helpers
+from . import helpers
+from .context import provider_premium_capacity_weight, provider_premium_tagged
 from .types import RouteDecision
 
 
@@ -60,7 +61,7 @@ def resolve_balanced(
         ):
             continue
 
-        tagged_premium = context.provider_premium_tagged(router.config, provider_id)
+        tagged_premium = provider_premium_tagged(router.config, provider_id)
         tier_label = "premium" if tagged_premium else "budget"
         reasoning = (
             f"balanced/{tier_label}: provider={provider_id}, {account_reasoning}, "
@@ -87,7 +88,7 @@ def resolve_balanced(
                 f"falling back to {provider_id}/{model}"
             )
         elif tagged_premium and not is_impl:
-            w = context.provider_premium_capacity_weight(router.config, provider_id)
+            w = provider_premium_capacity_weight(router.config, provider_id)
             quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}× vs baseline)"
         elif not is_impl and provider_id in helpers.get_budget_providers():
             if model and model not in ("gpt-5.4-mini", "gpt-5.4-nano"):

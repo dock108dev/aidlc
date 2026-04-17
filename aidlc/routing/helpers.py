@@ -64,8 +64,6 @@ def is_premium_phase(phase: str, complexity: str = "normal") -> bool:
     premium = get_premium_phases()
     quality_sensitive = get_quality_sensitive_phases()
     is_complex = complexity == "complex"
-    return (
-        phase in premium
-        or (phase == "implementation" and is_complex)
-        or (phase in quality_sensitive and is_complex)
-    )
+    impl_as_complex = phase == "implementation" and is_complex
+    quality_phase_complex = phase in quality_sensitive and is_complex
+    return phase in premium or impl_as_complex or quality_phase_complex
