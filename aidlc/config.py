@@ -280,8 +280,10 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
     are overwritten.
     """
     for key, value in user_config.items():
-        if key == "providers" and isinstance(value, dict) and isinstance(
-            config.get("providers"), dict
+        if (
+            key == "providers"
+            and isinstance(value, dict)
+            and isinstance(config.get("providers"), dict)
         ):
             for provider_id, provider_cfg in value.items():
                 if isinstance(provider_cfg, dict) and isinstance(

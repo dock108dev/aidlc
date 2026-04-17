@@ -131,10 +131,13 @@ def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
 
 def test_provider_premium_weight_defaults():
     assert context.provider_premium_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
-    assert context.provider_premium_capacity_weight(
-        {"providers": {"openai": {"premium": True}}},
-        "openai",
-    ) == 20.0
+    assert (
+        context.provider_premium_capacity_weight(
+            {"providers": {"openai": {"premium": True}}},
+            "openai",
+        )
+        == 20.0
+    )
 
 
 def test_fallback_decision_skips_excluded_in_first_pass():
