@@ -107,6 +107,8 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `implementation_accept_pre_existing_suite_failures` | `true` |
 | `implementation_pre_existing_debt_min_chars` | `40` |
 | `implementation_pre_existing_prose_heuristic` | `true` |
+| `implementation_use_targeted_tests_when_suite_unstable` | `true` |
+| `implementation_targeted_test_command` | `null` |
 | `implementation_complexity_acceptance_criteria_threshold` | `12` |
 | `implementation_complexity_dependencies_threshold` | `5` |
 | `implementation_complexity_description_chars_threshold` | `5000` |
@@ -118,6 +120,8 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `fail_on_final_test_failure` | `false` |
 
 After implementation, if `run_tests_command` fails, AIDLC runs a **fix-tests** prompt. If tests still fail, but the model documents **pre-existing / unrelated** suite failures — ideally via structured JSON (`failures_are_pre_existing_unrelated` + `follow_up_documentation`) — the issue can still be marked **implemented** when `implementation_accept_pre_existing_suite_failures` is `true` and the documentation is at least `implementation_pre_existing_debt_min_chars` long — notes are appended for follow-up issues. If the model omits JSON, `implementation_pre_existing_prose_heuristic` (default `true`) treats clear prose (e.g. “pre-existing unrelated suite”, “gate is blocked”) as documentation. Set `implementation_accept_pre_existing_suite_failures` to `false` to require a green test command for every issue.
+
+When that happens, the run records that the **project-wide test gate is unstable**. On later implementation cycles (post-implementation tests and fix-tests re-runs), if `implementation_use_targeted_tests_when_suite_unstable` is `true`, AIDLC may replace the configured command with a **narrower** one: for Godot/GUT-style commands it appends `-gtest=` with paths derived from files changed in that issue (plus sibling `test_*.gd` in the same directory). Set `implementation_targeted_test_command` to a shell string template (optional `{gtest_paths}` / `{paths}` placeholders) to override that behavior. **Final verification** (`_verification_pass`) still runs the full `run_tests_command` unchanged so you do not silently lose a full-suite signal at the end of a session.
 
 ### Validation Loop
 

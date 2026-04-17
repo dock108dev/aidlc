@@ -277,6 +277,7 @@ class TestRunState:
         state.issues = [
             {"id": "ISSUE-001", "title": "T", "status": "pending"},
         ]
+        state.project_wide_tests_unstable = True
         d = state.to_dict()
         restored = RunState.from_dict(d)
         assert restored.run_id == "test_rt"
@@ -287,6 +288,7 @@ class TestRunState:
         assert restored.claude_cost_usd_exact == 1.25
         assert restored.claude_model_usage["sonnet"]["calls"] == 4
         assert len(restored.issues) == 1
+        assert restored.project_wide_tests_unstable is True
 
     def test_record_provider_result_uses_exact_cost_when_available(self):
         state = RunState(run_id="t", config_name="c")

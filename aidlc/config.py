@@ -156,6 +156,10 @@ DEFAULTS = {
     "implementation_pre_existing_debt_min_chars": 40,
     # If fix response has no valid JSON, infer pre-existing debt from prose (models often skip JSON).
     "implementation_pre_existing_prose_heuristic": True,
+    # After project-wide suite debt is accepted once, use targeted GUT/tests for implementation runs.
+    "implementation_use_targeted_tests_when_suite_unstable": True,
+    # Optional shell template; {gtest_paths} or {paths} = comma-separated res://... test .gd files.
+    "implementation_targeted_test_command": None,
     "implementation_complexity_acceptance_criteria_threshold": 12,
     "implementation_complexity_dependencies_threshold": 5,
     "implementation_complexity_description_chars_threshold": 5000,

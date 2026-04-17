@@ -88,6 +88,8 @@ class TestLoadConfig:
             "implementation_accept_pre_existing_suite_failures",
             "implementation_pre_existing_debt_min_chars",
             "implementation_pre_existing_prose_heuristic",
+            "implementation_use_targeted_tests_when_suite_unstable",
+            "implementation_targeted_test_command",
             "implementation_complexity_acceptance_criteria_threshold",
             "implementation_complexity_dependencies_threshold",
             "implementation_complexity_description_chars_threshold",

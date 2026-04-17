@@ -287,10 +287,16 @@ def ensure_test_deps(
             break
 
 
-def fix_failing_tests(impl, issue, model_override: str | None = None) -> FixTestsOutcome:
+def fix_failing_tests(
+    impl,
+    issue,
+    model_override: str | None = None,
+    *,
+    files_changed: list[str] | None = None,
+) -> FixTestsOutcome:
     """Run test-fix prompt, re-run tests, optionally accept documented pre-existing debt."""
     impl.logger.info(f"Attempting to fix failing tests for {issue.id}")
-    test_output = impl._run_tests(capture_output=True)
+    test_output = impl._run_tests(capture_output=True, files_changed=files_changed)
     fix_prompt = f"""# Fix Failing Tests
 
 Tests are failing after implementing issue {issue.id}: {issue.title}
@@ -326,7 +332,7 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
 
     impl.state.elapsed_seconds += float(result.get("duration_seconds") or 0)
 
-    if impl._run_tests():
+    if impl._run_tests(files_changed=files_changed):
         return FixTestsOutcome(tests_now_passing=True)
 
     out = parse_test_fix_outcome(result.get("output") or "")

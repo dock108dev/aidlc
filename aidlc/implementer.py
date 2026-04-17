@@ -13,6 +13,7 @@ from .implementer_helpers import (
     implementation_instructions,
 )
 from .implementer_issue_order import sort_issues_for_implementation
+from .implementer_targeted_tests import effective_implementation_test_command
 from .implementer_signals import (
     compact_error_text,
     is_all_models_token_exhausted,
@@ -379,11 +380,13 @@ class Implementer:
 
         # Run tests if available
         if self.test_command:
-            tests_pass = self._run_tests()
+            tests_pass = self._run_tests(files_changed=impl_result.files_changed)
             impl_result.tests_passed = tests_pass
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
-                fix_outcome = self._fix_failing_tests(issue)
+                fix_outcome = self._fix_failing_tests(
+                    issue, files_changed=impl_result.files_changed
+                )
                 if fix_outcome.tests_now_passing:
                     impl_result.tests_passed = True
                     # Model JSON often has success=false while tests were red; we verified green.
@@ -403,6 +406,7 @@ class Implementer:
                         f"{issue.id}: implementation accepted; full test command still fails — "
                         "documented pre-existing/unrelated failures in notes for follow-up."
                     )
+                    self.state.project_wide_tests_unstable = True
                 else:
                     impl_result.success = False
 
@@ -465,9 +469,17 @@ class Implementer:
     def _implementation_instructions(self) -> str:
         return implementation_instructions(self.test_command)
 
-    def _fix_failing_tests(self, issue: Issue, model_override: str | None = None) -> FixTestsOutcome:
+    def _fix_failing_tests(
+        self,
+        issue: Issue,
+        model_override: str | None = None,
+        *,
+        files_changed: list[str] | None = None,
+    ) -> FixTestsOutcome:
         """Give Claude a chance to fix failing tests."""
-        return fix_failing_tests(self, issue, model_override=model_override)
+        return fix_failing_tests(
+            self, issue, model_override=model_override, files_changed=files_changed
+        )
 
     def _is_complex_issue(self, issue: Issue) -> bool:
         """Return whether an issue should use the complex implementation path."""
@@ -532,7 +544,13 @@ class Implementer:
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
 
-    def _run_tests(self, capture_output: bool = False) -> bool | str:
+    def _run_tests(
+        self,
+        capture_output: bool = False,
+        *,
+        files_changed: list[str] | None = None,
+        use_targeted_if_unstable: bool = True,
+    ) -> bool | str:
         """Run the project's test suite.
 
         If capture_output is True, returns the output string instead of bool.
@@ -543,10 +561,25 @@ class Implementer:
         if self.config.get("dry_run"):
             return True if not capture_output else "[DRY RUN] Tests passed"
 
+        cmd = self.test_command
+        if use_targeted_if_unstable:
+            cmd = effective_implementation_test_command(
+                self.project_root,
+                self.test_command,
+                files_changed,
+                project_wide_tests_unstable=self.state.project_wide_tests_unstable,
+                config=self.config,
+            )
+            if cmd != self.test_command:
+                self.logger.info(
+                    f"Running tests (targeted; project-wide suite unstable): {cmd[:240]}"
+                    f"{'…' if len(cmd) > 240 else ''}"
+                )
+
         t0 = time.time()
         try:
             proc = subprocess.run(
-                self.test_command,
+                cmd,
                 shell=True,
                 cwd=str(self.project_root),
                 capture_output=True,
@@ -589,7 +622,7 @@ class Implementer:
         # Run full test suite one last time
         if self.test_command:
             self.logger.info("Running final test suite...")
-            tests_pass = self._run_tests()
+            tests_pass = self._run_tests(use_targeted_if_unstable=False)
             if tests_pass:
                 self.logger.info("All tests pass.")
             else:

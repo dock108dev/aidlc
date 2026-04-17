@@ -115,6 +115,8 @@ class RunState:
     stop_reason: Optional[str] = None
     notes: str = ""
     validation_results: list = field(default_factory=list)
+    # After accepting pre-existing full-suite debt, use narrower tests during implementation.
+    project_wide_tests_unstable: bool = False
 
     def is_plan_budget_exhausted(self) -> bool:
         return self.plan_elapsed_seconds >= self.plan_budget_seconds
@@ -224,6 +226,7 @@ class RunState:
             "stop_reason": self.stop_reason,
             "notes": self.notes,
             "validation_results": self.validation_results,
+            "project_wide_tests_unstable": self.project_wide_tests_unstable,
         }
 
     @classmethod
@@ -287,6 +290,7 @@ class RunState:
         state.stop_reason = data.get("stop_reason")
         state.notes = data.get("notes", "")
         state.validation_results = data.get("validation_results", [])
+        state.project_wide_tests_unstable = bool(data.get("project_wide_tests_unstable", False))
         return state
 
     def record_provider_result(

@@ -164,6 +164,22 @@ def test_fix_failing_tests_success_reruns(mock_impl_module):
     assert out.tests_now_passing is True
 
 
+def test_fix_failing_tests_forwards_files_changed_to_run_tests(mock_impl_module):
+    impl, issue = mock_impl_module
+    impl._run_tests = MagicMock(side_effect=["out", True])
+    impl.cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "{}",
+        "duration_seconds": 0.1,
+    }
+    fc = ["res://tests/gut/test_x.gd"]
+    out = fix_failing_tests(impl, issue, files_changed=fc)
+    assert out.tests_now_passing is True
+    assert impl._run_tests.call_count == 2
+    assert impl._run_tests.call_args_list[0].kwargs.get("files_changed") == fc
+    assert impl._run_tests.call_args_list[1].kwargs.get("files_changed") == fc
+
+
 def test_fix_failing_tests_cli_fails(mock_impl_module):
     impl, issue = mock_impl_module
     impl._run_tests = MagicMock(return_value="errors")
