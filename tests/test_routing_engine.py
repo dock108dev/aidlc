@@ -46,6 +46,8 @@ class FakeAdapter:
 def _config() -> dict:
     return {
         "routing_strategy": "balanced",
+        # Avoid applying 1h+ cooldowns in unit tests (legacy: no reported time → no cooldown).
+        "routing_rate_limit_buffer_base_seconds": 0,
         "providers": {
             "claude": {"enabled": False},
             "openai": {
@@ -291,6 +293,41 @@ def test_restore_time_parses_try_again_at_clock_time():
 
     assert restore is not None
     assert restore > 0
+
+
+def test_rate_limit_buffer_adds_to_reported_restore(monkeypatch):
+    cfg = _config()
+    cfg["routing_rate_limit_buffer_base_seconds"] = 3600
+    router = ProviderRouter(cfg, logging.getLogger("test.router.buffer"))
+    now = 1_700_000_000.0
+    monkeypatch.setattr("aidlc.routing.engine.time.time", lambda: now)
+    monkeypatch.setattr("aidlc.routing.result_signals.time.time", lambda: now)
+    result = {
+        "success": False,
+        "failure_type": "rate_limited",
+        "details": {"retry_after_seconds": 120},
+    }
+    until = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", result, now)
+    assert until is not None
+    assert until == now + 120.0 + 3600.0
+
+
+def test_rate_limit_backoff_doubles_buffer(monkeypatch):
+    cfg = _config()
+    cfg["routing_rate_limit_buffer_base_seconds"] = 3600
+    router = ProviderRouter(cfg, logging.getLogger("test.router.backoff"))
+    now = 1_700_000_000.0
+    monkeypatch.setattr("aidlc.routing.engine.time.time", lambda: now)
+    monkeypatch.setattr("aidlc.routing.result_signals.time.time", lambda: now)
+    base_result = {
+        "success": False,
+        "failure_type": "rate_limited",
+        "details": {"retry_after_seconds": 1},
+    }
+    first = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", base_result, now)
+    assert first == now + 1.0 + 3600.0
+    second = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", base_result, now)
+    assert second == now + 1.0 + 2 * 3600.0
 
 
 def test_excluded_models_uses_cooldown_key_snapshot():

@@ -25,6 +25,16 @@ Canonical defaults live in `aidlc/config.py`.
 | `max_planning_cycles` | `0` (unlimited) |
 | `max_implementation_cycles` | `0` (unlimited) |
 
+### Provider routing
+
+| Key | Default |
+|---|---|
+| `routing_strategy` | `"balanced"` |
+| `routing_rate_limit_cooldown_seconds` | `300` |
+| `routing_rate_limit_buffer_base_seconds` | `3600` (1h) |
+
+On HTTP 429 / rate-limit responses, the router waits until the provider-reported reset time **plus** a buffer: `base × 1`, `base × 2`, `base × 4` … capped at **`base × 8`** hours per consecutive rate limit on the same provider/model (resets after a successful call). Set `routing_rate_limit_buffer_base_seconds` to `0` to disable the extra wait when no time is reported (tests / debugging).
+
 ### Claude Execution
 
 | Key | Default |

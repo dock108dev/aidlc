@@ -57,6 +57,13 @@ class ProviderRouter:
         self._rate_limit_cooldown_seconds = max(
             1, int(config.get("routing_rate_limit_cooldown_seconds", 300) or 300)
         )
+        # Exponential buffer on rate limits: base * min(2^step, 8) added to reported restore time.
+        _buf = config.get("routing_rate_limit_buffer_base_seconds")
+        if _buf is None:
+            self._rate_limit_buffer_base_seconds = 3600
+        else:
+            self._rate_limit_buffer_base_seconds = max(0, int(_buf))
+        self._rate_limit_backoff_step: dict[tuple[str, str], int] = {}
 
         self._adapters: dict[str, ProviderAdapter] = build_provider_adapters(config, logger)
 
@@ -183,6 +190,7 @@ class ProviderRouter:
                 if result.get("success"):
                     self._provider_cooldowns.pop(decision.provider_id, None)
                     self._model_cooldowns.pop((decision.provider_id, decision.model), None)
+                    self._rate_limit_backoff_step.pop((decision.provider_id, decision.model), None)
                     return result
 
                 if result_signals.is_token_exhaustion_result(result):
@@ -199,7 +207,9 @@ class ProviderRouter:
                     excluded_models.add((decision.provider_id, decision.model))
                     rate_limited_models.append((decision.provider_id, decision.model))
 
-                    restore_at = result_signals.extract_restore_time_epoch(result)
+                    restore_at = self._compute_rate_limit_cooldown_until(
+                        decision.provider_id, decision.model, result, now
+                    )
                     if restore_at is not None:
                         self._provider_cooldowns[decision.provider_id] = restore_at
                         self._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
@@ -441,6 +451,42 @@ class ProviderRouter:
             now=now,
             model_on_cooldown=self._model_is_on_cooldown,
         )
+
+    def _compute_rate_limit_cooldown_until(
+        self,
+        provider_id: str,
+        model: str,
+        result: dict,
+        now: float,
+    ) -> float | None:
+        """Next epoch when *model* may be tried again after a rate limit.
+
+        Adds an exponential buffer on top of the provider-reported window: base·1h,
+        base·2h, base·4h, … capped at base·8h (multiplier min(2^step, 8)) per consecutive
+        rate limit on this (provider, model). Resets when a call succeeds.
+
+        If buffer base is 0 and the response includes no parseable restore time, returns
+        None (legacy test / opt-out: no cooldown row).
+        """
+        key = (provider_id, model)
+        step = self._rate_limit_backoff_step.get(key, 0)
+        mult = min(2**step, 8)
+        buf_seconds = float(self._rate_limit_buffer_base_seconds) * float(mult)
+
+        reported = result_signals.extract_restore_time_epoch(result)
+        if reported is None and buf_seconds <= 0:
+            return None
+
+        if reported is not None:
+            restore_at = reported + buf_seconds
+        else:
+            restore_at = now + max(buf_seconds, float(self._rate_limit_cooldown_seconds))
+
+        if restore_at <= now:
+            restore_at = now + 1.0
+
+        self._rate_limit_backoff_step[key] = step + 1
+        return restore_at
 
     def _log_routing_note(self, decision: RouteDecision, phase: str) -> None:
         """Emit a user-facing log line when routing affects quality or cost."""

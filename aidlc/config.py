@@ -13,6 +13,9 @@ DEFAULTS = {
     "runtime_profile": "standard",  # standard | production
     "routing_strategy": "balanced",  # balanced | cheapest | best_quality | custom
     "routing_rate_limit_cooldown_seconds": 300,
+    # Added on top of any provider-reported restore time (429/retry-after). Doubles per
+    # consecutive rate limit on the same (provider, model): 1×, 2×, 4× … capped at 8× base.
+    "routing_rate_limit_buffer_base_seconds": 3600,
     "providers": {  # provider enable/model configuration
         "claude": {
             "enabled": True,
