@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidlc.accounts.credentials import CredentialStore
 from aidlc.accounts.manager import AccountManager
 from aidlc.accounts.models import Account, AuthState

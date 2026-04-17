@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidlc.cli.usage_cmd import _accumulate_legacy_usage, _accumulate_usage, cmd_usage
 from aidlc.models import RunState
 from aidlc.state_manager import save_state

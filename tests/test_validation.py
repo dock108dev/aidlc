@@ -9,6 +9,7 @@ from aidlc.models import Issue, IssueStatus, RunPhase, RunState
 from aidlc.test_parser import FailureReport, parse_test_failures
 from aidlc.test_profiles import detect_test_profile
 from aidlc.validation_issues import create_fix_issues
+from aidlc.validator import Validator
 
 
 class TestTestProfiles:
@@ -159,11 +160,20 @@ class TestValidationIssues:
         issues = create_fix_issues(failures, set())
         assert any("test_checkout" in ac for ac in issues[0].acceptance_criteria)
 
+    def test_create_fix_issues_includes_stack_trace_in_description(self):
+        failures = [
+            FailureReport(
+                test_name="t_stack",
+                assertion="boom",
+                stack_trace="line1\nline2",
+            )
+        ]
+        issues = create_fix_issues(failures, set())
+        assert "Stack trace" in issues[0].description
+
 
 class TestValidator:
     def test_no_tests_skips_validation(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -181,8 +191,6 @@ class TestValidator:
         assert state.phase == RunPhase.VALIDATING
 
     def test_no_tests_fails_when_strict(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -201,8 +209,6 @@ class TestValidator:
         assert result is False
 
     def test_failed_tier_without_parseable_output_creates_synthetic_failure(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -236,8 +242,6 @@ class TestValidator:
         assert "export preset missing" in failures[0].stack_trace
 
     def test_non_progressive_mode_is_rejected(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -256,8 +260,6 @@ class TestValidator:
 
 class TestValidatorInternals:
     def test_render_fix_issue_md(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -282,8 +284,6 @@ class TestValidatorInternals:
 
     @patch("aidlc.validator.subprocess.run")
     def test_run_command_timeout(self, mock_run, tmp_path):
-        from aidlc.validator import Validator
-
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
         state = RunState(run_id="test", config_name="default")
         config = {
@@ -301,8 +301,6 @@ class TestValidatorInternals:
 
     @patch("aidlc.validator.subprocess.run")
     def test_run_command_file_not_found(self, mock_run, tmp_path):
-        from aidlc.validator import Validator
-
         mock_run.side_effect = FileNotFoundError()
         state = RunState(run_id="test", config_name="default")
         config = {
@@ -319,8 +317,6 @@ class TestValidatorInternals:
         logger.warning.assert_called()
 
     def test_run_test_tiers_empty_failure_output(self, tmp_path):
-        from aidlc.validator import Validator
-
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -346,9 +342,6 @@ class TestValidatorRunLoop:
     @patch("aidlc.validator.save_state")
     @patch("aidlc.implementer.Implementer")
     def test_run_returns_true_after_fail_then_pass(self, mock_impl, mock_save, tmp_path):
-        from aidlc.validator import Validator
-        from aidlc.test_parser import FailureReport
-
         self._python_project(tmp_path)
         state = RunState(run_id="vr1", config_name="default")
         state.issues = []
@@ -381,9 +374,6 @@ class TestValidatorRunLoop:
     @patch("aidlc.validator.save_state")
     @patch("aidlc.implementer.Implementer")
     def test_run_stops_when_not_making_progress(self, mock_impl, mock_save, tmp_path):
-        from aidlc.validator import Validator
-        from aidlc.test_parser import FailureReport
-
         self._python_project(tmp_path)
         state = RunState(run_id="vr2", config_name="default")
         state.issues = []
@@ -411,9 +401,6 @@ class TestValidatorRunLoop:
 
     @patch("aidlc.validator.save_state")
     def test_run_stops_when_no_fix_issues_generated(self, mock_save, tmp_path):
-        from aidlc.validator import Validator
-        from aidlc.test_parser import FailureReport
-
         self._python_project(tmp_path)
         state = RunState(run_id="vr3", config_name="default")
         state.issues = []
@@ -437,3 +424,82 @@ class TestValidatorRunLoop:
         v._run_test_tiers = always_fail
         with patch("aidlc.validator.create_fix_issues", return_value=[]):
             assert v.run() is False
+
+    @patch("aidlc.validator.save_state")
+    @patch("aidlc.implementer.Implementer")
+    def test_run_final_check_passes_after_single_cycle(self, mock_impl, mock_save, tmp_path):
+        """Exit the for-loop without early True; final _run_test_tiers succeeds."""
+        self._python_project(tmp_path)
+        state = RunState(run_id="vr4", config_name="default")
+        state.issues = []
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 30,
+            "validation_batch_size": 10,
+        }
+        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        mock_impl.return_value._implement_issue = MagicMock()
+        n = {"c": 0}
+
+        def tiers():
+            n["c"] += 1
+            if n["c"] == 1:
+                return (
+                    False,
+                    [FailureReport(test_name="fix_me", assertion="nope")],
+                    [{"tier": "unit", "passed": False, "command": "pytest"}],
+                )
+            return True, [], [{"tier": "unit", "passed": True, "command": "pytest"}]
+
+        v._run_test_tiers = tiers
+        assert v.run() is True
+
+
+class TestValidatorTiersAndCommand:
+    def test_run_test_tiers_logs_passed_tier(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        (tmp_path / "conftest.py").write_text("")
+        state = RunState(run_id="t", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 30,
+        }
+        logger = MagicMock()
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v.test_profile = {
+            "build": None,
+            "unit": "echo ok",
+            "integration": None,
+            "e2e": None,
+        }
+        passed, _failures, results = v._run_test_tiers()
+        assert passed is True
+        assert results[0]["tier"] == "unit"
+        assert results[0]["passed"] is True
+        logger.info.assert_any_call("  unit: PASSED")
+
+    @patch("aidlc.validator.subprocess.run")
+    def test_run_command_success_returns_output(self, mock_run, tmp_path):
+        class _R:
+            returncode = 0
+            stdout = "hello"
+            stderr = ""
+
+        mock_run.return_value = _R()
+        state = RunState(run_id="t", config_name="default")
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "validation_max_cycles": 1,
+            "test_timeout_seconds": 30,
+        }
+        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock())
+        ok, out = v._run_command("echo x")
+        assert ok is True
+        assert "hello" in out

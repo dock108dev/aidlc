@@ -29,17 +29,17 @@ python -m pytest --cov=aidlc --cov-report=html -q
 | Metric | Value |
 |--------|------:|
 | Statements (`aidlc/`) | 7,831 |
-| Missed | ~3,029 |
-| **Line coverage** | **~61%** |
-| `pyproject.toml` `fail_under` | 58 until you complete the next milestone |
+| Missed | ~2,297 |
+| **Line coverage** | **~70.7%** |
+| `pyproject.toml` `fail_under` | 69 (slack below steady total; ratchet next milestone) |
 
-Already covered in this tree (re-check with `term-missing`): `context_prep.py`, `plan_templates.py` — treat as done; do not duplicate work there.
+Already covered in this tree (re-check with `term-missing`): `context_prep.py`, `plan_templates.py`, `plan_wizard.py`, `cli/usage_cmd.py`, `cli/display.py`, `routing/result_signals.py`, `routing/strategy_resolution.py`, `validator.py`, `implementer_workspace.py`, `accounts/credentials.py`, `accounts/manager.py` — most paths for the prior **61→71** milestone are in place; use `term-missing` for remaining gaps.
 
-**Gap to long-term ~90%:** still on the order of **~2,000+** newly covered statements (honest measurement, minimal `omit`). The **next** milestone below breaks off only the next **~780** hits.
+**Gap to long-term ~90%:** on the order of **~1,500+** newly covered statements (honest measurement, minimal `omit`).
 
 ---
 
-## Next milestone only: **~61% → ~71%** (+10 points)
+## Completed milestone: **~61% → ~70.7%** (target was ~71%; within ~0.3 pp)
 
 **Math (line coverage on full `aidlc/` tree):**  
 At ~7,831 statements, **+10 percentage points** means roughly **~780 fewer missed lines** (newly executed statements), not “ten more tests.”
@@ -59,11 +59,28 @@ At ~7,831 statements, **+10 percentage points** means roughly **~780 fewer misse
 
 **Defer to the following +10% milestone** if timeboxed: `plan_session.py`, `improve.py`, `cli_commands.py` deep paths (heavy I/O / subprocess), `full_engine.py` / `runtime_engine.py` (large integration surface).
 
-**When ~71% is real:** set `fail_under` to **69** or **70** (slack), update the table in this doc, and open the next section “**~71% → ~81%**” with a fresh shortlist (re-run `term-missing`—the worst offenders will have shifted).
+**Gate:** `fail_under` is set to **69** in `pyproject.toml` (~1.7 pp slack vs ~70.7% measured).
 
 ---
 
-**Gap to ~90% (whole journey):** after this milestone you still need on the order of **~1,500+** more covered statements across later cycles—same honesty as before, just chunked.
+## Next milestone only: **~71% → ~81%** (+10 points)
+
+Re-run `python -m pytest --cov=aidlc --cov-report=term-missing -q` and refresh this shortlist; at the time of the last ratchet, high-yield targets included:
+
+| Priority | Module | Notes |
+|----------|--------|--------|
+| 1 | `aidlc/plan_session.py` | Large interactive surface |
+| 2 | `aidlc/improve.py` | CLI-style flow |
+| 3 | `aidlc/planner_helpers.py` | Many branches; pure helpers vs I/O |
+| 4 | `aidlc/runner.py` | Orchestration + mocks |
+| 5 | `aidlc/cli_commands.py` / `cli/config_cmd.py` | argv + subprocess smoke where needed |
+| 6 | `aidlc/audit/full_engine.py`, `runtime_engine.py` | Fixture projects |
+
+**When ~81% is real:** set `fail_under` to **79** or **80**, update this table, and add “**~81% → ~91%**.”
+
+---
+
+**Gap to ~90% (whole journey):** after the next milestone you still need on the order of **~1,000+** more covered statements across later cycles.
 
 ---
 
@@ -77,7 +94,7 @@ These modules drive most of the gap. Tackle in order of **missed statements × e
 |--------|--------------:|--------|
 | `aidlc/plan_session.py` | ~244 | Interactive / session flow; needs orchestration tests or refactor for testability |
 | `aidlc/improve.py` | ~189 | CLI-style flow; similar |
-| `aidlc/plan_wizard.py` | ~104 | Wizard prompts; use `stdin`/`pytest` monkeypatch (**still open** — top item for 61→71%) |
+| `aidlc/plan_wizard.py` | — | Largely covered for 61→71; re-check `term-missing` for stragglers |
 | ~~`aidlc/context_prep.py`~~ | — | Covered |
 | ~~`aidlc/plan_templates.py`~~ | — | Covered |
 
@@ -110,8 +127,8 @@ These modules drive most of the gap. Tackle in order of **missed statements × e
 
 | Module | ~Cover | Notes |
 |--------|--------:|--------|
-| `aidlc/routing/strategy_resolution.py` | ~32% | Add matrix tests per `RoutingStrategy` + edge cases |
-| `aidlc/routing/result_signals.py` | ~53% | Parser helpers: table-driven tests from sample stderr/stdout |
+| `aidlc/routing/strategy_resolution.py` | — | High coverage; finish stragglers via `term-missing` |
+| `aidlc/routing/result_signals.py` | — | Same |
 | `aidlc/routing/engine.py` | ~72% | Cooldowns, `execute_prompt` branches, fallbacks |
 
 ### E. Already strong — finish the last miles

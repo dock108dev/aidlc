@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from aidlc.plan_wizard import (
     _auto_detect,
     _build_starter,

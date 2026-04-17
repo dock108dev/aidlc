@@ -174,6 +174,18 @@ class TestPlanningAction:
         assert any("file_path" in e for e in errors)
         assert any("content" in e for e in errors)
 
+    def test_update_doc_missing_fields(self):
+        action = PlanningAction(action_type="update_doc", rationale="r")
+        errors = action.validate()
+        assert any("file_path" in e for e in errors)
+        assert any("content" in e for e in errors)
+
+    def test_research_missing_topic_and_question(self):
+        action = PlanningAction(action_type="research", rationale="explore")
+        errors = action.validate()
+        assert any("research_topic" in e for e in errors)
+        assert any("research_question" in e for e in errors)
+
     def test_unknown_action_type(self):
         action = PlanningAction(action_type="delete_issue", rationale="R")
         errors = action.validate()
@@ -202,6 +214,19 @@ class TestPlanningAction:
 
 
 class TestPlanningOutput:
+    def test_validate_flags_issue_id_already_in_known_set(self):
+        action = PlanningAction(
+            action_type="create_issue",
+            rationale="dup",
+            issue_id="ISSUE-NEW",
+            title="T",
+            description="D",
+            acceptance_criteria=["a"],
+        )
+        output = PlanningOutput(frontier_assessment="f", actions=[action])
+        errors = output.validate(known_issue_ids={"ISSUE-NEW"})
+        assert any("already exists" in e for e in errors)
+
     def test_valid(self):
         output = PlanningOutput(
             frontier_assessment="Assessed",

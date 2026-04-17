@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
-
 from aidlc.routing import result_signals as rs
 
 
@@ -82,7 +81,6 @@ def test_extract_restore_retry_after_seconds():
 
 
 def test_extract_restore_from_details():
-    now = time.time()
     r = {"details": {"retry_after": "10s"}}
     t = rs.extract_restore_time_epoch(r)
     assert t is not None

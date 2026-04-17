@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from aidlc.implementer_workspace import (
     get_changed_files,
     git_commit_cycle_snapshot,
