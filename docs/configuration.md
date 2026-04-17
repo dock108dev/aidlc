@@ -35,6 +35,15 @@ Canonical defaults live in `aidlc/config.py`.
 
 On HTTP 429 / rate-limit responses, the router waits until the provider-reported reset time **plus** a buffer: `base × 1`, `base × 2`, `base × 4` … capped at **`base × 8`** hours per consecutive rate limit on the same provider/model (resets after a successful call). Set `routing_rate_limit_buffer_base_seconds` to `0` to disable the extra wait when no time is reported (tests / debugging).
 
+**Per-provider routing** (under `providers.<id>` in the same JSON):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `premium` | `true` for `claude`, otherwise `false` | Mark a backend as **high capacity** (e.g. much larger token budget than Copilot/OpenAI). |
+| `premium_capacity_weight` | `20` when `premium` is true, else `1` | On **planning, research, audit**, etc. (not implementation), balanced mode rotates by **weighted fairness**: lower `calls ÷ weight` is preferred first, so a weight-20 provider receives roughly 20× the first-choice share vs a weight-1 peer over time. |
+
+For **`implementation`** and **`implementation_complex`**, every provider with `premium: true` is ordered **before** non-premium providers (stable order: claude → copilot → openai among those enabled). Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
+
 ### Claude Execution
 
 | Key | Default |

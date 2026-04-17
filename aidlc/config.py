@@ -20,6 +20,9 @@ DEFAULTS = {
         "claude": {
             "enabled": True,
             "cli_command": "claude",
+            # High token-capacity backend: preferred for implementation; weighted ~20× on other phases.
+            "premium": True,
+            "premium_capacity_weight": 20,
             "default_model": "sonnet",
             "phase_models": {
                 "planning": "sonnet",

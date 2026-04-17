@@ -40,8 +40,13 @@ def get_quality_sensitive_phases() -> frozenset[str]:
 
 
 def get_premium_phases() -> frozenset[str]:
-    """Return phases routed to premium tier (Claude) when available."""
+    """Return phases that historically preferred Claude first (legacy; prefer config ``premium``)."""
     return frozenset({"implementation_complex"})
+
+
+def implementation_phases() -> frozenset[str]:
+    """Phases that implement code — prefer config-tagged high-capacity (``premium``) providers."""
+    return frozenset({"implementation", "implementation_complex"})
 
 
 def get_balanced_provider_order() -> list[str]:

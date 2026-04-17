@@ -393,14 +393,15 @@ class ProviderRouter:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _tier_aware_provider_order(self, phase: str, is_premium_phase: bool) -> list[str]:
-        """Return provider IDs ordered by tier appropriateness."""
+    def _tier_aware_provider_order(self, phase: str, complexity_level: str) -> list[str]:
+        """Return provider IDs: premium-first for implementation; weighted-fair elsewhere."""
         return context.tier_aware_provider_order(
             self.config,
             set(self._adapters.keys()),
             self._usage,
             self._session_budget_provider,
-            is_premium_phase,
+            phase,
+            complexity_level,
         )
 
     def _budget_provider_order(self, enabled: set[str]) -> list[str]:

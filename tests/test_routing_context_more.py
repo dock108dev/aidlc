@@ -75,6 +75,68 @@ def test_fallback_decision_no_adapters_instantiates_claude():
     assert d.fallback is True
 
 
+def test_tier_aware_provider_order_implementation_prefers_premium_tag():
+    cfg = {
+        "providers": {
+            "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
+            "openai": {"enabled": True, "premium": False},
+        }
+    }
+    order = context.tier_aware_provider_order(
+        cfg,
+        {"claude", "openai"},
+        UsagePressure(),
+        None,
+        "implementation",
+        "normal",
+    )
+    assert order[0] == "claude"
+    assert "openai" in order
+
+
+def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
+    cfg = {
+        "providers": {
+            "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
+            "openai": {"enabled": True},
+        }
+    }
+    usage = UsagePressure()
+    usage.calls_by_provider["claude"] = 19
+    usage.calls_by_provider["openai"] = 1
+    order = context.tier_aware_provider_order(
+        cfg,
+        {"claude", "openai"},
+        usage,
+        None,
+        "planning",
+        "normal",
+    )
+    # 19/20 < 1/1 → claude still preferred first
+    assert order[0] == "claude"
+
+    usage2 = UsagePressure()
+    usage2.calls_by_provider["claude"] = 20
+    usage2.calls_by_provider["openai"] = 0
+    order2 = context.tier_aware_provider_order(
+        cfg,
+        {"claude", "openai"},
+        usage2,
+        "openai",
+        "planning",
+        "normal",
+    )
+    assert order2[0] == "openai"
+
+
+def test_provider_premium_weight_defaults():
+    assert context.provider_premium_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
+    assert context.provider_premium_capacity_weight(
+        {"providers": {"openai": {"premium": True}}},
+        "openai",
+    ) == 20.0
+
+
 def test_fallback_decision_skips_excluded_in_first_pass():
     a1 = _fake("openai", "m1")
     a2 = _fake("copilot", "")

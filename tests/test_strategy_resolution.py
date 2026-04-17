@@ -43,7 +43,7 @@ class _FakeRouter:
         self._resolve_model = resolve_model
         self._cooldown = cooldown or set()
 
-    def _tier_aware_provider_order(self, phase: str, is_premium_phase: bool) -> list[str]:
+    def _tier_aware_provider_order(self, phase: str, complexity_level: str) -> list[str]:
         return list(self._tier_order)
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
@@ -186,10 +186,15 @@ def test_resolve_balanced_premium_claude_quality_note():
     r = _FakeRouter(
         adapters={"claude": _FakeAdapter("claude", "opus")},
         tier_order=["claude"],
+        config={
+            "providers": {
+                "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
+            }
+        },
     )
     d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "claude"
-    assert d.quality_note and "premium" in d.quality_note.lower()
+    assert d.quality_note and "implementation" in d.quality_note.lower()
 
 
 def test_resolve_balanced_premium_non_claude_quality_note():
@@ -200,7 +205,7 @@ def test_resolve_balanced_premium_non_claude_quality_note():
     )
     d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "openai"
-    assert d.quality_note and "Claude unavailable" in d.quality_note
+    assert d.quality_note and "premium" in d.quality_note.lower()
 
 
 def test_resolve_balanced_budget_quality_note_non_nano():

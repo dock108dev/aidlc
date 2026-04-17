@@ -14,6 +14,38 @@ from . import helpers
 from .types import RouteDecision, UsagePressure
 
 
+def provider_premium_tagged(config: dict, provider_id: str) -> bool:
+    """True when this provider is marked high-capacity (``premium: true``) in config."""
+    p = config.get("providers", {})
+    if not isinstance(p, dict):
+        return False
+    cfg = p.get(provider_id)
+    return isinstance(cfg, dict) and bool(cfg.get("premium"))
+
+
+def provider_premium_capacity_weight(config: dict, provider_id: str) -> float:
+    """Relative token-budget weight for routing fairness (higher = more calls before rotating)."""
+    p = config.get("providers", {})
+    if not isinstance(p, dict):
+        return 1.0
+    cfg = p.get(provider_id)
+    if not isinstance(cfg, dict):
+        return 1.0
+    raw = cfg.get("premium_capacity_weight")
+    if raw is not None:
+        return max(float(raw), 1e-9)
+    if cfg.get("premium"):
+        return 20.0
+    return 1.0
+
+
+def _reference_ordered_subset(ids: set[str], reference: list[str]) -> list[str]:
+    """Stable order: follow ``reference``, then any remaining ids alphabetically."""
+    ordered = [p for p in reference if p in ids]
+    tail = sorted(ids - set(ordered))
+    return ordered + tail
+
+
 def budget_provider_order(
     usage: UsagePressure,
     session_budget_provider: str | None,
@@ -39,8 +71,16 @@ def tier_aware_provider_order(
     adapter_ids: set[str],
     usage: UsagePressure,
     session_budget_provider: str | None,
-    is_premium_phase: bool,
+    phase: str,
+    complexity_level: str,
 ) -> list[str]:
+    """Order providers for balanced routing.
+
+    * **Implementation** phases: all config-``premium`` providers first (stable reference order),
+      then the rest — so high-capacity backends own coding work when enabled.
+    * **Other phases**: weighted-fair order — minimize ``calls / premium_capacity_weight`` so a
+      provider with weight 20 is chosen roughly 20× as often per unit of usage before rotating.
+    """
     providers_cfg = config.get("providers", {})
     enabled: set[str] = set()
     if isinstance(providers_cfg, dict):
@@ -52,23 +92,60 @@ def tier_aware_provider_order(
     if not enabled:
         enabled = set(adapter_ids)
 
-    budget_order = budget_provider_order(usage, session_budget_provider, enabled)
+    ref = helpers.get_balanced_provider_order()
+    is_impl = phase in helpers.implementation_phases()
 
-    if is_premium_phase:
-        candidates = ["claude"]
-        candidates.extend(budget_order)
-        for p in helpers.get_balanced_provider_order():
-            if p not in candidates and p in enabled:
-                candidates.append(p)
-    else:
-        candidates = list(budget_order)
-        if "claude" in enabled:
-            candidates.append("claude")
-        for p in helpers.get_balanced_provider_order():
-            if p not in candidates and p in enabled:
-                candidates.append(p)
+    premium_ids = {p for p in enabled if provider_premium_tagged(config, p)}
 
-    return candidates
+    if is_impl:
+        if premium_ids:
+            non_prem = enabled - premium_ids
+            return _reference_ordered_subset(premium_ids, ref) + _reference_ordered_subset(
+                non_prem, ref
+            )
+        # No tagged premium — same fairness as other phases
+        return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
+
+    # Legacy: complex implementation previously mapped to implementation_complex phase only.
+    legacy_premium_first = phase in helpers.get_premium_phases() or (
+        phase == "implementation" and complexity_level == "complex"
+    )
+    if legacy_premium_first and "claude" in enabled:
+        rest = enabled - {"claude"}
+        return ["claude"] + _reference_ordered_subset(rest, ref)
+
+    return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
+
+
+def _weighted_fair_provider_order(
+    config: dict,
+    enabled: set[str],
+    usage: UsagePressure,
+    session_budget_provider: str | None,
+) -> list[str]:
+    """Lower ``calls/weight`` first — higher weight tolerates more calls before rotation.
+
+    Among Copilot/OpenAI with the same ratio and weight, prefer ``session_budget_provider``
+    (same seed as budget round-robin) for the first pick.
+    """
+
+    budget_ids = set(helpers.get_budget_providers())
+
+    def sort_key(pid: str) -> tuple[float, float, int, str]:
+        w = provider_premium_capacity_weight(config, pid)
+        ratio = usage.calls_by_provider.get(pid, 0) / w
+        if (
+            pid in budget_ids
+            and session_budget_provider
+            and session_budget_provider in enabled
+            and session_budget_provider in budget_ids
+        ):
+            flip = 0 if pid == session_budget_provider else 1
+        else:
+            flip = 0
+        return (ratio, -w, flip, pid)
+
+    return sorted(enabled, key=sort_key)
 
 
 def get_accounts_for_provider(account_manager: Any, provider_id: str) -> list:
