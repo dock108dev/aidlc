@@ -291,3 +291,21 @@ def test_restore_time_parses_try_again_at_clock_time():
 
     assert restore is not None
     assert restore > 0
+
+
+def test_excluded_models_uses_cooldown_key_snapshot():
+    """_model_is_on_cooldown pops expired entries; excluded_models must not iterate
+    `dict.keys()` live or Python raises RuntimeError (dictionary changed size).
+    """
+    router = ProviderRouter(_config(), logging.getLogger("test.router.cooldown.snapshot"))
+    # Non-zero expiry values (0.0 is falsy and skips cleanup in _model_is_on_cooldown)
+    router._model_cooldowns[("openai", "m1")] = 1.0
+    router._model_cooldowns[("openai", "m2")] = 1.0
+    now = 9999999999.0
+    excluded_models = {
+        key
+        for key in tuple(router._model_cooldowns.keys())
+        if router._model_is_on_cooldown(key[0], key[1], now)
+    }
+    assert excluded_models == set()
+    assert router._model_cooldowns == {}

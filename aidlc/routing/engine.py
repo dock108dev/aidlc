@@ -107,9 +107,11 @@ class ProviderRouter:
                 for provider_id in self._adapters.keys()
                 if self._provider_is_on_cooldown(provider_id, now)
             }
+            # Snapshot keys: _model_is_on_cooldown may pop expired entries and must not
+            # mutate _model_cooldowns while iterating its key view.
             excluded_models: set[tuple[str, str]] = {
                 key
-                for key in self._model_cooldowns.keys()
+                for key in tuple(self._model_cooldowns.keys())
                 if self._model_is_on_cooldown(key[0], key[1], now)
             }
 
