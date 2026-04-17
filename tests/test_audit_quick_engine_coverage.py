@@ -30,10 +30,10 @@ def test_quick_scan_exercises_parsers_and_tree(tmp_path: Path):
         "[tool.pytest.ini_options]\n"
         'testpaths = ["tests"]\n'
         "[project.scripts]\n"
-        "cli = \"pkg:run\"\n"
+        'cli = "pkg:run"\n'
     )
     (tmp_path / "requirements.txt").write_text("flask>=2\n-e ./editable\n# c\n")
-    (tmp_path / "Cargo.toml").write_text("[dependencies]\naxum = \"0.7\"\n\n[features]\nx = []\n")
+    (tmp_path / "Cargo.toml").write_text('[dependencies]\naxum = "0.7"\n\n[features]\nx = []\n')
     (tmp_path / "go.mod").write_text("module example.com/m\nrequire gin-gonic/gin v1.9.0\n")
     (tmp_path / "docker-compose.yml").write_text("version: '3'\n")
     (tmp_path / "pytest.ini").write_text("[pytest]\n")
@@ -68,8 +68,7 @@ def test_quick_scan_exercises_parsers_and_tree(tmp_path: Path):
 
 def test_detect_frameworks_duplicate_dedup(tmp_path: Path):
     (tmp_path / "pyproject.toml").write_text(
-        "[project.dependencies]\n"
-        'dependencies = [\n  "requests",\n  "requests",\n]\n'
+        '[project.dependencies]\ndependencies = [\n  "requests",\n  "requests",\n]\n'
     )
     eng = _engine(tmp_path)
     fw = eng.detect_frameworks()

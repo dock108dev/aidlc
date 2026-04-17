@@ -38,9 +38,7 @@ def test_improve_ansi_plain(tty_off):
 def test_prompt_templates_format():
     s = AUDIT_PROMPT.format(user_concern="slow UI", project_context="ctx")
     assert "slow UI" in s and "ctx" in s
-    r = RESEARCH_PROMPT.format(
-        topic="t", question="q?", user_concern="c", project_type="python"
-    )
+    r = RESEARCH_PROMPT.format(topic="t", question="q?", user_concern="c", project_type="python")
     assert "t" in r and "python" in r
 
 
@@ -92,7 +90,9 @@ def test_run_no_improvements_branch(tmp_path, capsys):
 def test_run_planned_without_auto_implement(tmp_path):
     c = _cycle(tmp_path)
     audit = {
-        "improvements": [{"title": "T", "description": "D", "priority": "high", "files_to_change": ["a.py"]}],
+        "improvements": [
+            {"title": "T", "description": "D", "priority": "high", "files_to_change": ["a.py"]}
+        ],
         "files_involved": ["a.py"],
         "weaknesses": ["w1"],
         "research_needed": [],
@@ -236,7 +236,9 @@ def test_run_finalization_warns_on_exception(tmp_path, monkeypatch, capsys):
 def test_run_full_complete(mock_impl, mock_verify, mock_fin, tmp_path, capsys):
     c = _cycle(tmp_path)
     audit = {
-        "improvements": [{"title": "Fix", "description": "d", "priority": "low", "files_to_change": ["x.py"]}],
+        "improvements": [
+            {"title": "Fix", "description": "d", "priority": "low", "files_to_change": ["x.py"]}
+        ],
         "files_involved": ["x.py"],
         "weaknesses": ["w"],
         "research_needed": [{"topic": "rt", "question": "rq"}],

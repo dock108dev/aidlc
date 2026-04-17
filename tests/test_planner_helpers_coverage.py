@@ -137,7 +137,9 @@ def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
         },
     ]
     cli = MagicMock()
-    doc_files = [{"path": f"extra{i}.md", "content": "c", "size": 1, "priority": 2} for i in range(35)]
+    doc_files = [
+        {"path": f"extra{i}.md", "content": "c", "size": 1, "priority": 2} for i in range(35)
+    ]
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_files=doc_files)
     path = write_planning_index(planner)
     assert path.exists()

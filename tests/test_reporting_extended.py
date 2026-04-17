@@ -1,6 +1,5 @@
 """Extra coverage for aidlc.reporting."""
 
-
 from aidlc.models import RunPhase, RunState, RunStatus
 from aidlc.reporting import (
     _checkpoint_provider_markdown,

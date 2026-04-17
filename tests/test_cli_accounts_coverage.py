@@ -176,7 +176,9 @@ def test_accounts_validate_single_and_all(
 @patch("aidlc.cli.accounts.AccountManager")
 @patch("aidlc.cli.accounts.ProviderRouter")
 @patch("aidlc.cli.accounts.load_config")
-def test_accounts_validate_all_empty(mock_load, mock_router_cls, mock_mgr_cls, mock_banner, version, tmp_path, capsys):
+def test_accounts_validate_all_empty(
+    mock_load, mock_router_cls, mock_mgr_cls, mock_banner, version, tmp_path, capsys
+):
     mock_load.return_value = {}
     mock_mgr_cls.return_value.list.return_value = []
     cmd_accounts(_ns(accounts_cmd="validate", project=str(tmp_path)), version)

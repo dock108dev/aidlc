@@ -104,7 +104,10 @@ def test_identify_research_cli_failure(tmp_path):
 def test_identify_research_parses_json_array(tmp_path):
     ps = PlanSession(tmp_path, {}, MagicMock(), MagicMock())
     topics = [{"topic": "t1", "question": "q?", "priority": "high"}]
-    ps.cli.execute_prompt.return_value = {"success": True, "output": f"here {json.dumps(topics)} tail"}
+    ps.cli.execute_prompt.return_value = {
+        "success": True,
+        "output": f"here {json.dumps(topics)} tail",
+    }
     out = ps._identify_research({"brain_dump": "x", "project_name": "Pn"})
     assert out == topics
 
@@ -228,7 +231,9 @@ def test_save_drafts_creates_backup(tmp_path):
 
 
 def test_launch_refinement_subprocess(tmp_path, monkeypatch):
-    ps = PlanSession(tmp_path, {"providers": {"claude": {"cli_command": "echo"}}}, MagicMock(), MagicMock())
+    ps = PlanSession(
+        tmp_path, {"providers": {"claude": {"cli_command": "echo"}}}, MagicMock(), MagicMock()
+    )
     ps.session_dir.mkdir(parents=True)
     calls = []
 
@@ -242,7 +247,12 @@ def test_launch_refinement_subprocess(tmp_path, monkeypatch):
 
 
 def test_launch_refinement_swallows_file_not_found(tmp_path, monkeypatch):
-    ps = PlanSession(tmp_path, {"providers": {"claude": {"cli_command": "missing-bin-xyz"}}}, MagicMock(), MagicMock())
+    ps = PlanSession(
+        tmp_path,
+        {"providers": {"claude": {"cli_command": "missing-bin-xyz"}}},
+        MagicMock(),
+        MagicMock(),
+    )
     ps.session_dir.mkdir(parents=True)
 
     def boom(*a, **k):
@@ -260,7 +270,9 @@ def test_run_wizard_only_short_circuits(mock_wizard, tmp_path, capsys):
         "tech_stack": "py",
         "brain_dump": "",
     }
-    ps = PlanSession(tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock())
+    ps = PlanSession(
+        tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock()
+    )
     ps.cli.execute_prompt.return_value = {"success": True, "output": "doc"}
     ps.run(wizard_only=True)
     out = capsys.readouterr().out
@@ -290,8 +302,15 @@ def test_run_skip_wizard_loads_saved(mock_wizard, tmp_path):
 
 @patch("aidlc.plan_session.run_wizard")
 def test_run_skip_wizard_falls_back_when_no_saved(mock_wizard, tmp_path):
-    mock_wizard.return_value = {"project_name": "F", "brain_dump": "", "tech_stack": "", "one_liner": ""}
-    ps = PlanSession(tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock())
+    mock_wizard.return_value = {
+        "project_name": "F",
+        "brain_dump": "",
+        "tech_stack": "",
+        "one_liner": "",
+    }
+    ps = PlanSession(
+        tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock()
+    )
     ps.cli.execute_prompt.return_value = {"success": True, "output": "d"}
     ps.run(skip_wizard=True, wizard_only=True)
     mock_wizard.assert_called_once()
@@ -300,8 +319,15 @@ def test_run_skip_wizard_falls_back_when_no_saved(mock_wizard, tmp_path):
 @patch("aidlc.plan_session.run_wizard")
 @patch.object(PlanSession, "_launch_refinement")
 def test_run_full_invokes_refinement(mock_launch, mock_wizard, tmp_path, capsys):
-    mock_wizard.return_value = {"project_name": "Full", "brain_dump": "", "tech_stack": "py", "one_liner": "x"}
-    ps = PlanSession(tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock())
+    mock_wizard.return_value = {
+        "project_name": "Full",
+        "brain_dump": "",
+        "tech_stack": "py",
+        "one_liner": "x",
+    }
+    ps = PlanSession(
+        tmp_path, {"providers": {"claude": {"cli_command": "c"}}}, MagicMock(), MagicMock()
+    )
     ps.cli.execute_prompt.return_value = {"success": True, "output": "generated"}
     ps.run(wizard_only=False)
     mock_launch.assert_called_once()
@@ -328,7 +354,10 @@ def test_run_review_truncates_long_output(tmp_path, capsys):
     ps = PlanSession(tmp_path, {}, MagicMock(), MagicMock())
     ps.cli.execute_prompt.return_value = {"success": True, "output": long_out}
     ps.run(review_only=True)
-    assert "doc-review" in capsys.readouterr().out.lower() or "full review" in capsys.readouterr().out.lower()
+    assert (
+        "doc-review" in capsys.readouterr().out.lower()
+        or "full review" in capsys.readouterr().out.lower()
+    )
 
 
 def test_run_review_cli_failure(tmp_path, capsys):

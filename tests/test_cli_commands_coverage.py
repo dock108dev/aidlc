@@ -127,7 +127,11 @@ def test_cmd_init_providers_wizard(
             json.dumps(
                 {
                     "providers": {
-                        "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}
+                        "claude": {
+                            "enabled": True,
+                            "cli_command": "claude",
+                            "default_model": "sonnet",
+                        }
                     },
                     "routing_strategy": "balanced",
                     "plan_budget_hours": 4,
@@ -157,7 +161,9 @@ def test_cmd_init_providers_wizard(
 @patch("aidlc.logger.setup_logger")
 @patch("aidlc.cli_commands.load_config")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_audit_quick(mock_banner, mock_load, mock_log, mock_router, mock_auditor, version, tmp_path):
+def test_cmd_audit_quick(
+    mock_banner, mock_load, mock_log, mock_router, mock_auditor, version, tmp_path
+):
     (tmp_path / "README.md").write_text("# x")
     mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
     ar = AuditResult(
@@ -197,7 +203,9 @@ def test_cmd_audit_with_conflicts_and_coverage(
     mock_banner, mock_load, mock_log, mock_router, mock_auditor, version, tmp_path
 ):
     mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    tc = CoverageInfo(estimated_coverage="50%", test_framework="pytest", test_functions=1, source_files=1)
+    tc = CoverageInfo(
+        estimated_coverage="50%", test_framework="pytest", test_functions=1, source_files=1
+    )
     c = AuditConflict(
         doc_path="ARCHITECTURE.md",
         field="summary",
@@ -228,7 +236,12 @@ def test_cmd_improve_with_concern(
     mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
     mock_router.return_value.check_available.return_value = True
     inst = MagicMock()
-    inst.scan.return_value = {"doc_files": [], "total_docs": 0, "project_type": "x", "existing_issues": []}
+    inst.scan.return_value = {
+        "doc_files": [],
+        "total_docs": 0,
+        "project_type": "x",
+        "existing_issues": [],
+    }
     inst.build_context_prompt.return_value = "ctx"
     mock_scan_cls.return_value = inst
     mock_cycle.return_value.run.return_value = {"status": "complete", "implemented": 2}
@@ -247,7 +260,12 @@ def test_cmd_improve_prompts_concern_eof(
     mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
     mock_router.return_value.check_available.return_value = True
     inst = MagicMock()
-    inst.scan.return_value = {"doc_files": [], "total_docs": 0, "project_type": "x", "existing_issues": []}
+    inst.scan.return_value = {
+        "doc_files": [],
+        "total_docs": 0,
+        "project_type": "x",
+        "existing_issues": [],
+    }
     inst.build_context_prompt.return_value = "ctx"
     mock_scan_cls.return_value = inst
     with patch("aidlc.cli_commands.input", side_effect=EOFError()):
@@ -298,7 +316,12 @@ def test_cmd_finalize(
     save_state(state, run_dir)
     mock_find.return_value = run_dir
     inst = MagicMock()
-    inst.scan.return_value = {"doc_files": [], "total_docs": 0, "project_type": "x", "existing_issues": []}
+    inst.scan.return_value = {
+        "doc_files": [],
+        "total_docs": 0,
+        "project_type": "x",
+        "existing_issues": [],
+    }
     inst.build_context_prompt.return_value = "ctx"
     mock_scan.return_value = inst
     mock_router.return_value.check_available.return_value = True
@@ -355,7 +378,9 @@ def test_cmd_accounts_delegates(mock_acct, version):
 )
 @patch("aidlc.cli_commands.find_latest_run")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_status_colored_status_strings(mock_banner, mock_find, status, version, tmp_path, capsys):
+def test_cmd_status_colored_status_strings(
+    mock_banner, mock_find, status, version, tmp_path, capsys
+):
     runs = tmp_path / ".aidlc" / "runs"
     run_dir = runs / "r3"
     run_dir.mkdir(parents=True)

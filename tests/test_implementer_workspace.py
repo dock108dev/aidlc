@@ -157,6 +157,7 @@ def test_git_commit_cycle_snapshot_add_raises(git_repo: Path, monkeypatch):
     def fake(cmd, **_kw):
         if "add" in cmd:
             raise subprocess.CalledProcessError(1, cmd)
+
         class R:
             returncode = 0
             stderr = ""
@@ -206,7 +207,9 @@ def test_prune_aidlc_data_orphan_report(git_repo: Path):
     orphan = aidlc / "reports" / "orphan-report"
     orphan.mkdir()
     (orphan / "x").write_text("1")
-    prune_aidlc_data(git_repo, aidlc / "runs" / "r-current", state, logger, runs_to_keep=5, keep_claude_outputs=5)
+    prune_aidlc_data(
+        git_repo, aidlc / "runs" / "r-current", state, logger, runs_to_keep=5, keep_claude_outputs=5
+    )
     assert not orphan.exists()
 
 

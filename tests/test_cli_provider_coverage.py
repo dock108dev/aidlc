@@ -104,7 +104,9 @@ def test_cmd_provider_auth_subcommand_runs(mock_load, mock_banner, version, tmp_
 @patch("aidlc.cli.display.print_banner")
 @patch("aidlc.cli.provider.load_config")
 @patch("aidlc.cli.provider.ProviderRouter")
-def test_cmd_provider_reconnect_paths(mock_router, mock_load, mock_banner, version, tmp_path, capsys):
+def test_cmd_provider_reconnect_paths(
+    mock_router, mock_load, mock_banner, version, tmp_path, capsys
+):
     with patch("aidlc.cli.provider.sys.exit", side_effect=SystemExit(1)):
         with pytest.raises(SystemExit):
             cmd_provider(_ns(provider_cmd="reconnect", project=str(tmp_path)), version)

@@ -21,7 +21,10 @@ def test_implementation_instructions_includes_test_line():
 
 
 def test_build_implementation_prompt_truncates_context(tmp_path):
-    cfg = {"_issues_dir": str(tmp_path / ".aidlc" / "issues"), "implementation_completed_issues_max": 2}
+    cfg = {
+        "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+        "implementation_completed_issues_max": 2,
+    }
     (tmp_path / ".aidlc" / "issues").mkdir(parents=True)
     (tmp_path / ".aidlc" / "issues" / "ISSUE-1.md").write_text("from file")
     impl = MagicMock()
@@ -56,7 +59,10 @@ def test_build_implementation_prompt_truncates_context(tmp_path):
 
 
 def test_build_implementation_prompt_without_issue_file_uses_description(tmp_path):
-    cfg = {"_issues_dir": str(tmp_path / ".aidlc" / "issues"), "implementation_completed_issues_max": 5}
+    cfg = {
+        "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+        "implementation_completed_issues_max": 5,
+    }
     (tmp_path / ".aidlc" / "issues").mkdir(parents=True)
     impl = MagicMock()
     impl.config = cfg
