@@ -78,8 +78,8 @@ def test_fallback_decision_no_adapters_instantiates_claude():
 def test_tier_aware_provider_order_implementation_prefers_premium_tag():
     cfg = {
         "providers": {
-            "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
-            "openai": {"enabled": True, "premium": False},
+            "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
+            "openai": {"enabled": True, "max_capacity": False},
         }
     }
     order = context.tier_aware_provider_order(
@@ -97,7 +97,7 @@ def test_tier_aware_provider_order_implementation_prefers_premium_tag():
 def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
     cfg = {
         "providers": {
-            "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
+            "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
             "openai": {"enabled": True},
         }
     }
@@ -129,11 +129,17 @@ def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
     assert order2[0] == "openai"
 
 
-def test_provider_premium_weight_defaults():
-    assert context.provider_premium_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
+def test_legacy_premium_config_keys_still_map_to_max_capacity():
+    cfg = {"providers": {"openai": {"premium": True, "premium_capacity_weight": 10}}}
+    assert context.provider_max_capacity_tagged(cfg, "openai") is True
+    assert context.provider_max_capacity_weight(cfg, "openai") == 10.0
+
+
+def test_provider_max_capacity_weight_defaults():
+    assert context.provider_max_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
     assert (
-        context.provider_premium_capacity_weight(
-            {"providers": {"openai": {"premium": True}}},
+        context.provider_max_capacity_weight(
+            {"providers": {"openai": {"max_capacity": True}}},
             "openai",
         )
         == 20.0

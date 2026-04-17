@@ -188,7 +188,7 @@ def test_resolve_balanced_premium_claude_quality_note():
         tier_order=["claude"],
         config={
             "providers": {
-                "claude": {"enabled": True, "premium": True, "premium_capacity_weight": 20},
+                "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
             }
         },
     )
@@ -205,7 +205,7 @@ def test_resolve_balanced_premium_non_claude_quality_note():
     )
     d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "openai"
-    assert d.quality_note and "premium" in d.quality_note.lower()
+    assert d.quality_note and "max_capacity" in d.quality_note.lower()
 
 
 def test_resolve_balanced_budget_quality_note_non_nano():

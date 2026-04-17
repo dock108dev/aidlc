@@ -14,6 +14,20 @@ class IssueStatus(Enum):
     SKIPPED = "skipped"
 
 
+def issue_progress_rank(status: IssueStatus) -> int:
+    """Monotonic completion level: higher means further along (for merge/hydration)."""
+    order = {
+        IssueStatus.PENDING: 0,
+        IssueStatus.IN_PROGRESS: 1,
+        IssueStatus.FAILED: 2,
+        IssueStatus.BLOCKED: 2,
+        IssueStatus.IMPLEMENTED: 3,
+        IssueStatus.VERIFIED: 4,
+        IssueStatus.SKIPPED: 5,
+    }
+    return order.get(status, 0)
+
+
 @dataclass
 class Issue:
     """A single work item created during planning."""

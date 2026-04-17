@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from aidlc.audit_models import DocGap
-from aidlc.doc_gap_detector import detect_doc_gaps
+from aidlc.doc_gap_detector import _is_excluded, _is_likely_false_positive, detect_doc_gaps
 
 
 @pytest.fixture
@@ -147,3 +147,11 @@ class TestDetectDocGaps:
         assert restored.doc_path == "ROADMAP.md"
         assert restored.line == 10
         assert restored.severity == "warning"
+
+
+def test_is_excluded_fnmatch_pattern():
+    assert _is_excluded("foo/bar.md", ["foo/*.md"]) is True
+
+
+def test_is_likely_false_positive_short_placeholder():
+    assert _is_likely_false_positive("{a}", "see {a} token") is True

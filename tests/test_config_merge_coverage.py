@@ -76,3 +76,17 @@ def test_write_default_config_appends_gitignore_when_exists(tmp_path):
     write_default_config(aidlc, None)
     gi = (tmp_path / ".gitignore").read_text()
     assert ".aidlc/" in gi or "AIDLC" in gi
+
+
+def test_write_default_config_merges_detected_overrides(tmp_path):
+    aidlc = tmp_path / ".aidlc"
+    p = write_default_config(aidlc, {"plan_budget_hours": 7})
+    data = json.loads(p.read_text())
+    assert data["plan_budget_hours"] == 7
+
+
+def test_load_config_resolves_name_from_package_configs(tmp_path):
+    (tmp_path / ".aidlc").mkdir()
+    cfg = load_config(config_path="quick_smoke.json", project_root=str(tmp_path))
+    assert cfg["plan_budget_hours"] == 0.1
+    assert cfg["dry_run"] is True

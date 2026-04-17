@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import helpers
-from .context import provider_premium_capacity_weight, provider_premium_tagged
+from .context import provider_max_capacity_tagged, provider_max_capacity_weight
 from .types import RouteDecision
 
 
@@ -20,9 +20,6 @@ def resolve_balanced(
     is_complex = complexity_level == "complex"
     is_quality_phase = phase in helpers.get_quality_sensitive_phases() or is_complex
     is_impl = phase in helpers.implementation_phases()
-    is_legacy_premium = phase in helpers.get_premium_phases() or (
-        phase == "implementation" and is_complex
-    )
 
     provider_order = router._tier_aware_provider_order(phase, complexity_level)
 
@@ -61,35 +58,27 @@ def resolve_balanced(
         ):
             continue
 
-        tagged_premium = provider_premium_tagged(router.config, provider_id)
-        tier_label = "premium" if tagged_premium else "budget"
+        max_cap = provider_max_capacity_tagged(router.config, provider_id)
+        tier_label = "max_capacity" if max_cap else "standard"
         reasoning = (
             f"balanced/{tier_label}: provider={provider_id}, {account_reasoning}, "
             f"model={model} ({model_reason})"
         )
 
         quality_note: str | None = None
-        if is_impl and tagged_premium:
+        if is_impl and max_cap:
             quality_note = (
-                f"implementation → high-capacity provider ({provider_id}/{model}); "
-                "non-premium providers used only when excluded or unavailable"
+                f"implementation → max-capacity backend ({provider_id}/{model}); "
+                "other CLIs only if excluded or unavailable"
             )
-        elif is_impl and not tagged_premium:
+        elif is_impl and not max_cap:
             quality_note = (
-                f"implementation: {provider_id}/{model} (no premium-tagged provider available, "
-                "on cooldown, or excluded — set providers.<id>.premium in config to prefer "
-                "high token-capacity backends first"
+                f"implementation: {provider_id}/{model} — no max_capacity backend first "
+                f"(cooldown/excluded); set providers.<id>.max_capacity"
             )
-        elif is_legacy_premium and provider_id == "claude":
-            quality_note = f"legacy premium preference (Claude/{model}) for {phase}"
-        elif is_legacy_premium and provider_id != "claude":
-            quality_note = (
-                f"Claude unavailable for {phase} (legacy premium phase), "
-                f"falling back to {provider_id}/{model}"
-            )
-        elif tagged_premium and not is_impl:
-            w = provider_premium_capacity_weight(router.config, provider_id)
-            quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}× vs baseline)"
+        elif max_cap and not is_impl:
+            w = provider_max_capacity_weight(router.config, provider_id)
+            quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}×)"
         elif not is_impl and provider_id in helpers.get_budget_providers():
             if model and model not in ("gpt-5.4-mini", "gpt-5.4-nano"):
                 quality_note = f"model upgraded to {model} for {phase} (complexity)"

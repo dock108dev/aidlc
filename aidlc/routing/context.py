@@ -14,16 +14,16 @@ from . import helpers
 from .types import RouteDecision, UsagePressure
 
 
-def provider_premium_tagged(config: dict, provider_id: str) -> bool:
-    """True when this provider is marked high-capacity (``premium: true``) in config."""
+def provider_max_capacity_tagged(config: dict, provider_id: str) -> bool:
+    """True when this provider has ``max_capacity: true`` in config (sole capacity flag)."""
     p = config.get("providers", {})
     if not isinstance(p, dict):
         return False
     cfg = p.get(provider_id)
-    return isinstance(cfg, dict) and bool(cfg.get("premium"))
+    return isinstance(cfg, dict) and bool(cfg.get("max_capacity"))
 
 
-def provider_premium_capacity_weight(config: dict, provider_id: str) -> float:
+def provider_max_capacity_weight(config: dict, provider_id: str) -> float:
     """Relative token-budget weight for routing fairness (higher = more calls before rotating)."""
     p = config.get("providers", {})
     if not isinstance(p, dict):
@@ -31,10 +31,10 @@ def provider_premium_capacity_weight(config: dict, provider_id: str) -> float:
     cfg = p.get(provider_id)
     if not isinstance(cfg, dict):
         return 1.0
-    raw = cfg.get("premium_capacity_weight")
+    raw = cfg.get("max_capacity_weight")
     if raw is not None:
         return max(float(raw), 1e-9)
-    if cfg.get("premium"):
+    if bool(cfg.get("max_capacity")):
         return 20.0
     return 1.0
 
@@ -76,9 +76,9 @@ def tier_aware_provider_order(
 ) -> list[str]:
     """Order providers for balanced routing.
 
-    * **Implementation** phases: all config-``premium`` providers first (stable reference order),
+    * **Implementation** phases: all ``max_capacity`` providers first (stable reference order),
       then the rest — so high-capacity backends own coding work when enabled.
-    * **Other phases**: weighted-fair order — minimize ``calls / premium_capacity_weight`` so a
+    * **Other phases**: weighted-fair order — minimize ``calls / max_capacity_weight`` so a
       provider with weight 20 is chosen roughly 20× as often per unit of usage before rotating.
     """
     providers_cfg = config.get("providers", {})
@@ -95,24 +95,16 @@ def tier_aware_provider_order(
     ref = helpers.get_balanced_provider_order()
     is_impl = phase in helpers.implementation_phases()
 
-    premium_ids = {p for p in enabled if provider_premium_tagged(config, p)}
+    max_cap_ids = {p for p in enabled if provider_max_capacity_tagged(config, p)}
 
     if is_impl:
-        if premium_ids:
-            non_prem = enabled - premium_ids
-            return _reference_ordered_subset(premium_ids, ref) + _reference_ordered_subset(
-                non_prem, ref
+        if max_cap_ids:
+            rest = enabled - max_cap_ids
+            return _reference_ordered_subset(max_cap_ids, ref) + _reference_ordered_subset(
+                rest, ref
             )
-        # No tagged premium — same fairness as other phases
+        # No max_capacity providers — same fairness as other phases
         return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
-
-    # Legacy: complex implementation previously mapped to implementation_complex phase only.
-    legacy_premium_first = phase in helpers.get_premium_phases() or (
-        phase == "implementation" and complexity_level == "complex"
-    )
-    if legacy_premium_first and "claude" in enabled:
-        rest = enabled - {"claude"}
-        return ["claude"] + _reference_ordered_subset(rest, ref)
 
     return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 
@@ -132,7 +124,7 @@ def _weighted_fair_provider_order(
     budget_ids = set(helpers.get_budget_providers())
 
     def sort_key(pid: str) -> tuple[float, float, int, str]:
-        w = provider_premium_capacity_weight(config, pid)
+        w = provider_max_capacity_weight(config, pid)
         ratio = usage.calls_by_provider.get(pid, 0) / w
         if (
             pid in budget_ids
@@ -180,14 +172,14 @@ def select_account(
         return None, "no usable accounts, using default auth"
 
     if not is_quality_phase:
-        non_premium = [a for a in usable if not getattr(a, "is_premium", False)]
-        if non_premium:
+        standard_tier = [a for a in usable if not getattr(a, "is_premium", False)]
+        if standard_tier:
             selected = min(
-                non_premium,
+                standard_tier,
                 key=lambda a: usage.calls_by_account.get(a.account_id, 0),
             )
             return selected.account_id, (
-                f"avoiding premium accounts for routine phase, "
+                "using standard-tier account for routine phase, "
                 f"account={selected.account_id} (calls={usage.calls_by_account.get(selected.account_id, 0)})"
             )
 

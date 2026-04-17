@@ -1,11 +1,16 @@
 """Tests for resume-time issue reconciliation."""
 
 import subprocess
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.models import Issue, IssueStatus, RunState
-from aidlc.resume_reconcile import reconcile_issues_on_resume
+from aidlc.resume_reconcile import (
+    _git_repo_root,
+    _issue_id_referenced_in_tree,
+    reconcile_issues_on_resume,
+)
 
 
 @pytest.fixture
@@ -67,3 +72,65 @@ def test_reconcile_no_git_is_noop(tmp_path):
     ]
     n = reconcile_issues_on_resume(state, tmp_path, MagicMock(), {})
     assert n == 0
+
+
+@patch("aidlc.resume_reconcile.subprocess.run", side_effect=OSError("no git"))
+def test_git_repo_root_oserror(_mock_run):
+    assert _git_repo_root(Path("/tmp/x")) is None
+
+
+@patch("aidlc.resume_reconcile._git_repo_root", return_value=Path("/repo"))
+@patch(
+    "aidlc.resume_reconcile.subprocess.run",
+    side_effect=subprocess.TimeoutExpired(cmd="g", timeout=1),
+)
+def test_issue_id_grep_timeout(_mock_run, _mock_root):
+    assert _issue_id_referenced_in_tree(Path("/p"), "ISSUE-9") is False
+
+
+def test_reconcile_skips_wrong_status_and_bad_id(git_project):
+    state = RunState(run_id="r", config_name="c")
+    state.issues = [
+        {
+            "id": "ISSUE-404",
+            "title": "t",
+            "description": "",
+            "status": "implemented",
+            "dependencies": [],
+            "implementation_notes": "",
+            "attempt_count": 0,
+            "max_attempts": 3,
+        },
+        {
+            "id": "",
+            "title": "t",
+            "description": "",
+            "status": "pending",
+            "dependencies": [],
+            "implementation_notes": "",
+            "attempt_count": 0,
+            "max_attempts": 3,
+        },
+    ]
+    assert reconcile_issues_on_resume(state, git_project, MagicMock(), {}) == 0
+
+
+def test_reconcile_in_progress_with_existing_notes(git_project):
+    state = RunState(run_id="r", config_name="c")
+    state.issues = [
+        {
+            "id": "ISSUE-001",
+            "title": "t",
+            "description": "",
+            "status": "in_progress",
+            "dependencies": [],
+            "implementation_notes": "prior note",
+            "attempt_count": 0,
+            "max_attempts": 3,
+        }
+    ]
+    n = reconcile_issues_on_resume(state, git_project, MagicMock(), {})
+    assert n == 1
+    notes = state.get_issue("ISSUE-001").implementation_notes or ""
+    assert "prior note" in notes
+    assert "aidlc resume" in notes

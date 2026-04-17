@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .config import get_reports_dir, get_run_dir
 from .implementer import Implementer
+from .issue_model import issue_progress_rank
 from .logger import setup_logger
 from .models import Issue, RunPhase, RunState, RunStatus
 from .planner import Planner
@@ -137,8 +138,9 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
 def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
     """Load parsed issue files from scan results into run state.
 
-    Issue markdown under .aidlc/issues is treated as the source of truth for
-    backlog/status when starting a new run or scanning fresh before execution.
+    Issue markdown under .aidlc/issues is the usual source for metadata on cold start.
+    On **resume**, run state already reflects persisted progress; we **never downgrade**
+    status from a saved issue because the markdown file is still ``pending``.
     """
     existing = scan_result.get("existing_issues", []) or []
     loaded = 0
@@ -146,7 +148,18 @@ def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
         parsed = entry.get("parsed_issue")
         if not isinstance(parsed, dict) or not parsed.get("id"):
             continue
-        state.update_issue(Issue.from_dict(parsed))
+        incoming = Issue.from_dict(parsed)
+        current = state.get_issue(incoming.id)
+        if current is not None:
+            cr = issue_progress_rank(current.status)
+            ir = issue_progress_rank(incoming.status)
+            if cr > ir:
+                continue
+            if cr == ir and len((current.implementation_notes or "")) > len(
+                (incoming.implementation_notes or "")
+            ):
+                incoming.implementation_notes = current.implementation_notes
+        state.update_issue(incoming)
         loaded += 1
 
     if loaded:

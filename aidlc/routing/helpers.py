@@ -40,12 +40,12 @@ def get_quality_sensitive_phases() -> frozenset[str]:
 
 
 def get_premium_phases() -> frozenset[str]:
-    """Return phases that historically preferred Claude first (legacy; prefer config ``premium``)."""
+    """Return phases that historically preferred Claude first (legacy; prefer ``max_capacity`` providers)."""
     return frozenset({"implementation_complex"})
 
 
 def implementation_phases() -> frozenset[str]:
-    """Phases that implement code — prefer config-tagged high-capacity (``premium``) providers."""
+    """Phases that implement code — prefer config ``max_capacity`` providers."""
     return frozenset({"implementation", "implementation_complex"})
 
 

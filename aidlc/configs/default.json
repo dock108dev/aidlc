@@ -7,8 +7,8 @@
     "claude": {
       "enabled": true,
       "cli_command": "claude",
-      "premium": true,
-      "premium_capacity_weight": 20,
+      "max_capacity": true,
+      "max_capacity_weight": 20,
       "default_model": "sonnet",
       "phase_models": {
         "planning": "sonnet",

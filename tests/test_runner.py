@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.audit_models import AuditResult, DocGap
+from aidlc.issue_model import Issue
 from aidlc.models import IssueStatus, RunPhase, RunState
 from aidlc.runner import hydrate_existing_issues, init_run, run_full, scan_project
 
@@ -143,6 +144,40 @@ class TestHydrateExistingIssues:
         assert issue is not None
         assert issue.status == IssueStatus.VERIFIED
         assert state.total_issues == 1
+
+    def test_does_not_downgrade_implemented_when_markdown_still_pending(self):
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            Issue(
+                id="ISSUE-001",
+                title="From run state",
+                description="",
+                status=IssueStatus.IMPLEMENTED,
+            ).to_dict()
+        ]
+        scan_result = {
+            "existing_issues": [
+                {
+                    "parsed_issue": {
+                        "id": "ISSUE-001",
+                        "title": "Stale file",
+                        "description": "",
+                        "priority": "medium",
+                        "labels": [],
+                        "dependencies": [],
+                        "acceptance_criteria": [],
+                        "status": "pending",
+                        "implementation_notes": "",
+                        "verification_result": "",
+                        "files_changed": [],
+                        "attempt_count": 0,
+                        "max_attempts": 3,
+                    },
+                }
+            ]
+        }
+        hydrate_existing_issues(state, scan_result, logging.getLogger("test"))
+        assert state.get_issue("ISSUE-001").status == IssueStatus.IMPLEMENTED
 
     def test_skips_entries_without_valid_parsed_issue(self):
         state = RunState(run_id="t", config_name="c")

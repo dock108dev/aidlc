@@ -7,10 +7,7 @@ from pathlib import Path
 
 from .models import Issue, IssueStatus, RunState
 
-_RECONCILE_NOTE = (
-    "[aidlc resume] Issue id appears outside .aidlc/ (git grep). "
-    "Verify status or mark done in the issue file if this is stale."
-)
+_RECONCILE_NOTE = "[aidlc resume] Auto-implemented (issue id found in repo outside .aidlc/)."
 
 
 def _git_repo_root(project_root: Path) -> Path | None:
@@ -75,6 +72,7 @@ def reconcile_issues_on_resume(
         return 0
 
     updated = 0
+    updated_ids: list[str] = []
     for d in list(state.issues):
         if not isinstance(d, dict):
             continue
@@ -96,8 +94,17 @@ def reconcile_issues_on_resume(
         issue.implementation_notes = f"{prev}\n\n{note}".strip() if prev else note
         state.update_issue(issue)
         updated += 1
+        updated_ids.append(issue_id)
+
+    if updated:
+        sample = ", ".join(updated_ids[:5])
+        more = f" (+{updated - 5} more)" if updated > 5 else ""
         logger.info(
-            f"Resume reconcile: {issue_id} marked implemented (issue id found in repository tree)"
+            "Resume reconcile: marked %s issue(s) implemented (id found in git tree outside .aidlc/) "
+            "— e.g. %s%s",
+            updated,
+            sample,
+            more,
         )
 
     return updated

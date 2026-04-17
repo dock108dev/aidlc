@@ -155,6 +155,16 @@ class TestPlanningAction:
         errors = action.validate(known_issue_ids={"ISSUE-001"})
         assert any("unknown issue" in e for e in errors)
 
+    def test_update_issue_requires_issue_id(self):
+        action = PlanningAction(
+            action_type="update_issue",
+            rationale="Refine",
+            issue_id="",
+            description="x",
+        )
+        errors = action.validate(known_issue_ids={"ISSUE-001"})
+        assert any("update_issue requires issue_id" in e for e in errors)
+
     def test_valid_create_doc(self):
         action = PlanningAction(
             action_type="create_doc",
