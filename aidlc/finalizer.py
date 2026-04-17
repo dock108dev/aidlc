@@ -84,6 +84,8 @@ class Finalizer:
             self.logger.warning(f"No valid finalization passes in: {selected}")
             return
 
+        # Each run is a full batch (e.g. pre-autosync + end-of-run); do not accumulate duplicates.
+        self.state.finalize_passes_completed = []
         self.state.phase = RunPhase.FINALIZING
         self.state.finalize_passes_requested = valid
         save_state(self.state, self.run_dir)

@@ -110,6 +110,7 @@ class TestLoadConfig:
             "planning_action_failure_ratio_threshold",
             "autosync_enabled",
             "autosync_every_implementation_cycles",
+            "autosync_finalize_before_push",
             "autosync_push_remote",
             "autosync_commit_message_template",
             "autosync_issue_status_sync",

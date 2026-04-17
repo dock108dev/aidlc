@@ -157,6 +157,16 @@ class TestFinalizer:
 
         assert state.phase == RunPhase.FINALIZING
 
+    def test_second_run_replaces_completed_passes(self, state, config, cli, logger, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
+        finalizer.run(passes=["docs"])
+        assert state.finalize_passes_completed == ["docs"]
+        finalizer.run(passes=["security"])
+        assert state.finalize_passes_completed == ["security"]
+
     def test_empty_passes_logs_warning(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()

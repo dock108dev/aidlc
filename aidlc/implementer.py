@@ -93,6 +93,9 @@ class Implementer:
         self.autosync_every_cycles = max(
             1, int(config.get("autosync_every_implementation_cycles", 25) or 25)
         )
+        self.autosync_finalize_before_push = bool(
+            config.get("autosync_finalize_before_push", True)
+        )
         self.autosync_push_remote = bool(config.get("autosync_push_remote", True))
         self.autosync_issue_status_sync = bool(config.get("autosync_issue_status_sync", True))
         self.autosync_commit_message_template = str(
@@ -581,11 +584,42 @@ class Implementer:
             self.state.implementation_cycles % self.autosync_every_cycles == 0
         )
 
+    def _autosync_finalize_before_push_if_enabled(self) -> None:
+        """Run full finalization passes (same as end-of-run) before commit/push."""
+        if not self.config.get("finalize_enabled", True):
+            return
+        if not self.autosync_finalize_before_push:
+            return
+        if self.config.get("dry_run"):
+            return
+
+        from .finalizer import Finalizer
+
+        passes = self.config.get("finalize_passes")
+        c = self.state.implementation_cycles
+        self.logger.info(
+            f"Pre-autosync finalization at implementation cycle {c} "
+            f"(finalize_passes; then commit/push)"
+        )
+        finalizer = Finalizer(
+            self.state,
+            self.run_dir,
+            self.config,
+            self.cli,
+            self.project_context,
+            self.logger,
+        )
+        finalizer.run(passes=passes)
+        self.state.phase = RunPhase.IMPLEMENTING
+        save_state(self.state, self.run_dir)
+
     def _autosync_progress(self) -> None:
         """Persist issue statuses, commit, push, and prune stale run artifacts."""
         self.logger.info(
             f"Autosync checkpoint at implementation cycle {self.state.implementation_cycles}"
         )
+
+        self._autosync_finalize_before_push_if_enabled()
 
         if self.autosync_issue_status_sync:
             self._sync_all_issue_markdown()

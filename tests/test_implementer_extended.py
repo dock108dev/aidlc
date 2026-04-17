@@ -915,8 +915,9 @@ class TestAutosyncProgress:
     @patch("aidlc.implementer.prune_aidlc_data")
     @patch("aidlc.implementer.git_push_current_branch")
     @patch("aidlc.implementer.git_commit_cycle_snapshot")
+    @patch("aidlc.finalizer.Finalizer")
     def test_autosync_runs_after_each_cycle_when_interval_is_one(
-        self, mock_commit, mock_push, mock_prune, config, logger, tmp_path
+        self, mock_finalizer_cls, mock_commit, mock_push, mock_prune, config, logger, tmp_path
     ):
         config["dry_run"] = False
         config["autosync_every_implementation_cycles"] = 1
@@ -937,6 +938,37 @@ class TestAutosyncProgress:
         (run_dir / "claude_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
+        mock_finalizer_cls.assert_called()
         mock_commit.assert_called()
         mock_prune.assert_called()
         mock_push.assert_not_called()
+
+    @patch("aidlc.implementer.prune_aidlc_data")
+    @patch("aidlc.implementer.git_push_current_branch")
+    @patch("aidlc.implementer.git_commit_cycle_snapshot")
+    @patch("aidlc.finalizer.Finalizer")
+    def test_autosync_skips_pre_push_finalize_when_disabled(
+        self, mock_finalizer_cls, mock_commit, mock_push, mock_prune, config, logger, tmp_path
+    ):
+        config["dry_run"] = False
+        config["autosync_every_implementation_cycles"] = 1
+        config["autosync_finalize_before_push"] = False
+        mock_commit.return_value = False
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.run()
+        mock_finalizer_cls.assert_not_called()
+        mock_commit.assert_called()

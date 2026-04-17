@@ -158,6 +158,19 @@ For **`implementation`** and **`implementation_complex`**, every provider with `
 | `research_max_per_cycle` | `2` |
 | `research_timeout_seconds` | `900` |
 
+### Autosync (implementation)
+
+When `autosync_enabled` is `true`, AIDLC commits (and optionally pushes) on every `autosync_every_implementation_cycles` implementation cycles (default **25**).
+
+| Key | Default |
+|---|---|
+| `autosync_enabled` | `true` |
+| `autosync_every_implementation_cycles` | `25` |
+| `autosync_finalize_before_push` | `true` |
+| `autosync_push_remote` | `true` |
+
+When `autosync_finalize_before_push` is `true` and `finalize_enabled` is `true`, the same **finalize** passes as end-of-run (`finalize_passes`, or all default passes when `null`) run **before** the autosync commit/push so each pushed checkpoint is cleaned up the same way as the final pipeline. Set to `false` to commit/push without that pass (faster, less polish per interval).
+
 ### Finalization
 
 | Key | Default |
