@@ -47,6 +47,87 @@ def test_credential_store_load_corrupt_json(monkeypatch, tmp_path: Path):
     assert store.get("any", "k") is None
 
 
+def test_credential_store_keyring_write_falls_back(monkeypatch, tmp_path: Path):
+    kr = MagicMock()
+    kr.set_password.side_effect = RuntimeError("no keychain")
+    kr.get_password.return_value = None
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: kr)
+    store = CredentialStore(tmp_path / ".aidlc")
+    store.store("u", "api", "sec")
+    assert store.get("u", "api") == "sec"
+
+
+def test_credential_store_delete_keyring_error_still_clears_file(monkeypatch, tmp_path: Path):
+    kr = MagicMock()
+    kr.set_password.side_effect = RuntimeError("no keychain")
+    kr.get_password.return_value = None
+    kr.delete_password.side_effect = RuntimeError("del fail")
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: kr)
+    store = CredentialStore(tmp_path / ".aidlc")
+    store.store("a", "k", "v")
+    store.delete("a", "k")
+    assert store.get("a", "k") is None
+
+
+def test_credential_store_save_chmod_logs_error(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: None)
+    monkeypatch.setattr(
+        "aidlc.accounts.credentials.os.chmod",
+        lambda *_a, **_k: (_ for _ in ()).throw(OSError("chmod")),
+    )
+    store = CredentialStore(tmp_path / ".aidlc")
+    store.store("z", "k", "v")
+    assert store.get("z", "k") == "v"
+
+
+def test_credential_store_keyring_read_falls_back(monkeypatch, tmp_path: Path):
+    kr = MagicMock()
+    kr.get_password.side_effect = OSError("read fail")
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: kr)
+    d = tmp_path / ".aidlc"
+    d.mkdir(parents=True)
+    (d / "credentials.json").write_text('{"u": {"api": "file"}}')
+    store = CredentialStore(d)
+    assert store.get("u", "api") == "file"
+
+
+def test_credential_store_delete_with_keyring_and_fallback(monkeypatch, tmp_path: Path):
+    vault: dict[str, str] = {}
+    kr = MagicMock()
+
+    def set_pw(service: str, user: str, password: str) -> None:
+        vault[user] = password
+
+    def get_pw(service: str, user: str):
+        return vault.get(user)
+
+    def del_pw(service: str, user: str) -> None:
+        vault.pop(user, None)
+
+    kr.set_password.side_effect = set_pw
+    kr.get_password.side_effect = get_pw
+    kr.delete_password.side_effect = del_pw
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: kr)
+    store = CredentialStore(tmp_path / ".aidlc")
+    store.store("a", "k", "v")
+    store.delete("a", "k")
+    kr.delete_password.assert_called()
+    assert store.get("a", "k") is None
+
+
+def test_credential_store_delete_all_with_keyring(monkeypatch, tmp_path: Path):
+    kr = MagicMock()
+    kr.set_password.side_effect = RuntimeError("no keychain")
+    kr.get_password.return_value = None
+    monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: kr)
+    store = CredentialStore(tmp_path / ".aidlc")
+    store.store("a", "k1", "1")
+    store.store("a", "k2", "2")
+    store.delete("a", None)
+    assert kr.delete_password.call_count >= 1
+    assert store.get("a", "k1") is None
+
+
 def test_account_manager_add_list_remove(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("aidlc.accounts.credentials._try_keyring_import", lambda: None)
     mgr = AccountManager(tmp_path / ".aidlc")

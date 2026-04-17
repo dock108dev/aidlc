@@ -3,10 +3,8 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import aidlc.__main__ as main_mod
-
+import pytest
 from aidlc.__main__ import main, parse_budget
 
 

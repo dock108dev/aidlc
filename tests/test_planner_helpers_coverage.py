@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from aidlc.audit_models import DocGap
 from aidlc.models import Issue, IssueStatus, RunPhase, RunState
 from aidlc.planner import Planner

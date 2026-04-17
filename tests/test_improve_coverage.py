@@ -8,16 +8,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from aidlc.improve import (
     AUDIT_PROMPT,
     RESEARCH_PROMPT,
     ImprovementCycle,
     _bold,
-    _cyan,
     _dim,
-    _green,
-    _yellow,
 )
 
 

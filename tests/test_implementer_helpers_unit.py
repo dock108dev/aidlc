@@ -5,7 +5,6 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from aidlc.implementer_helpers import (
     build_implementation_prompt,
     detect_test_command,

@@ -1,6 +1,5 @@
 """Extra coverage for aidlc.reporting."""
 
-from pathlib import Path
 
 from aidlc.models import RunPhase, RunState, RunStatus
 from aidlc.reporting import (

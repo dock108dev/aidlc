@@ -1,7 +1,6 @@
 """Extra coverage for aidlc.test_profiles.detect_test_profile."""
 
 import json
-from pathlib import Path
 
 from aidlc.test_profiles import detect_test_profile
 

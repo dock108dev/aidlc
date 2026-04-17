@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from aidlc.config_detect import (
     describe_detected,
     detect_config,

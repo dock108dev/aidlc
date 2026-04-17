@@ -1,5 +1,5 @@
 # Continuous integration: lint, multi-version tests, coverage gate, packaging smoke build.
-# Coverage fail_under is defined in pyproject.toml ([tool.coverage.report]); raise it toward 90% over time.
+# Coverage fail_under is defined in pyproject.toml ([tool.coverage.report]); ratchet per docs/COVERAGE_PLAN.md.
 
 name: CI
 

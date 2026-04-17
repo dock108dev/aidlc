@@ -1,7 +1,6 @@
 """Tests for aidlc.config._merge_user_config and write_default_config edges."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 from aidlc.config import _merge_user_config, load_config, write_default_config
