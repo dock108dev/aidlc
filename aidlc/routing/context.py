@@ -15,10 +15,7 @@ from .types import RouteDecision, UsagePressure
 
 
 def _provider_max_capacity_flag(cfg: dict) -> bool:
-    """``max_capacity`` (preferred) or legacy ``premium``."""
-    if "max_capacity" in cfg:
-        return bool(cfg.get("max_capacity"))
-    return bool(cfg.get("premium"))
+    return bool(cfg.get("max_capacity"))
 
 
 def provider_max_capacity_tagged(config: dict, provider_id: str) -> bool:
@@ -39,23 +36,11 @@ def provider_max_capacity_weight(config: dict, provider_id: str) -> float:
     if not isinstance(cfg, dict):
         return 1.0
     raw = cfg.get("max_capacity_weight")
-    if raw is None:
-        raw = cfg.get("premium_capacity_weight")
     if raw is not None:
         return max(float(raw), 1e-9)
     if _provider_max_capacity_flag(cfg):
         return 20.0
     return 1.0
-
-
-def provider_premium_tagged(config: dict, provider_id: str) -> bool:
-    """Deprecated alias for :func:`provider_max_capacity_tagged`."""
-    return provider_max_capacity_tagged(config, provider_id)
-
-
-def provider_premium_capacity_weight(config: dict, provider_id: str) -> float:
-    """Deprecated alias for :func:`provider_max_capacity_weight`."""
-    return provider_max_capacity_weight(config, provider_id)
 
 
 def _reference_ordered_subset(ids: set[str], reference: list[str]) -> list[str]:

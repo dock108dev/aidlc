@@ -129,8 +129,15 @@ def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
     assert order2[0] == "openai"
 
 
-def test_legacy_premium_config_keys_still_map_to_max_capacity():
-    cfg = {"providers": {"openai": {"premium": True, "premium_capacity_weight": 10}}}
+def test_old_premium_provider_keys_no_longer_affect_routing():
+    """SSOT: only ``max_capacity`` / ``max_capacity_weight`` apply (``premium`` is ignored)."""
+    cfg = {"providers": {"openai": {"premium": True, "premium_capacity_weight": 99}}}
+    assert context.provider_max_capacity_tagged(cfg, "openai") is False
+    assert context.provider_max_capacity_weight(cfg, "openai") == 1.0
+
+
+def test_provider_max_capacity_weight_explicit():
+    cfg = {"providers": {"openai": {"max_capacity": True, "max_capacity_weight": 10}}}
     assert context.provider_max_capacity_tagged(cfg, "openai") is True
     assert context.provider_max_capacity_weight(cfg, "openai") == 10.0
 

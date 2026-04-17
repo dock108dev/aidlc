@@ -39,8 +39,8 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 
 | Key | Default | Meaning |
 |---|---|---|
-| `max_capacity` | `true` for `claude`, otherwise `false` | Mark a backend as **high token capacity** vs Copilot/OpenAI-style backends. Legacy key **`premium`** is still read if `max_capacity` is omitted. |
-| `max_capacity_weight` | `20` when `max_capacity` is true, else `1` | On **planning, research, audit**, etc. (not implementation), balanced mode rotates by **weighted fairness**: lower `calls ÷ weight` is preferred first, so a weight-20 provider receives roughly 20× the first-choice share vs a weight-1 peer over time. Legacy key **`premium_capacity_weight`** is still read if `max_capacity_weight` is omitted. |
+| `max_capacity` | `true` for `claude`, otherwise `false` | Mark a backend as **high token capacity** vs Copilot/OpenAI-style backends. |
+| `max_capacity_weight` | `20` when `max_capacity` is true, else `1` | On **planning, research, audit**, etc. (not implementation), balanced mode rotates by **weighted fairness**: lower `calls ÷ weight` is preferred first, so a weight-20 provider receives roughly 20× the first-choice share vs a weight-1 peer over time. |
 
 For **`implementation`** and **`implementation_complex`**, every provider with `max_capacity: true` is ordered **before** other providers (stable order: claude → copilot → openai among those enabled). Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
 

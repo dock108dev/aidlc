@@ -144,6 +144,12 @@ class TestLoadConfig:
         for key in removed:
             assert key not in DEFAULTS, f"Legacy key should remain removed: {key}"
 
+    def test_defaults_providers_ssot_max_capacity_only(self):
+        for _pid, pcfg in DEFAULTS["providers"].items():
+            assert isinstance(pcfg, dict)
+            assert "premium" not in pcfg
+            assert "premium_capacity_weight" not in pcfg
+
     def test_cwd_used_when_no_project_root(self):
         config = load_config()
         assert config["_project_root"] == str(Path.cwd().resolve())
