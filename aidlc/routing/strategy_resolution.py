@@ -117,8 +117,10 @@ def resolve_cheapest(
 
         accounts = router._get_accounts_for_provider(provider_id)
         cheap_accounts = [a for a in accounts if "cheap" in getattr(a, "role_tags", [])]
-        account_id = cheap_accounts[0].account_id if cheap_accounts else (
-            accounts[0].account_id if accounts else None
+        account_id = (
+            cheap_accounts[0].account_id
+            if cheap_accounts
+            else (accounts[0].account_id if accounts else None)
         )
 
         effective_override = (

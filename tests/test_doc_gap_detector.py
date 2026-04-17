@@ -1,6 +1,5 @@
 """Tests for aidlc.doc_gap_detector module."""
 
-
 import pytest
 from aidlc.audit_models import DocGap
 from aidlc.doc_gap_detector import detect_doc_gaps
@@ -29,7 +28,9 @@ class TestDetectDocGaps:
         assert len(critical) >= 1
 
     def test_detects_needs_research(self, tmp_path, config):
-        (tmp_path / "ROADMAP.md").write_text("# Plan\n\nFormula needs research before implementation\n")
+        (tmp_path / "ROADMAP.md").write_text(
+            "# Plan\n\nFormula needs research before implementation\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 1
         assert any("research" in g.pattern.lower() for g in gaps)
@@ -88,15 +89,15 @@ class TestDetectDocGaps:
 
     def test_sorted_by_severity(self, tmp_path, config):
         (tmp_path / "mixed.md").write_text(
-            "Line 1: {placeholder}\n"
-            "Line 2: TBD\n"
-            "Line 3: design TBD\n"
+            "Line 1: {placeholder}\nLine 2: TBD\nLine 3: design TBD\n"
         )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 2
         # Critical should come first
         severities = [g.severity for g in gaps]
-        assert severities == sorted(severities, key=lambda s: {"critical": 0, "warning": 1, "info": 2}[s])
+        assert severities == sorted(
+            severities, key=lambda s: {"critical": 0, "warning": 1, "info": 2}[s]
+        )
 
     def test_max_items_cap(self, tmp_path, config):
         config["doc_gap_max_items"] = 3
@@ -113,7 +114,9 @@ class TestDetectDocGaps:
         assert gaps[0].doc_path == "test.md"
 
     def test_doc_gap_serialization(self):
-        gap = DocGap(doc_path="ROADMAP.md", line=10, pattern="TBD", text="Scoring: TBD", severity="warning")
+        gap = DocGap(
+            doc_path="ROADMAP.md", line=10, pattern="TBD", text="Scoring: TBD", severity="warning"
+        )
         d = gap.to_dict()
         restored = DocGap.from_dict(d)
         assert restored.doc_path == "ROADMAP.md"

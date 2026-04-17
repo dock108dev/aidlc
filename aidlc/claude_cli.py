@@ -131,9 +131,7 @@ class ClaudeCLI:
                         f"{attempt} (elapsed={outage_elapsed:.0f}s, remaining={outage_remaining:.0f}s)"
                     )
                 else:
-                    self.logger.debug(
-                        f"Claude CLI attempt {attempt}/{self.max_retries + 1}"
-                    )
+                    self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
                 # Run without timeout — let Claude finish. Warn periodically.
                 proc = subprocess.Popen(
@@ -246,9 +244,7 @@ class ClaudeCLI:
                         f"failure_type={failure_type}, duration={duration:.1f}s, "
                         f"stderr_chars={len(stderr_text)}, stdout_chars={len(stdout_text)})"
                     )
-                    self.logger.warning(
-                        f"Claude CLI failure detail: {reason_snippet}"
-                    )
+                    self.logger.warning(f"Claude CLI failure detail: {reason_snippet}")
                     retries += 1
                     if failure_type == "service_down":
                         if outage_started_at is None:
@@ -313,8 +309,7 @@ class ClaudeCLI:
         return {
             "success": False,
             "output": None,
-            "error": f"Failed after {retries} retries"
-            f"{': ' + last_error if last_error else ''}",
+            "error": f"Failed after {retries} retries{': ' + last_error if last_error else ''}",
             "failure_type": last_failure_type or "transient",
             "duration_seconds": last_duration,
             "retries": retries,
@@ -390,22 +385,22 @@ class ClaudeCLI:
                 "cache_creation_input_tokens": int(
                     parsed_usage.get("cache_creation_input_tokens", 0) or 0
                 ),
-                "cache_read_input_tokens": int(
-                    parsed_usage.get("cache_read_input_tokens", 0) or 0
-                ),
+                "cache_read_input_tokens": int(parsed_usage.get("cache_read_input_tokens", 0) or 0),
                 "web_search_requests": int(
                     (
                         (parsed_usage.get("server_tool_use") or {}).get("web_search_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_search_requests", 0)
-                    ) or 0
+                    )
+                    or 0
                 ),
                 "web_fetch_requests": int(
                     (
                         (parsed_usage.get("server_tool_use") or {}).get("web_fetch_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_fetch_requests", 0)
-                    ) or 0
+                    )
+                    or 0
                 ),
             }
 
@@ -450,7 +445,8 @@ class ClaudeCLI:
     def _retry_delay(self, attempt: int) -> float:
         """Calculate retry delay with exponential backoff and jitter."""
         import random
-        delay = self.retry_base_delay * (self.retry_backoff_factor ** attempt)
+
+        delay = self.retry_base_delay * (self.retry_backoff_factor**attempt)
         delay = min(delay, self.retry_max_delay)
         # Add up to 25% jitter to avoid thundering herd
         jitter = delay * 0.25 * random.random()

@@ -3,8 +3,8 @@
 import logging
 from pathlib import Path
 
-from aidlc.routing.engine import ProviderRouter
 from aidlc.routing import result_signals
+from aidlc.routing.engine import ProviderRouter
 
 
 class FakeAdapter:

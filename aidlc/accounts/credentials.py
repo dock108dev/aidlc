@@ -21,6 +21,7 @@ def _try_keyring_import():
     """Import keyring lazily; return module or None if unavailable."""
     try:
         import keyring  # type: ignore[import-untyped]
+
         return keyring
     except ImportError:
         return None

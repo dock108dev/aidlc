@@ -25,12 +25,8 @@ from datetime import datetime
 from pathlib import Path
 
 from ..providers.base import ProviderAdapter
-from ..providers.claude_adapter import ClaudeCLIAdapter
+from . import context, helpers, result_signals, strategy_resolution
 from .adapter_registry import build_provider_adapters
-from . import context
-from . import helpers
-from . import result_signals
-from . import strategy_resolution
 from .types import RouteDecision, RoutingStrategy, UsagePressure
 
 
@@ -77,11 +73,9 @@ class ProviderRouter:
         # so the choice is stable within a single run but varies across runs.
         import random as _random
         import time as _time
+
         _rng = _random.Random(int(_time.time() / 60))  # changes each minute
-        enabled_budget = [
-            p for p in helpers.get_budget_providers()
-            if p in self._adapters
-        ]
+        enabled_budget = [p for p in helpers.get_budget_providers() if p in self._adapters]
         self._session_budget_provider: str | None = (
             _rng.choice(enabled_budget) if enabled_budget else None
         )
@@ -114,7 +108,8 @@ class ProviderRouter:
                 if self._provider_is_on_cooldown(provider_id, now)
             }
             excluded_models: set[tuple[str, str]] = {
-                key for key in self._model_cooldowns.keys()
+                key
+                for key in self._model_cooldowns.keys()
                 if self._model_is_on_cooldown(key[0], key[1], now)
             }
 
@@ -206,7 +201,9 @@ class ProviderRouter:
                     if restore_at is not None:
                         self._provider_cooldowns[decision.provider_id] = restore_at
                         self._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
-                        restore_text = datetime.fromtimestamp(restore_at).isoformat(timespec="seconds")
+                        restore_text = datetime.fromtimestamp(restore_at).isoformat(
+                            timespec="seconds"
+                        )
                         self.logger.warning(
                             f"[routing] {effective_phase}: rate limited on "
                             f"{decision.provider_id}/{decision.model}; restore at {restore_text}"
@@ -253,7 +250,9 @@ class ProviderRouter:
 
             if rate_limited_models:
                 unique_models = list(dict.fromkeys(rate_limited_models))
-                providers = ", ".join(f"{provider}/{model or 'default'}" for provider, model in unique_models)
+                providers = ", ".join(
+                    f"{provider}/{model or 'default'}" for provider, model in unique_models
+                )
                 next_restore = self._next_model_restore_time()
                 if next_restore is not None:
                     wait_seconds = max(0.0, next_restore - time.time())
@@ -369,8 +368,11 @@ class ProviderRouter:
         Used by `aidlc config show --effective`.
         """
         phases = [
-            "audit", "planning", "research",
-            "implementation", "implementation_complex",
+            "audit",
+            "planning",
+            "research",
+            "implementation",
+            "implementation_complex",
             "finalization",
         ]
         return {phase: self.resolve(phase=phase) for phase in phases}

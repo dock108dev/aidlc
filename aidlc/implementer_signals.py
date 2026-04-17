@@ -7,9 +7,7 @@ def is_all_models_token_exhausted(result: dict) -> bool:
     failure_type = str(result.get("failure_type") or "").lower()
     if failure_type == "token_exhausted_all_models":
         return True
-    message = "\n".join(
-        [str(result.get("error") or ""), str(result.get("output") or "")]
-    ).lower()
+    message = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).lower()
     return "all available providers/models" in message and "token" in message
 
 
@@ -23,9 +21,7 @@ def is_no_models_available(result: dict) -> bool:
         "no_models_available",
     }:
         return True
-    message = "\n".join(
-        [str(result.get("error") or ""), str(result.get("output") or "")]
-    ).lower()
+    message = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).lower()
     return any(
         phrase in message
         for phrase in (
@@ -43,7 +39,7 @@ def compact_error_text(value: object, max_len: int = 360) -> str:
     compact = " ".join(text.split())
     if len(compact) <= max_len:
         return compact
-    return f"{compact[:max_len - 3]}..."
+    return f"{compact[: max_len - 3]}..."
 
 
 def sample_error_payload(
@@ -60,7 +56,7 @@ def sample_error_payload(
     if not lines:
         return "unknown provider error"
 
-    tail = lines[-max(1, int(tail_max_lines)):]
+    tail = lines[-max(1, int(tail_max_lines)) :]
     max_lines = max(1, int(max_sample_lines))
 
     anchor_terms = (

@@ -237,6 +237,7 @@ class ImprovementCycle:
             question = topic.get("question", "")
 
             import re
+
             sanitized = re.sub(r"[^a-z0-9_-]", "-", name.lower())[:80]
             output_path = research_dir / f"improve-{sanitized}.md"
 
@@ -336,8 +337,12 @@ class ImprovementCycle:
         save_state(state, run_dir)
 
         implementer = Implementer(
-            state, run_dir, self.config, self.cli,
-            self.project_context, self.logger,
+            state,
+            run_dir,
+            self.config,
+            self.cli,
+            self.project_context,
+            self.logger,
         )
 
         for issue in issues:
@@ -396,8 +401,12 @@ class ImprovementCycle:
             state.status = RunStatus.RUNNING
 
             finalizer = Finalizer(
-                state, run_dir, self.config, self.cli,
-                self.project_context, self.logger,
+                state,
+                run_dir,
+                self.config,
+                self.cli,
+                self.project_context,
+                self.logger,
             )
             finalizer.run(passes=passes)
 
@@ -411,14 +420,18 @@ class ImprovementCycle:
     def _verify(self) -> bool:
         """Run tests to verify improvements."""
         import subprocess
+
         test_cmd = self.config.get("run_tests_command")
         if not test_cmd:
             return True
 
         try:
             result = subprocess.run(
-                test_cmd, shell=True, cwd=str(self.project_root),
-                capture_output=True, timeout=self.config.get("test_timeout_seconds", 300),
+                test_cmd,
+                shell=True,
+                cwd=str(self.project_root),
+                capture_output=True,
+                timeout=self.config.get("test_timeout_seconds", 300),
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, OSError) as exc:

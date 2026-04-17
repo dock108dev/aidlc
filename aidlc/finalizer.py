@@ -145,14 +145,13 @@ class Finalizer:
             self.state.finalize_passes_completed.append(pass_name)
             self.logger.info(f"Pass {pass_name} complete ({duration:.0f}s)")
         else:
-            self.logger.error(
-                f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)"
-            )
+            self.logger.error(f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)")
 
     def _refresh_config(self):
         """Re-detect project config after finalization (codebase may have changed)."""
         try:
             from .config_detect import detect_config, update_config_file
+
             detected = detect_config(self.project_root)
             if any(v for k, v in detected.items() if not k.startswith("_")):
                 self.logger.info("Refreshing config with post-finalization detection...")
@@ -212,8 +211,10 @@ class Finalizer:
             try:
                 result = subprocess.run(
                     ["git", "branch", "--show-current"],
-                    capture_output=True, text=True,
-                    cwd=str(self.project_root), timeout=10,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(self.project_root),
+                    timeout=10,
                 )
             finally:
                 add_console_time(self.state, t0)

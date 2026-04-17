@@ -13,11 +13,11 @@ from aidlc.schemas import (
 
 class TestParseJsonOutput:
     def test_json_code_block(self):
-        raw = '''Some text before
+        raw = """Some text before
 ```json
 {"key": "value", "num": 42}
 ```
-Some text after'''
+Some text after"""
         result = parse_json_output(raw)
         assert result["key"] == "value"
         assert result["num"] == 42
@@ -32,16 +32,16 @@ Some text after'''
             parse_json_output("This has no JSON at all")
 
     def test_invalid_json_raises(self):
-        raw = '```json\n{invalid json here}\n```'
+        raw = "```json\n{invalid json here}\n```"
         with pytest.raises(ValueError, match="Failed to parse JSON"):
             parse_json_output(raw)
 
     def test_nested_json(self):
-        raw = '''```json
+        raw = """```json
 {
   "actions": [{"type": "create", "data": {"nested": true}}]
 }
-```'''
+```"""
         result = parse_json_output(raw)
         assert result["actions"][0]["data"]["nested"] is True
 
@@ -223,10 +223,22 @@ class TestPlanningOutput:
         output = PlanningOutput(
             frontier_assessment="Assessed",
             actions=[
-                PlanningAction(action_type="create_issue", rationale="A", issue_id="ISSUE-001",
-                               title="T1", description="D1", acceptance_criteria=["AC"]),
-                PlanningAction(action_type="create_issue", rationale="B", issue_id="ISSUE-001",
-                               title="T2", description="D2", acceptance_criteria=["AC"]),
+                PlanningAction(
+                    action_type="create_issue",
+                    rationale="A",
+                    issue_id="ISSUE-001",
+                    title="T1",
+                    description="D1",
+                    acceptance_criteria=["AC"],
+                ),
+                PlanningAction(
+                    action_type="create_issue",
+                    rationale="B",
+                    issue_id="ISSUE-001",
+                    title="T2",
+                    description="D2",
+                    acceptance_criteria=["AC"],
+                ),
             ],
         )
         errors = output.validate(known_issue_ids=set())
@@ -236,8 +248,14 @@ class TestPlanningOutput:
         data = {
             "frontier_assessment": "Test",
             "actions": [
-                {"action_type": "create_issue", "rationale": "R", "issue_id": "ISSUE-001",
-                 "title": "T", "description": "D", "acceptance_criteria": ["AC"]},
+                {
+                    "action_type": "create_issue",
+                    "rationale": "R",
+                    "issue_id": "ISSUE-001",
+                    "title": "T",
+                    "description": "D",
+                    "acceptance_criteria": ["AC"],
+                },
             ],
             "cycle_notes": "Notes",
         }
@@ -269,7 +287,7 @@ class TestImplementationResult:
 
 class TestParsePlanningOutput:
     def test_parse(self):
-        raw = '''```json
+        raw = """```json
 {
   "frontier_assessment": "Initial scan",
   "actions": [
@@ -285,7 +303,7 @@ class TestParsePlanningOutput:
   ],
   "cycle_notes": "First cycle"
 }
-```'''
+```"""
         output = parse_planning_output(raw)
         assert len(output.actions) == 1
         assert output.actions[0].issue_id == "ISSUE-001"
@@ -293,7 +311,7 @@ class TestParsePlanningOutput:
 
 class TestParseImplementationResult:
     def test_parse(self):
-        raw = '''I implemented the feature.
+        raw = """I implemented the feature.
 ```json
 {
   "issue_id": "ISSUE-001",
@@ -303,7 +321,7 @@ class TestParseImplementationResult:
   "tests_passed": true,
   "notes": ""
 }
-```'''
+```"""
         result = parse_implementation_result(raw)
         assert result.success is True
         assert result.issue_id == "ISSUE-001"

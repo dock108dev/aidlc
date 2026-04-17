@@ -5,6 +5,10 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .cli.accounts import cmd_accounts as _cmd_accounts
+from .cli.config_cmd import cmd_config_show as _cmd_config_show
+from .cli.provider import cmd_provider as _cmd_provider
+from .cli.usage_cmd import cmd_usage as _cmd_usage
 from .cli_commands import (
     _cyan,
     _print_banner,
@@ -12,13 +16,7 @@ from .cli_commands import (
     _red,
 )
 from .cli_commands import (
-    cmd_accounts as _cmd_accounts,
-)
-from .cli_commands import (
     cmd_audit as _cmd_audit,
-)
-from .cli_commands import (
-    cmd_config_show as _cmd_config_show,
 )
 from .cli_commands import (
     cmd_finalize as _cmd_finalize,
@@ -36,13 +34,7 @@ from .cli_commands import (
     cmd_precheck as _cmd_precheck,
 )
 from .cli_commands import (
-    cmd_provider as _cmd_provider,
-)
-from .cli_commands import (
     cmd_status as _cmd_status,
-)
-from .cli_commands import (
-    cmd_usage as _cmd_usage,
 )
 from .cli_parser import build_parser
 from .config import load_config
@@ -101,6 +93,7 @@ def cmd_usage(args: argparse.Namespace) -> None:
 
 def cmd_config_show(args: argparse.Namespace) -> None:
     _cmd_config_show(args, __version__)
+
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""

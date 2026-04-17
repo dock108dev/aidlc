@@ -20,6 +20,7 @@ from .base import HealthResult, HealthStatus, ProviderAdapter
 # Empty string means "let the Copilot CLI choose its default model".
 _DEFAULT_COPILOT_MODEL = ""
 
+
 def _parse_int_loose(s: str) -> int:
     return int(s.replace(",", "").replace("_", "") or 0)
 
@@ -138,7 +139,9 @@ class CopilotAdapter(ProviderAdapter):
             )
             if timed_out:
                 return self._failure_result(
-                    model, account_id, duration,
+                    model,
+                    account_id,
+                    duration,
                     error="Copilot CLI timed out",
                     failure_type="timeout",
                 )
@@ -165,14 +168,18 @@ class CopilotAdapter(ProviderAdapter):
                 }
             else:
                 return self._failure_result(
-                    model, account_id, duration,
+                    model,
+                    account_id,
+                    duration,
                     error=stderr.strip() or "Copilot CLI returned non-zero exit code",
                     failure_type="issue",
                 )
 
         except FileNotFoundError:
             return self._failure_result(
-                model or "default", account_id, 0.0,
+                model or "default",
+                account_id,
+                0.0,
                 error=f"Copilot CLI not found at '{self.cli_command}'. Install with: brew install copilot-cli",
                 failure_type="provider_error",
             )

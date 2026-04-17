@@ -67,7 +67,9 @@ class RuntimeAuditEngine:
 
         overall_passed = all(item["passed"] for item in tier_results) if tier_results else True
         build_result = next((item for item in tier_results if item["tier"] == "build"), None)
-        build_health = "healthy" if (build_result is None or build_result["passed"]) else "unhealthy"
+        build_health = (
+            "healthy" if (build_result is None or build_result["passed"]) else "unhealthy"
+        )
 
         coverage_percent = max(coverage_values) if coverage_values else None
         return {

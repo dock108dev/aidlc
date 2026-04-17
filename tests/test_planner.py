@@ -117,6 +117,7 @@ class TestPlanner:
 
     def test_apply_create_issue(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
@@ -141,6 +142,7 @@ class TestPlanner:
 
     def test_apply_update_issue(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         # Create issues dir
@@ -171,6 +173,7 @@ class TestPlanner:
 
     def test_apply_update_issue_can_clear_dependencies(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         issues_dir = Path(config["_issues_dir"])
@@ -256,12 +259,12 @@ class TestPlanner:
         assert "ISSUE-999" not in deps["ISSUE-001"]
         assert deps["ISSUE-001"].count("ISSUE-002") <= 1
         assert not (
-            "ISSUE-002" in deps.get("ISSUE-001", [])
-            and "ISSUE-001" in deps.get("ISSUE-002", [])
+            "ISSUE-002" in deps.get("ISSUE-001", []) and "ISSUE-001" in deps.get("ISSUE-002", [])
         )
 
     def test_apply_create_doc(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
+
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
@@ -304,13 +307,15 @@ class TestPlanner:
     def test_planning_complete_ignored_when_not_offered(self, state, config, logger, tmp_path):
         """Claude's planning_complete is ignored until the system offers it."""
         cli = MagicMock()
-        complete_response = json.dumps({
-            "frontier_assessment": "All work captured",
-            "planning_complete": True,
-            "completion_reason": "All features captured",
-            "actions": [],
-            "cycle_notes": "Done",
-        })
+        complete_response = json.dumps(
+            {
+                "frontier_assessment": "All work captured",
+                "planning_complete": True,
+                "completion_reason": "All features captured",
+                "actions": [],
+                "cycle_notes": "Done",
+            }
+        )
         cli.execute_prompt.return_value = {
             "success": True,
             "output": f"```json\n{complete_response}\n```",
@@ -329,68 +334,122 @@ class TestPlanner:
         (run_dir / "claude_outputs").mkdir()
         # Pre-seed an issue so issues_created > 0
         from aidlc.models import Issue
+
         issue = Issue(id="ISSUE-001", title="Existing", description="X", acceptance_criteria=["AC"])
         state.update_issue(issue)
         state.issues_created = 1
         doc_files = [
-            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {
+                "path": "ARCHITECTURE.md",
+                "content": "Architecture details " * 80,
+                "priority": 0,
+                "size": 1680,
+            },
             {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
-            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+            {
+                "path": "CLAUDE.md",
+                "content": "Agent constraints " * 80,
+                "priority": 0,
+                "size": 1440,
+            },
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should NOT exit on cycle 1 — completion not offered yet
         assert state.planning_cycles > 1
-        assert "complete" in (state.stop_reason or "").lower() or "clear" in (state.stop_reason or "").lower()
+        assert (
+            "complete" in (state.stop_reason or "").lower()
+            or "clear" in (state.stop_reason or "").lower()
+        )
         assert "complete" in (state.stop_reason or "").lower()
 
     def test_planning_complete_deferred_until_winding_down(self, state, config, logger, tmp_path):
         """Claude's planning_complete is deferred — only honored after winding down confirmed."""
         cli = MagicMock()
         # Cycle 1: creates an issue (not winding down yet)
-        create_response = json.dumps({
-            "frontier_assessment": "Creating work",
-            "actions": [{
-                "action_type": "create_issue",
-                "rationale": "Need this",
-                "issue_id": "ISSUE-001",
-                "title": "Real work",
-                "description": "Do stuff",
-                "priority": "high",
-                "acceptance_criteria": ["Done"],
-            }],
-            "cycle_notes": "",
-        })
+        create_response = json.dumps(
+            {
+                "frontier_assessment": "Creating work",
+                "actions": [
+                    {
+                        "action_type": "create_issue",
+                        "rationale": "Need this",
+                        "issue_id": "ISSUE-001",
+                        "title": "Real work",
+                        "description": "Do stuff",
+                        "priority": "high",
+                        "acceptance_criteria": ["Done"],
+                    }
+                ],
+                "cycle_notes": "",
+            }
+        )
         # Cycles 2-4: only updates (winding down)
-        update_response = json.dumps({
-            "frontier_assessment": "Minor update",
-            "actions": [{
-                "action_type": "update_issue",
-                "rationale": "Polish",
-                "issue_id": "ISSUE-001",
-                "description": "Updated",
-            }],
-            "cycle_notes": "",
-        })
+        update_response = json.dumps(
+            {
+                "frontier_assessment": "Minor update",
+                "actions": [
+                    {
+                        "action_type": "update_issue",
+                        "rationale": "Polish",
+                        "issue_id": "ISSUE-001",
+                        "description": "Updated",
+                    }
+                ],
+                "cycle_notes": "",
+            }
+        )
         # Cycle 5: Claude declares complete after being offered the option
-        complete_response = json.dumps({
-            "frontier_assessment": "All done",
-            "planning_complete": True,
-            "completion_reason": "Plan is comprehensive",
-            "actions": [],
-            "cycle_notes": "",
-        })
+        complete_response = json.dumps(
+            {
+                "frontier_assessment": "All done",
+                "planning_complete": True,
+                "completion_reason": "Plan is comprehensive",
+                "actions": [],
+                "cycle_notes": "",
+            }
+        )
         cli.execute_prompt.side_effect = [
-            {"success": True, "output": f"```json\n{create_response}\n```",
-             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
-            {"success": True, "output": f"```json\n{update_response}\n```",
-             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
-            {"success": True, "output": f"```json\n{update_response}\n```",
-             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
-            {"success": True, "output": f"```json\n{update_response}\n```",
-             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
-            {"success": True, "output": f"```json\n{complete_response}\n```",
-             "error": None, "failure_type": None, "duration_seconds": 1.0, "retries": 0},
+            {
+                "success": True,
+                "output": f"```json\n{create_response}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
+            {
+                "success": True,
+                "output": f"```json\n{update_response}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
+            {
+                "success": True,
+                "output": f"```json\n{update_response}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
+            {
+                "success": True,
+                "output": f"```json\n{update_response}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
+            {
+                "success": True,
+                "output": f"```json\n{complete_response}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
         ]
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
@@ -402,30 +461,47 @@ class TestPlanner:
         issues_dir.mkdir(parents=True, exist_ok=True)
 
         doc_files = [
-            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {
+                "path": "ARCHITECTURE.md",
+                "content": "Architecture details " * 80,
+                "priority": 0,
+                "size": 1680,
+            },
             {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
-            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+            {
+                "path": "CLAUDE.md",
+                "content": "Agent constraints " * 80,
+                "priority": 0,
+                "size": 1440,
+            },
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should run: 1 create + 3 updates (triggers offer) + 1 complete = 5 cycles
         # But cycle 5 returns empty actions + planning_complete -> frontier clear
-        assert "complete" in (state.stop_reason or "").lower() or "clear" in (state.stop_reason or "").lower()
+        assert (
+            "complete" in (state.stop_reason or "").lower()
+            or "clear" in (state.stop_reason or "").lower()
+        )
 
     def test_diminishing_returns_exits_early(self, state, config, logger, tmp_path):
         """Update-only cycles trigger offer, then force exit if Claude doesn't declare done."""
         cli = MagicMock()
         # Return a response with only update_issue actions (no new issues)
-        update_response = json.dumps({
-            "frontier_assessment": "Minor refinements",
-            "actions": [{
-                "action_type": "update_issue",
-                "rationale": "Polish",
-                "issue_id": "ISSUE-001",
-                "description": "Updated description",
-            }],
-            "cycle_notes": "",
-        })
+        update_response = json.dumps(
+            {
+                "frontier_assessment": "Minor refinements",
+                "actions": [
+                    {
+                        "action_type": "update_issue",
+                        "rationale": "Polish",
+                        "issue_id": "ISSUE-001",
+                        "description": "Updated description",
+                    }
+                ],
+                "cycle_notes": "",
+            }
+        )
         cli.execute_prompt.return_value = {
             "success": True,
             "output": f"```json\n{update_response}\n```",
@@ -440,8 +516,11 @@ class TestPlanner:
 
         # Pre-seed an existing issue so updates have something to target
         from aidlc.models import Issue
+
         issue = Issue(
-            id="ISSUE-001", title="Existing", description="Exists",
+            id="ISSUE-001",
+            title="Existing",
+            description="Exists",
             acceptance_criteria=["AC1"],
         )
         state.update_issue(issue)
@@ -455,9 +534,19 @@ class TestPlanner:
         (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
 
         doc_files = [
-            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {
+                "path": "ARCHITECTURE.md",
+                "content": "Architecture details " * 80,
+                "priority": 0,
+                "size": 1680,
+            },
             {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
-            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+            {
+                "path": "CLAUDE.md",
+                "content": "Agent constraints " * 80,
+                "priority": 0,
+                "size": 1440,
+            },
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
@@ -470,16 +559,20 @@ class TestPlanner:
     ):
         """Winding-down should work even when this run created no new issues."""
         cli = MagicMock()
-        update_response = json.dumps({
-            "frontier_assessment": "Minor refinements",
-            "actions": [{
-                "action_type": "update_issue",
-                "rationale": "Polish",
-                "issue_id": "ISSUE-001",
-                "description": "Updated description",
-            }],
-            "cycle_notes": "",
-        })
+        update_response = json.dumps(
+            {
+                "frontier_assessment": "Minor refinements",
+                "actions": [
+                    {
+                        "action_type": "update_issue",
+                        "rationale": "Polish",
+                        "issue_id": "ISSUE-001",
+                        "description": "Updated description",
+                    }
+                ],
+                "cycle_notes": "",
+            }
+        )
         cli.execute_prompt.return_value = {
             "success": True,
             "output": f"```json\n{update_response}\n```",
@@ -493,8 +586,11 @@ class TestPlanner:
         config["diminishing_returns_threshold"] = 2
 
         from aidlc.models import Issue
+
         issue = Issue(
-            id="ISSUE-001", title="Existing", description="Exists",
+            id="ISSUE-001",
+            title="Existing",
+            description="Exists",
             acceptance_criteria=["AC1"],
         )
         state.update_issue(issue)
@@ -508,9 +604,19 @@ class TestPlanner:
         (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
 
         doc_files = [
-            {"path": "ARCHITECTURE.md", "content": "Architecture details " * 80, "priority": 0, "size": 1680},
+            {
+                "path": "ARCHITECTURE.md",
+                "content": "Architecture details " * 80,
+                "priority": 0,
+                "size": 1680,
+            },
             {"path": "DESIGN.md", "content": "Design details " * 80, "priority": 0, "size": 1120},
-            {"path": "CLAUDE.md", "content": "Agent constraints " * 80, "priority": 0, "size": 1440},
+            {
+                "path": "CLAUDE.md",
+                "content": "Agent constraints " * 80,
+                "priority": 0,
+                "size": 1440,
+            },
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()

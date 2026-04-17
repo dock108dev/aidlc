@@ -27,7 +27,9 @@ class TestTestProfiles:
     def test_detect_godot_project(self, tmp_path):
         (tmp_path / "project.godot").write_text("[gd_scene]")
         profile = detect_test_profile(tmp_path, "unknown", {})
-        assert "godot" in (profile["unit"] or "").lower() or "godot" in (profile["e2e"] or "").lower()
+        assert (
+            "godot" in (profile["unit"] or "").lower() or "godot" in (profile["e2e"] or "").lower()
+        )
 
     def test_detect_playwright_e2e(self, tmp_path):
         (tmp_path / "playwright.config.ts").write_text("export default {}")
@@ -43,9 +45,9 @@ class TestTestProfiles:
 
     def test_package_json_scripts_detection(self, tmp_path):
         # No base "test" script — only specific tiers
-        (tmp_path / "package.json").write_text(json.dumps({
-            "scripts": {"test:unit": "jest --unit", "test:e2e": "playwright test"}
-        }))
+        (tmp_path / "package.json").write_text(
+            json.dumps({"scripts": {"test:unit": "jest --unit", "test:e2e": "playwright test"}})
+        )
         profile = detect_test_profile(tmp_path, "javascript", {})
         # Base JS profile sets unit to "npm test", package.json overrides only happen
         # when the base profile hasn't already set a value. Unit is already set.
@@ -114,8 +116,15 @@ FAIL
 class TestValidationIssues:
     def test_create_fix_issues(self):
         failures = [
-            FailureReport(test_name="test_login", file="tests/test_auth.py", line=10, assertion="assert False"),
-            FailureReport(test_name="test_signup", file="tests/test_auth.py", line=20, assertion="missing field"),
+            FailureReport(
+                test_name="test_login", file="tests/test_auth.py", line=10, assertion="assert False"
+            ),
+            FailureReport(
+                test_name="test_signup",
+                file="tests/test_auth.py",
+                line=20,
+                assertion="missing field",
+            ),
         ]
         issues = create_fix_issues(failures, set())
         assert len(issues) == 2
@@ -206,7 +215,12 @@ class TestValidator:
         logger = MagicMock()
 
         validator = Validator(state, run_dir, config, cli, "project type: unknown", logger)
-        validator.test_profile = {"build": "fake-build-cmd", "unit": None, "integration": None, "e2e": None}
+        validator.test_profile = {
+            "build": "fake-build-cmd",
+            "unit": None,
+            "integration": None,
+            "e2e": None,
+        }
         validator._run_command = lambda _cmd: (False, "fatal: export preset missing")
 
         all_passed, failures, tier_results = validator._run_test_tiers()

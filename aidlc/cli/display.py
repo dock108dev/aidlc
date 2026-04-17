@@ -119,9 +119,7 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
 
     if score == "not ready":
         print(f"  {bold('Readiness:')} {red('NOT READY')} — missing required doc(s)")
-        print(
-            f"    Create the required files above, then run {cyan('aidlc precheck')} again."
-        )
+        print(f"    Create the required files above, then run {cyan('aidlc precheck')} again.")
     elif score == "excellent":
         print(f"  {bold('Readiness:')} {green('EXCELLENT')} ({found}/{total} docs) — ready to run")
     elif score == "good":

@@ -1,6 +1,5 @@
 """Prompt templates for AIDLC interactive planning doc generation."""
 
-
 ROADMAP_GENERATION_PROMPT = """\
 You are generating a ROADMAP.md for a software project. Use the project info below
 to create a comprehensive, phased delivery plan.

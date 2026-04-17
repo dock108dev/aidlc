@@ -65,7 +65,9 @@ def _render_existing_issues_section(planner) -> list[str]:
         high_priority_pending = [
             issue
             for issue in issues
-            if issue.get("priority") == "high" and issue.get("status", "pending") in (
+            if issue.get("priority") == "high"
+            and issue.get("status", "pending")
+            in (
                 "pending",
                 "in_progress",
                 "blocked",
@@ -241,7 +243,9 @@ def write_planning_index(planner) -> Path:
 
         lines.append("### Active Issues")
         active_statuses = ("pending", "in_progress", "blocked", "failed")
-        active_issues = [issue for issue in issues if issue.get("status", "pending") in active_statuses]
+        active_issues = [
+            issue for issue in issues if issue.get("status", "pending") in active_statuses
+        ]
         if active_issues:
             for issue in active_issues:
                 labels = ", ".join(issue.get("labels", []) or [])
@@ -368,9 +372,7 @@ def execute_research(planner, action) -> None:
     sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
     output_path = planner.project_root / "docs" / "research" / f"{sanitized}.md"
     if output_path.exists():
-        planner.logger.info(
-            f"Research already exists: docs/research/{sanitized}.md — skipping"
-        )
+        planner.logger.info(f"Research already exists: docs/research/{sanitized}.md — skipping")
         return
 
     planner.logger.info(f"Researching: {action.research_topic}")
@@ -445,18 +447,14 @@ def execute_research(planner, action) -> None:
 
     prompt = add_research_output_constraints("\n".join(prompt_parts))
     start_time = time.time()
-    result = planner.cli.execute_prompt(
-        prompt, planner.project_root
-    )
+    result = planner.cli.execute_prompt(prompt, planner.project_root)
     planner.state.record_provider_result(result, planner.config, phase="research")
     duration = time.time() - start_time
     planner.state.plan_elapsed_seconds += duration
     planner.state.elapsed_seconds += duration
 
     if not result["success"]:
-        planner.logger.error(
-            f"Research failed for {action.research_topic}: {result.get('error')}"
-        )
+        planner.logger.error(f"Research failed for {action.research_topic}: {result.get('error')}")
         return
 
     output = result.get("output", "")
@@ -618,8 +616,7 @@ def save_cycle_notes(run_dir: Path, frontier: str, notes: str, cycle_num: int) -
     data = {
         "last_cycle": cycle_num,
         "last_cycle_summary": (
-            f"Last planning cycle ({cycle_num}) assessment: {frontier}\n"
-            f"Notes: {notes}"
+            f"Last planning cycle ({cycle_num}) assessment: {frontier}\nNotes: {notes}"
         ),
     }
     notes_path.write_text(json.dumps(data, indent=2))

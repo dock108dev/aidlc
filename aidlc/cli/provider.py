@@ -67,8 +67,7 @@ def cmd_provider(args: argparse.Namespace, version: str) -> None:
 
         providers_cfg = raw.get("providers", {})
         enabled_names = [
-            n for n, c in providers_cfg.items()
-            if isinstance(c, dict) and c.get("enabled", False)
+            n for n, c in providers_cfg.items() if isinstance(c, dict) and c.get("enabled", False)
         ]
 
         if not enabled_names:
@@ -143,7 +142,9 @@ def cmd_provider_toggle(config_path: Path, name: str, enabled: bool) -> None:
         sys.exit(1)
 
     if name not in KNOWN_PROVIDERS:
-        print(f"{yellow('!')} Unknown provider '{name}'. Known: {', '.join(sorted(KNOWN_PROVIDERS))}")
+        print(
+            f"{yellow('!')} Unknown provider '{name}'. Known: {', '.join(sorted(KNOWN_PROVIDERS))}"
+        )
         sys.exit(1)
 
     if not config_path.exists():
@@ -218,7 +219,9 @@ def cmd_provider_auth(name: str, config: dict, show_health: bool = True) -> None
         if after.is_usable:
             print(f"  {green('Auth successful.')}")
         else:
-            print(f"  {yellow('!')} Auth command exited 0 but health check still failing: {after.message}")
+            print(
+                f"  {yellow('!')} Auth command exited 0 but health check still failing: {after.message}"
+            )
     else:
         print(f"  {yellow('!')} Auth command exited with code {exit_code}.")
         print(f"  Manual fallback: {fallback_instructions}")

@@ -87,9 +87,7 @@ def run_config_wizard(config_path: Path) -> None:
             changes[key] = raw
 
     def _prompt_choice(label: str, key: str, choices: list[str], current: str) -> None:
-        opts = "/".join(
-            cyan(c) if c == current else c for c in choices
-        )
+        opts = "/".join(cyan(c) if c == current else c for c in choices)
         try:
             raw = input(f"  {label} ({opts}) [{current}]: ").strip().lower()
         except EOFError:
@@ -232,7 +230,8 @@ def print_config_summary(config: dict) -> None:
         print()
 
     enabled_providers = {
-        pid: pcfg for pid, pcfg in providers.items()
+        pid: pcfg
+        for pid, pcfg in providers.items()
         if isinstance(pcfg, dict) and pcfg.get("enabled", False)
     }
     display_providers = enabled_providers if enabled_providers else providers
@@ -246,8 +245,12 @@ def print_config_summary(config: dict) -> None:
             default_model = pcfg.get("default_model", "?")
             print(f"    {cyan(pid)}  (default: {default_model})")
             phases = [
-                "planning", "research", "implementation", "implementation_complex",
-                "finalization", "audit",
+                "planning",
+                "research",
+                "implementation",
+                "implementation_complex",
+                "finalization",
+                "audit",
             ]
             for phase in phases:
                 model = phase_models.get(phase, default_model)
@@ -274,7 +277,7 @@ def print_effective_preview(config: dict, project_root: Path) -> None:
 
     print(f"  {bold('Provider Health:')}")
     providers_cfg = config.get("providers", {})
-    for provider_id, pcfg in (providers_cfg.items() if isinstance(providers_cfg, dict) else []):
+    for provider_id, pcfg in providers_cfg.items() if isinstance(providers_cfg, dict) else []:
         if not isinstance(pcfg, dict):
             continue
         adapter = router._adapters.get(provider_id)
@@ -289,7 +292,7 @@ def print_effective_preview(config: dict, project_root: Path) -> None:
     preview = router.resolve_preview()
     print(f"  {bold('Phase Routing (what will run):')}")
     print(f"  {'Phase':<28} {'Provider':<10} {'Account':<20} {'Model':<25}")
-    print(f"  {'-'*28} {'-'*10} {'-'*20} {'-'*25}")
+    print(f"  {'-' * 28} {'-' * 10} {'-' * 20} {'-' * 25}")
     for phase, decision in preview.items():
         account_label = decision.account_id or dim("(default auth)")
         fallback_marker = yellow(" [fallback]") if decision.fallback else ""

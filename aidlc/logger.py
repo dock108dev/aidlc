@@ -15,28 +15,34 @@ def setup_logger(run_id: str, log_dir: Path, verbose: bool = False) -> logging.L
     # Full log file
     fh = logging.FileHandler(log_dir / f"{run_id}.log", encoding="utf-8")
     fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
+    fh.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
     logger.addHandler(fh)
 
     # Console
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.DEBUG if verbose else logging.INFO)
-    ch.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%H:%M:%S",
-    ))
+    ch.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
     logger.addHandler(ch)
 
     # Errors only
     eh = logging.FileHandler(log_dir / f"{run_id}.errors.log", encoding="utf-8")
     eh.setLevel(logging.ERROR)
-    eh.setFormatter(logging.Formatter(
-        "%(asctime)s | %(levelname)-8s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
+    eh.setFormatter(
+        logging.Formatter(
+            "%(asctime)s | %(levelname)-8s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
     logger.addHandler(eh)
 
     return logger

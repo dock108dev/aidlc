@@ -37,7 +37,8 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
         try:
             since_dt = datetime.strptime(since_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             run_dirs = [
-                d for d in run_dirs
+                d
+                for d in run_dirs
                 if datetime.fromtimestamp(d.stat().st_mtime, tz=timezone.utc) >= since_dt
             ]
         except ValueError:
@@ -106,7 +107,7 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
         f"  {header_key:<{col_key}} {'Calls':>7} {'Success':>8} "
         f"{'Input tok':>11} {'Output tok':>11} {'Est. USD':>10}"
     )
-    print(f"  {'-' * col_key} {'-'*7} {'-'*8} {'-'*11} {'-'*11} {'-'*10}")
+    print(f"  {'-' * col_key} {'-' * 7} {'-' * 8} {'-' * 11} {'-' * 11} {'-' * 10}")
 
     grand = {"calls": 0, "succeeded": 0, "input": 0, "output": 0, "cost": 0.0}
     for key, row in sorted(totals.items()):
@@ -122,7 +123,7 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
         grand["output"] += row["output_tokens"]
         grand["cost"] += cost
 
-    print(f"  {'─' * col_key} {'─'*7} {'─'*8} {'─'*11} {'─'*11} {'─'*10}")
+    print(f"  {'─' * col_key} {'─' * 7} {'─' * 8} {'─' * 11} {'─' * 11} {'─' * 10}")
     print(
         f"  {bold('TOTAL'):<{col_key + 7}} {grand['calls']:>7} {grand['succeeded']:>8} "
         f"{grand['input']:>11,} {grand['output']:>11,} "
@@ -134,8 +135,12 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
 def _accumulate_usage(totals: dict, key: str, usage: dict) -> None:
     if key not in totals:
         totals[key] = {
-            "calls": 0, "succeeded": 0, "input_tokens": 0,
-            "output_tokens": 0, "cost_usd_exact": 0.0, "cost_usd_estimated": 0.0,
+            "calls": 0,
+            "succeeded": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd_exact": 0.0,
+            "cost_usd_estimated": 0.0,
         }
     t = totals[key]
     t["calls"] += usage.get("calls", 0)

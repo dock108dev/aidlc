@@ -101,8 +101,7 @@ class Planner:
             budget_exhausted = self.state.is_plan_budget_exhausted()
             if (
                 not budget_exhausted
-                and
-                self.state.plan_elapsed_seconds
+                and self.state.plan_elapsed_seconds
                 >= self.state.plan_budget_seconds * finalization_threshold
                 and self.state.phase != RunPhase.PLAN_FINALIZATION
             ):
@@ -174,7 +173,9 @@ class Planner:
                     ):
                         if not self._offer_completion:
                             self._offer_completion = True
-                            self.logger.info("Offering completion option after repeated empty cycles.")
+                            self.logger.info(
+                                "Offering completion option after repeated empty cycles."
+                            )
                         else:
                             self.state.stop_reason = "Planning frontier is clear"
                             self.logger.info("Planning complete after repeated empty cycles.")
@@ -182,7 +183,9 @@ class Planner:
             elif result is False:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
-                    self.state.stop_reason = f"{max_consecutive_failures} consecutive planning failures"
+                    self.state.stop_reason = (
+                        f"{max_consecutive_failures} consecutive planning failures"
+                    )
                     self.logger.error("Too many consecutive failures. Stopping planning.")
                     break
                 continue
@@ -213,7 +216,9 @@ class Planner:
                     elif self._pending_completion_reason:
                         # Claude accepted the offer — honor it
                         self.state.stop_reason = self._pending_completion_reason
-                        self.logger.info(f"Planning complete (confirmed): {self._pending_completion_reason}")
+                        self.logger.info(
+                            f"Planning complete (confirmed): {self._pending_completion_reason}"
+                        )
                         break
                     else:
                         # Claude didn't declare complete but is still just updating
@@ -265,7 +270,9 @@ class Planner:
         # Execute Claude with file access (can read project files + write issues/docs)
         start_time = time.time()
         result = self.cli.execute_prompt(
-            prompt, self.project_root, allow_edits=True,
+            prompt,
+            self.project_root,
+            allow_edits=True,
         )
         self._log_provider_result(cycle_num, result)
         self.state.record_provider_result(result, self.config, phase="planning")
@@ -305,15 +312,15 @@ class Planner:
         # existing_issues are {"path": "...", "content": "..."} dicts — extract the
         # issue ID from the filename stem (e.g. ".aidlc/issues/ISSUE-020.md" → "ISSUE-020").
         from pathlib import Path as _Path
-        known_ids = {
-            d["id"] for d in self.state.issues
-        } | {
+
+        known_ids = {d["id"] for d in self.state.issues} | {
             _Path(e["path"]).stem
             for e in self.existing_issues
             if e.get("path") and _Path(e["path"]).stem.upper().startswith("ISSUE")
         }
         batch_new_ids = {
-            a.issue_id for a in planning_output.actions
+            a.issue_id
+            for a in planning_output.actions
             if a.action_type == "create_issue" and a.issue_id
         }
 
@@ -399,9 +406,7 @@ class Planner:
                 action_errors.append(str(e))
 
         if action_errors and applied == 0:
-            self.logger.error(
-                f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored"
-            )
+            self.logger.error(f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored")
             return False
 
         if action_errors and total_actions:
@@ -503,12 +508,16 @@ class Planner:
             file_path.write_text(action.content)
             self._upsert_doc_file(action.file_path, action.content)
             self.state.files_created += 1
-            self.state.created_artifacts.append({
-                "path": action.file_path,
-                "type": "doc",
-                "action": "create" if action.action_type == "create_doc" else "update",
-            })
-            self.logger.info(f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}")
+            self.state.created_artifacts.append(
+                {
+                    "path": action.file_path,
+                    "type": "doc",
+                    "action": "create" if action.action_type == "create_doc" else "update",
+                }
+            )
+            self.logger.info(
+                f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}"
+            )
 
         elif action.action_type == "research":
             self._execute_research(action)

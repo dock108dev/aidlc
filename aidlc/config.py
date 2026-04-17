@@ -10,10 +10,10 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 
 # Default configuration values
 DEFAULTS = {
-    "runtime_profile": "standard",          # standard | production
-    "routing_strategy": "balanced",         # balanced | cheapest | best_quality | custom
+    "runtime_profile": "standard",  # standard | production
+    "routing_strategy": "balanced",  # balanced | cheapest | best_quality | custom
     "routing_rate_limit_cooldown_seconds": 300,
-    "providers": {                          # provider enable/model configuration
+    "providers": {  # provider enable/model configuration
         "claude": {
             "enabled": True,
             "cli_command": "claude",
@@ -57,9 +57,9 @@ DEFAULTS = {
     "plan_budget_hours": 4,
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
-    "claude_long_run_warn_seconds": 300,    # warn every N seconds if Claude is still running
-    "claude_hard_timeout_seconds": 1800,    # default 30-minute escape hatch for stuck runs
-    "claude_timeout_grace_seconds": 30,     # wait for graceful Claude shutdown before force-kill
+    "claude_long_run_warn_seconds": 300,  # warn every N seconds if Claude is still running
+    "claude_hard_timeout_seconds": 1800,  # default 30-minute escape hatch for stuck runs
+    "claude_timeout_grace_seconds": 30,  # wait for graceful Claude shutdown before force-kill
     # Telemetry/cost tracking:
     # - auto: use exact CLI-reported cost when available, otherwise estimate from token rates
     # - exact_only: track only exact cost values from CLI metadata
@@ -136,8 +136,8 @@ DEFAULTS = {
     "retry_backoff_factor": 2.0,
     "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
     "max_consecutive_failures": 3,
-    "diminishing_returns_window": 5,       # track last N cycles for diminishing returns
-    "diminishing_returns_threshold": 2,    # exit after N consecutive cycles with no new issues
+    "diminishing_returns_window": 5,  # track last N cycles for diminishing returns
+    "diminishing_returns_threshold": 2,  # exit after N consecutive cycles with no new issues
     "finalization_budget_percent": 10,
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
@@ -152,9 +152,9 @@ DEFAULTS = {
         "refactor-core",
         "cross-cutting",
     ],
-    "max_planning_cycles": 0,       # 0 = unlimited (dry-run defaults to 3)
+    "max_planning_cycles": 0,  # 0 = unlimited (dry-run defaults to 3)
     "max_implementation_cycles": 0,  # 0 = unlimited (dry-run defaults to 3)
-    "run_tests_command": None,       # auto-detected if not set
+    "run_tests_command": None,  # auto-detected if not set
     "test_timeout_seconds": 300,
     "max_doc_chars": 10000,
     "max_context_chars": 40000,
@@ -176,73 +176,78 @@ DEFAULTS = {
     ],
     "implementation_allowed_paths": None,  # None = all paths allowed
     # Audit settings
-    "audit_depth": "quick",                 # default depth when --audit is used
-    "audit_max_claude_calls": 10,           # cap provider calls during full audit
+    "audit_depth": "quick",  # default depth when --audit is used
+    "audit_max_claude_calls": 10,  # cap provider calls during full audit
     "audit_max_source_chars_per_module": 15000,  # source chars sent to Claude per module
     "audit_source_extensions": [
-        ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb",
+        ".py",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".rb",
     ],
     "audit_exclude_patterns": [
-        "**/test*/**", "**/vendor/**", "**/node_modules/**", "**/.git/**",
+        "**/test*/**",
+        "**/vendor/**",
+        "**/node_modules/**",
+        "**/.git/**",
     ],
-    "audit_runtime_enabled": True,          # run build/unit/integration/e2e checks during full audit
-    "audit_runtime_timeout_seconds": 600,   # timeout for each runtime audit command
+    "audit_runtime_enabled": True,  # run build/unit/integration/e2e checks during full audit
+    "audit_runtime_timeout_seconds": 600,  # timeout for each runtime audit command
     "audit_coverage_threshold_percent": 85,  # focus shifts to UI when >= threshold
-    "audit_playwright_headless": True,      # enforce headless Playwright in runtime audit
+    "audit_playwright_headless": True,  # enforce headless Playwright in runtime audit
     "audit_playwright_command_override": None,  # optional custom Playwright command
-    "audit_braindump_enabled": True,        # generate BRAINDUMP.md during full audit
+    "audit_braindump_enabled": True,  # generate BRAINDUMP.md during full audit
     "audit_braindump_path": "BRAINDUMP.md",
     "audit_planning_workload_stop_ratio": 0.95,  # stop adding issue seeds near planning budget
     "audit_research_estimate_default_hours": 2.0,
-    "audit_issue_estimate_defaults": {      # default projected effort per issue priority
+    "audit_issue_estimate_defaults": {  # default projected effort per issue priority
         "high": 3.0,
         "medium": 1.5,
         "low": 0.75,
     },
     "audit_include_deferred_backlog": True,  # include overflow ideas after workload cap
-
     # Research settings
-    "research_max_scope_files": 10,         # max files to read per research action
-    "research_max_source_chars": 15000,     # max chars per scope file
-    "research_max_per_cycle": 2,            # max research actions per planning cycle
-    "research_timeout_seconds": 900,        # 15 min timeout per research call
-
+    "research_max_scope_files": 10,  # max files to read per research action
+    "research_max_source_chars": 15000,  # max chars per scope file
+    "research_max_per_cycle": 2,  # max research actions per planning cycle
+    "research_timeout_seconds": 900,  # 15 min timeout per research call
     # Doc-gap detection
     "doc_gap_detection_enabled": True,
-    "doc_gap_max_items": 50,                # cap gaps passed to planner prompt
-    "planning_doc_min_chars": 800,          # minimum chars for "sufficient" planning docs
-
+    "doc_gap_max_items": 50,  # cap gaps passed to planner prompt
+    "planning_doc_min_chars": 800,  # minimum chars for "sufficient" planning docs
     # Context preparation
-    "project_brief_max_chars": 20000,       # max size of generated project brief
-    "phase_context_max_chars": 20000,       # max chars for phase-focused docs per cycle
-    "max_planning_prompt_chars": 60000,     # total prompt budget per planning cycle
-    "planning_issue_index_max_items": 15,   # max issues listed inline in planning prompt
+    "project_brief_max_chars": 20000,  # max size of generated project brief
+    "phase_context_max_chars": 20000,  # max chars for phase-focused docs per cycle
+    "max_planning_prompt_chars": 60000,  # total prompt budget per planning cycle
+    "planning_issue_index_max_items": 15,  # max issues listed inline in planning prompt
     "planning_issue_index_include_all_until": 12,  # list all issues until this count
-    "planning_last_cycle_notes_max_chars": 300,    # max chars from previous-cycle notes
-
+    "planning_last_cycle_notes_max_chars": 300,  # max chars from previous-cycle notes
     # Validation loop
     "validation_enabled": True,
-    "strict_validation": False,             # if True, validation failures pause run
-    "validation_allow_no_tests": True,      # if False, missing tests fail validation
+    "strict_validation": False,  # if True, validation failures pause run
+    "validation_allow_no_tests": True,  # if False, missing tests fail validation
     "fail_on_validation_incomplete": False,  # if True, incomplete validation pauses run
-    "validation_max_cycles": 3,             # max test-fix iterations
-    "validation_batch_size": 10,            # max fix issues per cycle
-    "test_profile_mode": "progressive",     # unit → integration → e2e (stop on first fail)
-    "e2e_test_command": None,               # override E2E test command
-    "build_validation_command": None,       # override build command
-
+    "validation_max_cycles": 3,  # max test-fix iterations
+    "validation_batch_size": 10,  # max fix issues per cycle
+    "test_profile_mode": "progressive",  # unit → integration → e2e (stop on first fail)
+    "e2e_test_command": None,  # override E2E test command
+    "build_validation_command": None,  # override build command
     # Finalization
-    "finalize_enabled": True,               # master switch for finalization
-    "fail_on_final_test_failure": False,    # if True, failed final suite pauses run
-    "strict_change_detection": False,       # if True, impl success requires verifiable changes
-    "finalize_passes": None,                # None = all; or ["ssot", "docs"]
-    "finalize_timeout_seconds": 900,        # 15 min per pass
+    "finalize_enabled": True,  # master switch for finalization
+    "fail_on_final_test_failure": False,  # if True, failed final suite pauses run
+    "strict_change_detection": False,  # if True, impl success requires verifiable changes
+    "finalize_passes": None,  # None = all; or ["ssot", "docs"]
+    "finalize_timeout_seconds": 900,  # 15 min per pass
     # Finalize prompts: full project_context can exceed CLI limits — cap with head+tail preserve
     "finalize_project_context_max_chars": 22000,
     # Implementation prompt: max prior completed issues listed (titles only); rest on disk
     "implementation_completed_issues_max": 12,
     "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
-
     # Implementation autosync / resilience
     "autosync_enabled": True,
     "autosync_every_implementation_cycles": 25,
@@ -252,7 +257,6 @@ DEFAULTS = {
     "autosync_prune_enabled": True,
     "autosync_runs_to_keep": 5,
     "autosync_keep_claude_outputs": 200,
-
     # Stop run cleanly when router confirms token exhaustion across all models/providers
     "stop_on_all_models_token_exhausted": True,
 }
@@ -268,13 +272,21 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
     are overwritten.
     """
     for key, value in user_config.items():
-        if key == "providers" and isinstance(value, dict) and isinstance(config.get("providers"), dict):
+        if (
+            key == "providers"
+            and isinstance(value, dict)
+            and isinstance(config.get("providers"), dict)
+        ):
             for provider_id, provider_cfg in value.items():
-                if isinstance(provider_cfg, dict) and isinstance(config["providers"].get(provider_id), dict):
+                if isinstance(provider_cfg, dict) and isinstance(
+                    config["providers"].get(provider_id), dict
+                ):
                     # Deep-merge: user values override defaults, but missing keys keep defaults
                     merged = dict(config["providers"][provider_id])
                     # Also deep-merge phase_models if both sides have it
-                    if "phase_models" in provider_cfg and isinstance(provider_cfg["phase_models"], dict):
+                    if "phase_models" in provider_cfg and isinstance(
+                        provider_cfg["phase_models"], dict
+                    ):
                         base_phases = dict(merged.get("phase_models") or {})
                         base_phases.update(provider_cfg["phase_models"])
                         merged.update(provider_cfg)

@@ -145,10 +145,38 @@ class TestRunState:
     def test_get_pending_issues(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "pending", "dependencies": [], "attempt_count": 0, "max_attempts": 3},
-            {"id": "ISSUE-002", "title": "B", "status": "implemented", "dependencies": [], "attempt_count": 1, "max_attempts": 3},
-            {"id": "ISSUE-003", "title": "C", "status": "pending", "dependencies": ["ISSUE-002"], "attempt_count": 0, "max_attempts": 3},
-            {"id": "ISSUE-004", "title": "D", "status": "pending", "dependencies": ["ISSUE-999"], "attempt_count": 0, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "pending",
+                "dependencies": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "status": "implemented",
+                "dependencies": [],
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-003",
+                "title": "C",
+                "status": "pending",
+                "dependencies": ["ISSUE-002"],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-004",
+                "title": "D",
+                "status": "pending",
+                "dependencies": ["ISSUE-999"],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
         ]
         pending = state.get_pending_issues()
         ids = [i.id for i in pending]
@@ -159,7 +187,14 @@ class TestRunState:
     def test_get_pending_excludes_exhausted(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "failed", "dependencies": [], "attempt_count": 3, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "failed",
+                "dependencies": [],
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
         ]
         assert state.get_pending_issues() == []
 
@@ -176,15 +211,33 @@ class TestRunState:
     def test_all_issues_resolved_with_failed_exhausted(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "verified", "attempt_count": 1, "max_attempts": 3},
-            {"id": "ISSUE-002", "title": "B", "status": "failed", "attempt_count": 3, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "verified",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "status": "failed",
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
         ]
         assert state.all_issues_resolved()  # Failed but exhausted
 
     def test_all_issues_not_resolved_with_retryable_failed(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "status": "failed", "attempt_count": 1, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "failed",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
         ]
         assert not state.all_issues_resolved()  # Can still retry
 
@@ -245,7 +298,9 @@ class TestRunState:
         assert state.claude_cost_usd_exact == pytest.approx(0.42)
         assert state.claude_cost_usd_estimated == pytest.approx(0.0)
         assert state.provider_account_usage["openai"]["acct-1"]["calls"] == 1
-        assert state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 200  # 100+50+20+30
+        assert (
+            state.provider_account_usage["openai"]["acct-1"]["total_tokens"] == 200
+        )  # 100+50+20+30
         assert state.phase_usage["planning"]["calls"] == 1
         assert state.phase_usage["planning"]["provider_id"] == "openai"
 

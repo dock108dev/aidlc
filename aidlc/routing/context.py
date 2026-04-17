@@ -45,7 +45,8 @@ def tier_aware_provider_order(
     enabled: set[str] = set()
     if isinstance(providers_cfg, dict):
         enabled = {
-            pid for pid, pcfg in providers_cfg.items()
+            pid
+            for pid, pcfg in providers_cfg.items()
             if isinstance(pcfg, dict) and pcfg.get("enabled", True)
         }
     if not enabled:

@@ -103,24 +103,67 @@ FRAMEWORK_MAP = {
 
 # Source file extensions to scan
 DEFAULT_SOURCE_EXTENSIONS = {
-    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs",
-    ".java", ".rb", ".swift", ".kt", ".scala", ".c",
-    ".cpp", ".h", ".hpp", ".cs", ".php",
+    ".py",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".rb",
+    ".swift",
+    ".kt",
+    ".scala",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".php",
 }
 
 # Directories to always exclude from scanning
 EXCLUDE_DIRS = {
-    "node_modules", ".git", "venv", ".venv", "__pycache__",
-    ".aidlc", "dist", "build", ".next", ".nuxt", "target",
-    "vendor", ".tox", ".mypy_cache", ".pytest_cache",
-    "coverage", ".coverage", "htmlcov", "egg-info",
+    "node_modules",
+    ".git",
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".aidlc",
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    "target",
+    "vendor",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "coverage",
+    ".coverage",
+    "htmlcov",
+    "egg-info",
 }
 
 # Entry point file patterns
 ENTRY_POINT_NAMES = {
-    "main.py", "app.py", "__main__.py", "manage.py", "wsgi.py", "asgi.py",
-    "index.js", "index.ts", "app.js", "app.ts", "server.js", "server.ts",
-    "main.go", "main.rs", "Main.java", "Program.cs",
+    "main.py",
+    "app.py",
+    "__main__.py",
+    "manage.py",
+    "wsgi.py",
+    "asgi.py",
+    "index.js",
+    "index.ts",
+    "app.js",
+    "app.ts",
+    "server.js",
+    "server.ts",
+    "main.go",
+    "main.rs",
+    "Main.java",
+    "Program.cs",
 }
 
 # Patterns that indicate tech debt

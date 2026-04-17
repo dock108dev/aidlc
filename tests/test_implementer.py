@@ -81,21 +81,23 @@ class TestImplementer:
         config["max_implementation_cycles"] = 1
         # Add many issues
         for i in range(5):
-            state_with_issues.issues.append({
-                "id": f"ISSUE-{i+10:03d}",
-                "title": f"Issue {i+10}",
-                "description": "D",
-                "priority": "medium",
-                "labels": [],
-                "dependencies": [],
-                "acceptance_criteria": ["AC"],
-                "status": "pending",
-                "implementation_notes": "",
-                "verification_result": "",
-                "files_changed": [],
-                "attempt_count": 0,
-                "max_attempts": 3,
-            })
+            state_with_issues.issues.append(
+                {
+                    "id": f"ISSUE-{i + 10:03d}",
+                    "title": f"Issue {i + 10}",
+                    "description": "D",
+                    "priority": "medium",
+                    "labels": [],
+                    "dependencies": [],
+                    "acceptance_criteria": ["AC"],
+                    "status": "pending",
+                    "implementation_notes": "",
+                    "verification_result": "",
+                    "files_changed": [],
+                    "attempt_count": 0,
+                    "max_attempts": 3,
+                }
+            )
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -108,9 +110,27 @@ class TestSortIssues:
     def test_priority_ordering(self, config, cli, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "Low", "priority": "low", "dependencies": [], "status": "pending"},
-            {"id": "ISSUE-002", "title": "High", "priority": "high", "dependencies": [], "status": "pending"},
-            {"id": "ISSUE-003", "title": "Med", "priority": "medium", "dependencies": [], "status": "pending"},
+            {
+                "id": "ISSUE-001",
+                "title": "Low",
+                "priority": "low",
+                "dependencies": [],
+                "status": "pending",
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "High",
+                "priority": "high",
+                "dependencies": [],
+                "status": "pending",
+            },
+            {
+                "id": "ISSUE-003",
+                "title": "Med",
+                "priority": "medium",
+                "dependencies": [],
+                "status": "pending",
+            },
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -123,8 +143,20 @@ class TestSortIssues:
     def test_dependency_ordering(self, config, cli, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-002", "title": "Second", "priority": "high", "dependencies": ["ISSUE-001"], "status": "pending"},
-            {"id": "ISSUE-001", "title": "First", "priority": "high", "dependencies": [], "status": "pending"},
+            {
+                "id": "ISSUE-002",
+                "title": "Second",
+                "priority": "high",
+                "dependencies": ["ISSUE-001"],
+                "status": "pending",
+            },
+            {
+                "id": "ISSUE-001",
+                "title": "First",
+                "priority": "high",
+                "dependencies": [],
+                "status": "pending",
+            },
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -136,8 +168,20 @@ class TestSortIssues:
     def test_circular_dependency_detected(self, config, cli, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "priority": "high", "dependencies": ["ISSUE-002"], "status": "pending"},
-            {"id": "ISSUE-002", "title": "B", "priority": "high", "dependencies": ["ISSUE-001"], "status": "pending"},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "priority": "high",
+                "dependencies": ["ISSUE-002"],
+                "status": "pending",
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "priority": "high",
+                "dependencies": ["ISSUE-001"],
+                "status": "pending",
+            },
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -147,7 +191,9 @@ class TestSortIssues:
         assert len(state.issues) == 2
         deps = {d["id"]: d.get("dependencies", []) for d in state.issues}
         # At least one edge must be removed to break the cycle.
-        assert not ("ISSUE-001" in deps.get("ISSUE-002", []) and "ISSUE-002" in deps.get("ISSUE-001", []))
+        assert not (
+            "ISSUE-001" in deps.get("ISSUE-002", []) and "ISSUE-002" in deps.get("ISSUE-001", [])
+        )
 
 
 class TestDetectTestCommand:

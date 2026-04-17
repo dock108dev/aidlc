@@ -12,11 +12,11 @@ from typing import Optional
 # --- PLANNING SCHEMAS ---
 
 PLANNING_ACTION_TYPES = {
-    "create_issue",       # Create a new issue for implementation
-    "update_issue",       # Refine an existing issue
-    "create_doc",         # Create a design/planning document
-    "update_doc",         # Update an existing document
-    "research",           # Investigate a topic before creating issues
+    "create_issue",  # Create a new issue for implementation
+    "update_issue",  # Refine an existing issue
+    "create_doc",  # Create a design/planning document
+    "update_doc",  # Update an existing document
+    "research",  # Investigate a topic before creating issues
 }
 
 
@@ -153,9 +153,13 @@ class PlanningOutput:
             completion_reason=data.get("completion_reason", ""),
         )
 
-    def validate(self, is_finalization: bool = False, known_issue_ids: set | None = None) -> list[str]:
+    def validate(
+        self, is_finalization: bool = False, known_issue_ids: set | None = None
+    ) -> list[str]:
         errors = []
-        new_ids = [a.issue_id for a in self.actions if a.action_type == "create_issue" and a.issue_id]
+        new_ids = [
+            a.issue_id for a in self.actions if a.action_type == "create_issue" and a.issue_id
+        ]
         batch_ids = set(new_ids)
         seen = set()
         for iid in new_ids:
@@ -179,9 +183,11 @@ class PlanningOutput:
 
 # --- IMPLEMENTATION SCHEMAS ---
 
+
 @dataclass
 class ImplementationResult:
     """Result from Claude implementing a single issue."""
+
     issue_id: str
     success: bool
     summary: str = ""
@@ -203,6 +209,7 @@ class ImplementationResult:
 
 # --- PARSING ---
 
+
 def parse_json_output(raw_text: str) -> dict:
     """Extract JSON from Claude's response. Handles ```json blocks and raw JSON."""
     # Try ```json block first
@@ -215,9 +222,7 @@ def parse_json_output(raw_text: str) -> dict:
         if brace_match:
             json_str = brace_match.group(0)
         else:
-            raise ValueError(
-                f"No JSON found in response. Starts with: {raw_text[:200]}"
-            )
+            raise ValueError(f"No JSON found in response. Starts with: {raw_text[:200]}")
 
     try:
         return json.loads(json_str)

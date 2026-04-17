@@ -5,6 +5,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from .cli.config_cmd import run_config_wizard
 from .cli.display import (
     bold as _bold,
 )
@@ -32,9 +33,7 @@ from .cli.display import (
 from .cli.display import (
     yellow as _yellow,
 )
-from .cli.config_cmd import cmd_config_show, run_config_wizard
-from .cli.provider import cmd_provider, cmd_provider_auth
-from .cli.usage_cmd import cmd_usage
+from .cli.provider import cmd_provider_auth
 from .config import load_config, write_default_config
 from .state_manager import find_latest_run, load_state
 
@@ -63,9 +62,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
 
     if aidlc_dir.exists() and not args.with_docs:
         print(f"{_yellow('!')} .aidlc/ already exists at {project_root}")
-        print(
-            f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh."
-        )
+        print(f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh.")
         return
 
     if not aidlc_dir.exists():
@@ -99,9 +96,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
         template_dir = _get_template_dir()
         if not template_dir.exists():
             print(f"{_red('x')} Template directory not found at {template_dir}")
-            print(
-                "  This can happen if aidlc was installed from a wheel without package data."
-            )
+            print("  This can happen if aidlc was installed from a wheel without package data.")
             sys.exit(1)
 
         copied = 0
@@ -127,14 +122,10 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     print("Next steps:")
     if args.with_docs:
         print(f"  1. Edit {_cyan('ARCHITECTURE.md')} and {_cyan('DESIGN.md')} as needed")
-        print(
-            f"  2. Optionally edit {_cyan('ROADMAP.md')} if you want phase-based planning"
-        )
+        print(f"  2. Optionally edit {_cyan('ROADMAP.md')} if you want phase-based planning")
         print(f"  3. Run {_cyan('aidlc run')}")
     else:
-        print(
-            "  1. Add architecture/design context docs (README.md, ARCHITECTURE.md, DESIGN.md)"
-        )
+        print("  1. Add architecture/design context docs (README.md, ARCHITECTURE.md, DESIGN.md)")
         print(f"     Or run {_cyan('aidlc init --with-docs')} to copy templates")
         print("  2. ROADMAP.md is optional and can be generated/refined later")
         print(f"  3. Run {_cyan('aidlc run')}")
@@ -179,7 +170,13 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
 
             if not health.is_usable:
                 try:
-                    raw = input(f"\n  {_yellow('!')} {pname} is not authenticated. Run auth now? (y/n) [y]: ").strip().lower()
+                    raw = (
+                        input(
+                            f"\n  {_yellow('!')} {pname} is not authenticated. Run auth now? (y/n) [y]: "
+                        )
+                        .strip()
+                        .lower()
+                    )
                 except EOFError:
                     raw = "n"
                 if raw in ("", "y", "yes"):
@@ -243,7 +240,9 @@ def cmd_audit(args: argparse.Namespace, version: str) -> None:
     else:
         print(f"  {_green('No conflicts')} with existing docs.")
     print()
-    print(f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first.")
+    print(
+        f"Next: run {_cyan('aidlc run')} to plan and implement, or {_cyan('aidlc run --audit')} to re-audit first."
+    )
 
 
 def cmd_improve(args: argparse.Namespace, version: str) -> None:
@@ -336,6 +335,7 @@ def cmd_finalize(args: argparse.Namespace, version: str) -> None:
     state = load_state(run_dir)
     logger = setup_logger(state.run_id, run_dir, verbose=args.verbose)
     from .routing import ProviderRouter
+
     cli = ProviderRouter(config, logger)
     if not cli.check_available() and not config.get("dry_run"):
         print(f"{_red('x')} Claude CLI not available.")
@@ -398,10 +398,14 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     print(f"  {_bold('Phase:')}     {state.phase.value}")
     print(f"  {_bold('Planning:')}  {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
     print(f"  {_bold('Time:')}      {elapsed_h:.1f}h Claude CLI, {console_h:.1f}h console")
-    print(f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed")
+    print(
+        f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed"
+    )
 
     if state.audit_depth != "none":
-        print(f"  {_bold('Audit:')}     {state.audit_depth} ({'complete' if state.audit_completed else 'incomplete'})")
+        print(
+            f"  {_bold('Audit:')}     {state.audit_depth} ({'complete' if state.audit_completed else 'incomplete'})"
+        )
     if state.stop_reason:
         print(f"  {_bold('Stopped:')}   {state.stop_reason}")
 
@@ -428,8 +432,9 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
 # Accounts commands (delegate to aidlc.cli.accounts)
 # ---------------------------------------------------------------------------
 
+
 def cmd_accounts(args: argparse.Namespace, version: str) -> None:
     """Manage provider accounts."""
     from .cli.accounts import cmd_accounts as _cmd_accounts
-    return _cmd_accounts(args, version)
 
+    return _cmd_accounts(args, version)

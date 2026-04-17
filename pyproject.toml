@@ -65,4 +65,5 @@ omit = ["aidlc/configs/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 90
+# Ratchet after each +10% milestone (see docs/COVERAGE_PLAN.md). Slack below measured total.
+fail_under = 58

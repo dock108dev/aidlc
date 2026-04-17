@@ -1,0 +1,102 @@
+# Continuous integration: lint, multi-version tests, coverage gate, packaging smoke build.
+# Coverage fail_under is defined in pyproject.toml ([tool.coverage.report]); raise it toward 90% over time.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff (lint + format)
+        run: |
+          ruff check aidlc tests
+          ruff format --check aidlc tests
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package + dev tools
+        run: pip install -e ".[dev]"
+
+      - name: Run tests with coverage (3.12 only)
+        if: matrix.python-version == '3.12'
+        run: pytest --cov=aidlc --cov-report=term --cov-report=xml
+
+      - name: Run tests (no coverage)
+        if: matrix.python-version != '3.12'
+        run: pytest
+
+      - name: Upload coverage XML
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+
+  build:
+    name: Build sdist/wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install build backend
+        run: pip install build
+
+      - name: Build distributions
+        run: python -m build
+
+      - name: Smoke-install wheel
+        run: |
+          pip install dist/*.whl
+          aidlc --help
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*

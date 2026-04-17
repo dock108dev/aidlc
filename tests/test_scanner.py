@@ -1,6 +1,5 @@
 """Tests for aidlc.scanner module."""
 
-
 import pytest
 from aidlc.scanner import DEFAULT_MAX_DOC_CHARS, ProjectScanner
 
@@ -25,8 +24,14 @@ def config():
     return {
         "doc_scan_patterns": ["**/*.md", "**/*.txt", "**/*.rst"],
         "doc_scan_exclude": [
-            "node_modules/**", ".git/**", "venv/**", ".venv/**",
-            "__pycache__/**", ".aidlc/**", "dist/**", "build/**",
+            "node_modules/**",
+            ".git/**",
+            "venv/**",
+            ".venv/**",
+            "__pycache__/**",
+            ".aidlc/**",
+            "dist/**",
+            "build/**",
         ],
         "max_doc_chars": DEFAULT_MAX_DOC_CHARS,
         "max_context_chars": 80000,

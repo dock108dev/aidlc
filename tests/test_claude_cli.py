@@ -198,7 +198,9 @@ class TestExecutePrompt:
         assert result["usage"]["web_fetch_requests"] == 1
 
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_falls_back_to_raw_output_when_json_parse_fails(self, mock_popen, base_config, logger, tmp_path):
+    def test_falls_back_to_raw_output_when_json_parse_fails(
+        self, mock_popen, base_config, logger, tmp_path
+    ):
         mock_popen.return_value = _mock_popen_success("non-json response")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
@@ -228,7 +230,9 @@ class TestExecutePrompt:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_terminates_process(self, mock_popen, mock_time, base_config, logger, tmp_path):
+    def test_hard_timeout_terminates_process(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
         proc = MagicMock()
         proc.poll.side_effect = [None, 124]
         proc.wait.side_effect = [
@@ -259,7 +263,9 @@ class TestExecutePrompt:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_graceful_exit_keeps_success(self, mock_popen, mock_time, base_config, logger, tmp_path):
+    def test_hard_timeout_graceful_exit_keeps_success(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
         proc = MagicMock()
         proc.poll.side_effect = [None, 0]
         proc.wait.side_effect = [

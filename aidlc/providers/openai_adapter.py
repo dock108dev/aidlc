@@ -109,7 +109,9 @@ class OpenAIAdapter(ProviderAdapter):
             )
             if timed_out:
                 return self._failure_result(
-                    model, account_id, duration,
+                    model,
+                    account_id,
+                    duration,
                     error="OpenAI CLI timed out",
                     failure_type="timeout",
                 )
@@ -133,18 +135,24 @@ class OpenAIAdapter(ProviderAdapter):
                 }
             else:
                 err = stderr.strip() or "OpenAI CLI returned non-zero exit code"
-                failure_type = "transient" if any(
-                    kw in err.lower() for kw in ("rate limit", "429", "503", "timeout")
-                ) else "issue"
+                failure_type = (
+                    "transient"
+                    if any(kw in err.lower() for kw in ("rate limit", "429", "503", "timeout"))
+                    else "issue"
+                )
                 return self._failure_result(
-                    model, account_id, duration,
+                    model,
+                    account_id,
+                    duration,
                     error=err,
                     failure_type=failure_type,
                 )
 
         except FileNotFoundError:
             return self._failure_result(
-                model, account_id, 0.0,
+                model,
+                account_id,
+                0.0,
                 error=f"OpenAI CLI not found at '{self.cli_command}'. Install with: npm install -g @openai/codex",
                 failure_type="provider_error",
             )

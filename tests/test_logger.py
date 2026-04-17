@@ -28,7 +28,8 @@ class TestSetupLogger:
         logger = setup_logger("test_verbose", tmp_path, verbose=True)
         # Check console handler is DEBUG level
         console_handlers = [
-            h for h in logger.handlers
+            h
+            for h in logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1
@@ -37,7 +38,8 @@ class TestSetupLogger:
     def test_normal_mode(self, tmp_path):
         logger = setup_logger("test_normal", tmp_path, verbose=False)
         console_handlers = [
-            h for h in logger.handlers
+            h
+            for h in logger.handlers
             if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1

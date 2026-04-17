@@ -15,6 +15,7 @@ from .display import bold, cyan, dim, green, red, yellow
 def cmd_accounts(args: argparse.Namespace, version: str) -> None:
     """Manage provider accounts."""
     from .display import print_banner
+
     subcmd = getattr(args, "accounts_cmd", "list")
     print_banner(version)
 
@@ -46,13 +47,21 @@ def list_accounts(manager: AccountManager) -> None:
     print()
     for acc in accounts:
         health_icon = (
-            green("●") if acc.health_status == "healthy"
-            else yellow("●") if acc.health_status in ("limited", "rate_limited", "unknown", "unchecked")
+            green("●")
+            if acc.health_status == "healthy"
+            else yellow("●")
+            if acc.health_status in ("limited", "rate_limited", "unknown", "unchecked")
             else red("●")
         )
-        auth_label = acc.auth_state.value if hasattr(acc.auth_state, "value") else str(acc.auth_state)
+        auth_label = (
+            acc.auth_state.value if hasattr(acc.auth_state, "value") else str(acc.auth_state)
+        )
         enabled_label = green("enabled") if acc.enabled else dim("disabled")
-        tier = acc.membership_tier.value if hasattr(acc.membership_tier, "value") else str(acc.membership_tier)
+        tier = (
+            acc.membership_tier.value
+            if hasattr(acc.membership_tier, "value")
+            else str(acc.membership_tier)
+        )
         tags = ", ".join(acc.role_tags) if acc.role_tags else dim("no tags")
         print(f"  {health_icon} {bold(acc.account_id)}")
         print(f"     Provider:  {acc.provider_id}")
@@ -130,8 +139,10 @@ def validate_account(args: argparse.Namespace, manager: AccountManager) -> None:
         adapter = router._adapters.get(account.provider_id)
         updated = manager.validate(account_id, adapter=adapter)
         health_label = (
-            green(updated.health_status) if updated.health_status == "healthy"
-            else yellow(updated.health_status) if updated.health_status in ("limited", "unknown")
+            green(updated.health_status)
+            if updated.health_status == "healthy"
+            else yellow(updated.health_status)
+            if updated.health_status in ("limited", "unknown")
             else red(updated.health_status)
         )
         print(f"  {bold(account_id)}: {health_label}  auth={updated.auth_state.value}")

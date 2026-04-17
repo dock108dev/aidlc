@@ -85,9 +85,7 @@ class Implementer:
             default_labels,
         )
         self.complexity_labels = {
-            str(label).strip().lower()
-            for label in raw_complexity_labels
-            if str(label).strip()
+            str(label).strip().lower() for label in raw_complexity_labels if str(label).strip()
         }
         self.issues_dir = Path(config["_issues_dir"])
 
@@ -166,7 +164,8 @@ class Implementer:
             if not pending:
                 # Check if we're truly stuck (all remaining are blocked/exhausted)
                 blocked_count = sum(
-                    1 for d in self.state.issues
+                    1
+                    for d in self.state.issues
                     if d.get("status") in ("pending", "blocked", "failed")
                 )
                 if blocked_count > 0:
@@ -209,7 +208,9 @@ class Implementer:
                         break
 
             if should_stop_for_provider_availability(self.state.stop_reason):
-                self.logger.error("Stopping implementation loop due to provider/model availability.")
+                self.logger.error(
+                    "Stopping implementation loop due to provider/model availability."
+                )
                 break
 
             save_state(self.state, self.run_dir)
@@ -406,7 +407,9 @@ class Implementer:
             issue.files_changed = impl_result.files_changed
             issue.implementation_notes += f"\nAttempt {issue.attempt_count}: {impl_result.summary}"
             self.state.issues_implemented += 1
-            self.logger.info(f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)")
+            self.logger.info(
+                f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)"
+            )
         else:
             sampled_notes = sample_error_payload(impl_result.notes)
             issue.status = IssueStatus.FAILED
@@ -560,9 +563,7 @@ class Implementer:
 
     def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
-        return get_changed_files(
-            self.project_root, self.state, self.logger, with_status
-        )
+        return get_changed_files(self.project_root, self.state, self.logger, with_status)
 
     def _detect_test_command(self) -> str | None:
         return detect_test_command(self.project_root)

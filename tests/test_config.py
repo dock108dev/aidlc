@@ -31,10 +31,14 @@ class TestLoadConfig:
         aidlc_dir = tmp_path / ".aidlc"
         aidlc_dir.mkdir()
         config_file = aidlc_dir / "config.json"
-        config_file.write_text(json.dumps({
-            "plan_budget_hours": 8,
-            "providers": {"claude": {"default_model": "opus"}},
-        }))
+        config_file.write_text(
+            json.dumps(
+                {
+                    "plan_budget_hours": 8,
+                    "providers": {"claude": {"default_model": "opus"}},
+                }
+            )
+        )
         config = load_config(project_root=str(tmp_path))
         assert config["plan_budget_hours"] == 8
         assert config["providers"]["claude"]["default_model"] == "opus"
@@ -62,28 +66,46 @@ class TestLoadConfig:
     def test_defaults_include_new_keys(self):
         """Verify all expected config keys exist in DEFAULTS."""
         expected_keys = [
-            "runtime_profile", "plan_budget_hours", "checkpoint_interval_minutes", "dry_run",
+            "runtime_profile",
+            "plan_budget_hours",
+            "checkpoint_interval_minutes",
+            "dry_run",
             "providers",
             "routing_rate_limit_cooldown_seconds",
             "claude_long_run_warn_seconds",
-            "claude_hard_timeout_seconds", "claude_timeout_grace_seconds",
-            "retry_max_attempts", "retry_base_delay_seconds", "retry_max_delay_seconds",
-            "retry_backoff_factor", "max_consecutive_failures",
-            "finalization_budget_percent", "planning_finalization_grace_cycles",
+            "claude_hard_timeout_seconds",
+            "claude_timeout_grace_seconds",
+            "retry_max_attempts",
+            "retry_base_delay_seconds",
+            "retry_max_delay_seconds",
+            "retry_backoff_factor",
+            "max_consecutive_failures",
+            "finalization_budget_percent",
+            "planning_finalization_grace_cycles",
             "max_implementation_attempts",
             "implementation_escalate_on_retry",
             "implementation_complexity_acceptance_criteria_threshold",
             "implementation_complexity_dependencies_threshold",
             "implementation_complexity_description_chars_threshold",
             "implementation_complexity_labels",
-            "max_planning_cycles", "max_implementation_cycles",
-            "run_tests_command", "test_timeout_seconds",
-            "max_doc_chars", "max_context_chars", "max_implementation_context_chars",
-            "planning_issue_index_max_items", "planning_issue_index_include_all_until",
+            "max_planning_cycles",
+            "max_implementation_cycles",
+            "run_tests_command",
+            "test_timeout_seconds",
+            "max_doc_chars",
+            "max_context_chars",
+            "max_implementation_context_chars",
+            "planning_issue_index_max_items",
+            "planning_issue_index_include_all_until",
             "planning_last_cycle_notes_max_chars",
-            "doc_scan_patterns", "doc_scan_exclude", "implementation_allowed_paths",
-            "strict_validation", "validation_allow_no_tests", "fail_on_validation_incomplete",
-            "fail_on_final_test_failure", "strict_change_detection",
+            "doc_scan_patterns",
+            "doc_scan_exclude",
+            "implementation_allowed_paths",
+            "strict_validation",
+            "validation_allow_no_tests",
+            "fail_on_validation_incomplete",
+            "fail_on_final_test_failure",
+            "strict_change_detection",
             "planning_action_failure_ratio_threshold",
             "autosync_enabled",
             "autosync_every_implementation_cycles",
@@ -94,11 +116,16 @@ class TestLoadConfig:
             "autosync_runs_to_keep",
             "autosync_keep_claude_outputs",
             "stop_on_all_models_token_exhausted",
-            "audit_runtime_enabled", "audit_runtime_timeout_seconds",
-            "audit_coverage_threshold_percent", "audit_playwright_headless",
-            "audit_playwright_command_override", "audit_braindump_enabled",
-            "audit_braindump_path", "audit_planning_workload_stop_ratio",
-            "audit_research_estimate_default_hours", "audit_issue_estimate_defaults",
+            "audit_runtime_enabled",
+            "audit_runtime_timeout_seconds",
+            "audit_coverage_threshold_percent",
+            "audit_playwright_headless",
+            "audit_playwright_command_override",
+            "audit_braindump_enabled",
+            "audit_braindump_path",
+            "audit_planning_workload_stop_ratio",
+            "audit_research_estimate_default_hours",
+            "audit_issue_estimate_defaults",
             "audit_include_deferred_backlog",
         ]
         for key in expected_keys:
@@ -135,11 +162,15 @@ class TestLoadConfig:
     def test_production_profile_respects_explicit_override(self, tmp_path):
         aidlc_dir = tmp_path / ".aidlc"
         aidlc_dir.mkdir()
-        (aidlc_dir / "config.json").write_text(json.dumps({
-            "runtime_profile": "production",
-            "strict_validation": False,
-            "claude_hard_timeout_seconds": 120,
-        }))
+        (aidlc_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "runtime_profile": "production",
+                    "strict_validation": False,
+                    "claude_hard_timeout_seconds": 120,
+                }
+            )
+        )
         config = load_config(project_root=str(tmp_path))
         assert config["strict_validation"] is False
         assert config["claude_hard_timeout_seconds"] == 120

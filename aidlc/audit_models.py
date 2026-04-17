@@ -7,6 +7,7 @@ from typing import Optional
 @dataclass
 class ModuleInfo:
     """Information about a source code module/package."""
+
     name: str
     path: str
     file_count: int = 0
@@ -39,6 +40,7 @@ class ModuleInfo:
 @dataclass
 class TechDebtItem:
     """A tech debt indicator found in source code."""
+
     file: str
     line: int
     type: str  # todo, fixme, deprecated, large_file, hack
@@ -65,6 +67,7 @@ class TechDebtItem:
 @dataclass
 class CoverageInfo:
     """Assessment of test coverage in the project."""
+
     test_files: int = 0
     test_functions: int = 0
     source_files: int = 0
@@ -95,10 +98,11 @@ class CoverageInfo:
 @dataclass
 class DocGap:
     """A knowledge gap or placeholder found in documentation."""
+
     doc_path: str
     line: int
-    pattern: str       # what matched (e.g. "TBD", "{placeholder}")
-    text: str          # the line text (truncated)
+    pattern: str  # what matched (e.g. "TBD", "{placeholder}")
+    text: str  # the line text (truncated)
     severity: str = "warning"  # critical, warning, info
 
     def to_dict(self) -> dict:
@@ -124,6 +128,7 @@ class DocGap:
 @dataclass
 class AuditConflict:
     """A conflict between audit findings and user-provided documentation."""
+
     doc_path: str
     field: str
     audit_value: str
@@ -153,6 +158,7 @@ class AuditConflict:
 @dataclass
 class AuditResult:
     """Complete result of a code audit."""
+
     depth: str = "quick"  # quick, full
     project_type: str = "unknown"
     frameworks: list = field(default_factory=list)
@@ -184,8 +190,12 @@ class AuditResult:
             "source_stats": self.source_stats,
             "features": self.features,
             "test_coverage": self.test_coverage.to_dict() if self.test_coverage else None,
-            "tech_debt": [t.to_dict() if isinstance(t, TechDebtItem) else t for t in (self.tech_debt or [])],
-            "conflicts": [c.to_dict() if isinstance(c, AuditConflict) else c for c in self.conflicts],
+            "tech_debt": [
+                t.to_dict() if isinstance(t, TechDebtItem) else t for t in (self.tech_debt or [])
+            ],
+            "conflicts": [
+                c.to_dict() if isinstance(c, AuditConflict) else c for c in self.conflicts
+            ],
             "generated_docs": self.generated_docs,
             "degraded_stats": self.degraded_stats,
             "runtime_checks": self.runtime_checks,
@@ -208,16 +218,19 @@ class AuditResult:
             braindump_summary=data.get("braindump_summary"),
         )
         result.modules = [
-            ModuleInfo.from_dict(m) if isinstance(m, dict) else m
-            for m in data.get("modules", [])
+            ModuleInfo.from_dict(m) if isinstance(m, dict) else m for m in data.get("modules", [])
         ]
         tc = data.get("test_coverage")
         if tc:
             result.test_coverage = CoverageInfo.from_dict(tc) if isinstance(tc, dict) else tc
-        result.tech_debt = [
-            TechDebtItem.from_dict(t) if isinstance(t, dict) else t
-            for t in data.get("tech_debt", [])
-        ] if data.get("tech_debt") is not None else None
+        result.tech_debt = (
+            [
+                TechDebtItem.from_dict(t) if isinstance(t, dict) else t
+                for t in data.get("tech_debt", [])
+            ]
+            if data.get("tech_debt") is not None
+            else None
+        )
         result.conflicts = [
             AuditConflict.from_dict(c) if isinstance(c, dict) else c
             for c in data.get("conflicts", [])

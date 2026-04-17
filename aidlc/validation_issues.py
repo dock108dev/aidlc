@@ -77,13 +77,15 @@ def _build_description(failure: FailureReport) -> str:
     if failure.stack_trace:
         parts.append(f"\n**Stack trace:**\n```\n{failure.stack_trace}\n```")
 
-    parts.extend([
-        "",
-        "**Instructions:**",
-        "- Read the test to understand what it expects",
-        "- Read the implementation code at the location above",
-        "- Fix the root cause — do not modify the test unless the test itself is wrong",
-        "- Ensure the fix doesn't break other tests",
-    ])
+    parts.extend(
+        [
+            "",
+            "**Instructions:**",
+            "- Read the test to understand what it expects",
+            "- Read the implementation code at the location above",
+            "- Fix the root cause — do not modify the test unless the test itself is wrong",
+            "- Ensure the fix doesn't break other tests",
+        ]
+    )
 
     return "\n".join(parts)

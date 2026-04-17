@@ -66,11 +66,19 @@ def make_cli_fail():
 def make_state_with_issue(issue_id="ISSUE-001", **overrides):
     s = RunState(run_id="test", config_name="default")
     issue_data = {
-        "id": issue_id, "title": "Test", "description": "D",
-        "priority": "high", "labels": [], "dependencies": [],
-        "acceptance_criteria": ["AC1"], "status": "pending",
-        "implementation_notes": "", "verification_result": "",
-        "files_changed": [], "attempt_count": 0, "max_attempts": 3,
+        "id": issue_id,
+        "title": "Test",
+        "description": "D",
+        "priority": "high",
+        "labels": [],
+        "dependencies": [],
+        "acceptance_criteria": ["AC1"],
+        "status": "pending",
+        "implementation_notes": "",
+        "verification_result": "",
+        "files_changed": [],
+        "attempt_count": 0,
+        "max_attempts": 3,
     }
     issue_data.update(overrides)
     s.issues = [issue_data]
@@ -82,11 +90,16 @@ class TestImplementIssueSuccess:
     @patch("aidlc.implementer.subprocess.run")
     def test_uses_standard_implementation_routing(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -103,11 +116,16 @@ class TestImplementIssueSuccess:
     def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
         config["implementation_complexity_acceptance_criteria_threshold"] = 2
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = make_state_with_issue(acceptance_criteria=["AC1", "AC2", "AC3"])
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -122,11 +140,16 @@ class TestImplementIssueSuccess:
     def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
         config["implementation_escalate_on_retry"] = True
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = make_state_with_issue(attempt_count=1)
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -140,11 +163,16 @@ class TestImplementIssueSuccess:
     @patch("aidlc.implementer.subprocess.run")
     def test_successful_with_json_result(self, mock_subproc, config, logger, tmp_path):
         mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -161,9 +189,12 @@ class TestImplementIssueSuccess:
         mock_subproc.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": "I made the changes to main.py",
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": "I made the changes to main.py",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
@@ -180,9 +211,12 @@ class TestImplementIssueSuccess:
         mock_subproc.return_value = MagicMock(returncode=0, stdout="")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": "I thought about it but made no changes",
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": "I thought about it but made no changes",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
@@ -218,11 +252,16 @@ class TestRunWithTests:
             MagicMock(returncode=0, stdout="a.py\n"),  # git diff (for validation again)
         ]
         config["run_tests_command"] = "echo pass"
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -244,14 +283,19 @@ class TestRunWithTests:
         cli_mock.execute_prompt.side_effect = [
             {
                 "success": True,
-                "output": f'```json\n{json.dumps({"issue_id": "ISSUE-001", "success": True, "summary": "Done", "files_changed": ["a.py"], "tests_passed": True, "notes": ""})}\n```',
-                "error": None, "failure_type": None,
-                "duration_seconds": 1.0, "retries": 0,
+                "output": f"```json\n{json.dumps({'issue_id': 'ISSUE-001', 'success': True, 'summary': 'Done', 'files_changed': ['a.py'], 'tests_passed': True, 'notes': ''})}\n```",
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
             },
             {
-                "success": False, "output": "",
-                "error": "fail", "failure_type": "issue",
-                "duration_seconds": 1.0, "retries": 0,
+                "success": False,
+                "output": "",
+                "error": "fail",
+                "failure_type": "issue",
+                "duration_seconds": 1.0,
+                "retries": 0,
             },
         ]
         state = make_state_with_issue()
@@ -350,11 +394,21 @@ class TestVerificationPass:
     def test_marks_implemented_as_verified(self, config, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")
         state.issues = [
-            {"id": "ISSUE-001", "title": "A", "description": "D", "priority": "high",
-             "labels": [], "dependencies": [], "acceptance_criteria": [],
-             "status": "implemented", "implementation_notes": "",
-             "verification_result": "", "files_changed": [],
-             "attempt_count": 1, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "description": "D",
+                "priority": "high",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": [],
+                "status": "implemented",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -374,14 +428,23 @@ class TestConsecutiveFailures:
         state = make_state_with_issue()
         # Add more issues so we don't exhaust immediately
         for i in range(3):
-            state.issues.append({
-                "id": f"ISSUE-{i + 10:03d}", "title": f"Issue {i}",
-                "description": "D", "priority": "medium", "labels": [],
-                "dependencies": [], "acceptance_criteria": ["AC"],
-                "status": "pending", "implementation_notes": "",
-                "verification_result": "", "files_changed": [],
-                "attempt_count": 0, "max_attempts": 3,
-            })
+            state.issues.append(
+                {
+                    "id": f"ISSUE-{i + 10:03d}",
+                    "title": f"Issue {i}",
+                    "description": "D",
+                    "priority": "medium",
+                    "labels": [],
+                    "dependencies": [],
+                    "acceptance_criteria": ["AC"],
+                    "status": "pending",
+                    "implementation_notes": "",
+                    "verification_result": "",
+                    "files_changed": [],
+                    "attempt_count": 0,
+                    "max_attempts": 3,
+                }
+            )
         state.total_issues = len(state.issues)
 
         run_dir = tmp_path / "run"
@@ -396,19 +459,32 @@ class TestConsecutiveFailures:
 class TestBlockedIssues:
     def test_run_stops_when_bypass_disabled(self, config, logger, tmp_path):
         config["max_implementation_cycles"] = 1
-        cli = make_cli_success({
-            "issue_id": "ISSUE-001", "success": True,
-            "summary": "Done", "files_changed": ["a.py"],
-            "tests_passed": True, "notes": "",
-        })
+        cli = make_cli_success(
+            {
+                "issue_id": "ISSUE-001",
+                "success": True,
+                "summary": "Done",
+                "files_changed": ["a.py"],
+                "tests_passed": True,
+                "notes": "",
+            }
+        )
         state = RunState(run_id="t", config_name="c")
         state.issues = [
             {
-                "id": "ISSUE-001", "title": "Blocked", "description": "D",
-                "priority": "high", "labels": [], "dependencies": ["ISSUE-999"],
-                "acceptance_criteria": ["AC1"], "status": "pending",
-                "implementation_notes": "", "verification_result": "",
-                "files_changed": [], "attempt_count": 0, "max_attempts": 3,
+                "id": "ISSUE-001",
+                "title": "Blocked",
+                "description": "D",
+                "priority": "high",
+                "labels": [],
+                "dependencies": ["ISSUE-999"],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
             }
         ]
         state.total_issues = 1
@@ -431,17 +507,19 @@ class TestFixFailingTests:
         ]
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": True, "output": "Fixed",
-            "error": None, "failure_type": None,
-            "duration_seconds": 1.0, "retries": 0,
+            "success": True,
+            "output": "Fixed",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = "pytest"
-        issue = Issue(id="ISSUE-001", title="T", description="D",
-                      acceptance_criteria=["AC1"])
+        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
         result = impl._fix_failing_tests(issue, model_override="opus")
         assert result is True
         kwargs = cli.execute_prompt.call_args.kwargs
@@ -453,17 +531,19 @@ class TestFixFailingTests:
         mock_run.return_value = MagicMock(returncode=1, stdout="FAILED", stderr="")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
-            "success": False, "output": "",
-            "error": "fail", "failure_type": "issue",
-            "duration_seconds": 1.0, "retries": 0,
+            "success": False,
+            "output": "",
+            "error": "fail",
+            "failure_type": "issue",
+            "duration_seconds": 1.0,
+            "retries": 0,
         }
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = "pytest"
-        issue = Issue(id="ISSUE-001", title="T", description="D",
-                      acceptance_criteria=["AC1"])
+        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
         result = impl._fix_failing_tests(issue)
         assert result is False
 
@@ -559,8 +639,7 @@ class TestPreviousAttemptInPrompt:
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, MagicMock(), "long ctx", logger)
-        issue = Issue(id="ISSUE-001", title="T", description="D",
-                      acceptance_criteria=["AC1"])
+        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
         issue.attempt_count = 2
         issue.implementation_notes = "Previous attempt failed: syntax error"
         prompt = impl._build_implementation_prompt(issue)

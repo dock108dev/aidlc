@@ -83,7 +83,9 @@ class AccountManager:
         """Register a new account. Raises ValueError if ID already exists."""
         accounts = self._load_all()
         if account.account_id in accounts:
-            raise ValueError(f"Account '{account.account_id}' already exists. Use update() to modify.")
+            raise ValueError(
+                f"Account '{account.account_id}' already exists. Use update() to modify."
+            )
         accounts[account.account_id] = account.to_dict()
         self._save_all(accounts)
         self._log.info(f"Account added: {account.account_id} ({account.provider_id})")

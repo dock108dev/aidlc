@@ -54,7 +54,13 @@ def test_passes_explicit_model_when_configured(mock_popen, tmp_path):
 
     cmd = mock_popen.call_args[0][0]
     assert cmd == [
-        "copilot", "-p", "hello", "--allow-all", "--no-ask-user", "--model", "gpt-4.1",
+        "copilot",
+        "-p",
+        "hello",
+        "--allow-all",
+        "--no-ask-user",
+        "--model",
+        "gpt-4.1",
     ]
     assert result["success"] is True
     assert result["model_used"] == "gpt-4.1"

@@ -110,7 +110,9 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
 
     state.project_context = context[:2000]  # Save summary to state
 
-    logger.info(f"Scanned {scan_result['total_docs']} docs, project type: {scan_result['project_type']}")
+    logger.info(
+        f"Scanned {scan_result['total_docs']} docs, project type: {scan_result['project_type']}"
+    )
 
     existing = scan_result.get("existing_issues", [])
     if existing:
@@ -176,7 +178,9 @@ def run_full(
     if not cli.check_available():
         logger.warning("No AI provider available.")
         if not config.get("dry_run"):
-            logger.error("Install a supported provider CLI (claude, copilot, codex) or use --dry-run. Exiting.")
+            logger.error(
+                "Install a supported provider CLI (claude, copilot, codex) or use --dry-run. Exiting."
+            )
             lock.release()
             sys.exit(1)
 
@@ -226,6 +230,7 @@ def run_full(
         doc_gaps = []
         if config.get("doc_gap_detection_enabled", True) and not implement_only:
             from .doc_gap_detector import detect_doc_gaps
+
             doc_gaps = detect_doc_gaps(Path(config["_project_root"]), config)
             if doc_gaps:
                 critical = sum(1 for g in doc_gaps if g.severity == "critical")
@@ -236,10 +241,20 @@ def run_full(
 
         # PLAN
         if not implement_only:
-            if state.phase in (RunPhase.INIT, RunPhase.SCANNING, RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION):
+            if state.phase in (
+                RunPhase.INIT,
+                RunPhase.SCANNING,
+                RunPhase.PLANNING,
+                RunPhase.PLAN_FINALIZATION,
+            ):
                 cli.set_phase("planning")
                 planner = Planner(
-                    state, run_dir, config, cli, project_context, logger,
+                    state,
+                    run_dir,
+                    config,
+                    cli,
+                    project_context,
+                    logger,
                     doc_gaps=doc_gaps,
                     doc_files=scan_result.get("doc_files", []),
                     existing_issues=scan_result.get("existing_issues", []),
@@ -296,9 +311,7 @@ def run_full(
                 )
                 if config.get("strict_validation") or config.get("fail_on_validation_incomplete"):
                     state.status = RunStatus.PAUSED
-                    state.stop_reason = (
-                        "Validation incomplete under strict validation settings"
-                    )
+                    state.stop_reason = "Validation incomplete under strict validation settings"
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
                     return

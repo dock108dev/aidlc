@@ -17,11 +17,12 @@ class MembershipTier(Enum):
 
     Used by the routing engine to decide when to use premium vs. standard accounts.
     """
+
     FREE = "free"
-    STANDARD = "standard"   # e.g. $20/mo plan
-    PRO = "pro"             # e.g. $100+/mo plan
-    PREMIUM = "premium"     # e.g. $200+/mo or enterprise
-    API = "api"             # pay-as-you-go API key
+    STANDARD = "standard"  # e.g. $20/mo plan
+    PRO = "pro"  # e.g. $100+/mo plan
+    PREMIUM = "premium"  # e.g. $200+/mo or enterprise
+    API = "api"  # pay-as-you-go API key
     UNKNOWN = "unknown"
 
 
@@ -35,19 +36,25 @@ ROLE_CHEAP = "cheap"
 ROLE_EXPERIMENTAL = "experimental"
 
 ALL_ROLE_TAGS = {
-    ROLE_PRIMARY, ROLE_BACKUP, ROLE_OVERFLOW,
-    ROLE_PREMIUM, ROLE_RESERVE, ROLE_CHEAP, ROLE_EXPERIMENTAL,
+    ROLE_PRIMARY,
+    ROLE_BACKUP,
+    ROLE_OVERFLOW,
+    ROLE_PREMIUM,
+    ROLE_RESERVE,
+    ROLE_CHEAP,
+    ROLE_EXPERIMENTAL,
 }
 
 
 @dataclass
 class Account:
     """A managed provider account with metadata for routing decisions."""
+
     account_id: str
     provider_id: str
     display_name: str = ""
     auth_state: AuthState = AuthState.UNKNOWN
-    health_status: str = "unknown"       # from HealthStatus.value
+    health_status: str = "unknown"  # from HealthStatus.value
     membership_tier: MembershipTier = MembershipTier.UNKNOWN
     role_tags: list[str] = field(default_factory=list)
     enabled: bool = True
@@ -76,9 +83,7 @@ class Account:
 
     @property
     def is_usable(self) -> bool:
-        return self.enabled and self.auth_state in (
-            AuthState.CONNECTED, AuthState.UNKNOWN
-        )
+        return self.enabled and self.auth_state in (AuthState.CONNECTED, AuthState.UNKNOWN)
 
     def to_dict(self) -> dict:
         return {

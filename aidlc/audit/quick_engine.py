@@ -203,7 +203,11 @@ class QuickAuditEngine:
                 entry_points.append(f"cmd/{name}")
 
         for directory in self.project_root.iterdir():
-            if directory.is_dir() and not directory.name.startswith(".") and directory.name not in EXCLUDE_DIRS:
+            if (
+                directory.is_dir()
+                and not directory.name.startswith(".")
+                and directory.name not in EXCLUDE_DIRS
+            ):
                 main_file = directory / "__main__.py"
                 if main_file.exists():
                     rel = str(main_file.relative_to(self.project_root))
@@ -224,7 +228,9 @@ class QuickAuditEngine:
                             if line.strip().startswith("["):
                                 break
                             if "=" in line:
-                                entry_points.append(f"pyproject.toml:[project.scripts] {line.strip()}")
+                                entry_points.append(
+                                    f"pyproject.toml:[project.scripts] {line.strip()}"
+                                )
             except OSError:
                 self.auditor._mark_degraded("dependency_parse_errors")
 
@@ -421,7 +427,9 @@ class QuickAuditEngine:
                     except OSError:
                         self.auditor._mark_degraded("source_read_errors")
 
-        if (self.project_root / "pytest.ini").exists() or (self.project_root / "conftest.py").exists():
+        if (self.project_root / "pytest.ini").exists() or (
+            self.project_root / "conftest.py"
+        ).exists():
             test_framework = "pytest"
         elif (self.project_root / "jest.config.js").exists() or (
             self.project_root / "jest.config.ts"

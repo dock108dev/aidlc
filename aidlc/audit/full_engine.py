@@ -121,7 +121,9 @@ class FullAuditEngine:
                     continue
         return "\n".join(parts)
 
-    def inventory_features_with_claude(self, result: AuditResult, module_analyses: dict) -> list[str] | None:
+    def inventory_features_with_claude(
+        self, result: AuditResult, module_analyses: dict
+    ) -> list[str] | None:
         """Ask Claude to inventory features based on module analyses."""
         summaries = []
         for name, analysis in module_analyses.items():

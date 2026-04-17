@@ -38,9 +38,7 @@ def build_implementation_prompt(impl, issue) -> str:
     previous_notes = issue.implementation_notes or ""
 
     completed = [
-        data
-        for data in impl.state.issues
-        if data.get("status") in ("implemented", "verified")
+        data for data in impl.state.issues if data.get("status") in ("implemented", "verified")
     ]
     cap_done = max(1, int(impl.config.get("implementation_completed_issues_max", 12)))
 
@@ -79,7 +77,9 @@ def build_implementation_prompt(impl, issue) -> str:
     if issue_content:
         volatile_sections.extend(["### Issue file content\n", issue_content])
     else:
-        volatile_sections.extend(["### Description\n", issue.description, "\n### Acceptance Criteria\n"])
+        volatile_sections.extend(
+            ["### Description\n", issue.description, "\n### Acceptance Criteria\n"]
+        )
         for criterion in issue.acceptance_criteria:
             volatile_sections.append(f"- {criterion}")
 
@@ -168,12 +168,16 @@ def ensure_test_deps(
 
     for dep_file, command in dep_install.items():
         if command and (project_root / dep_file).exists():
-            if dep_file in (
-                "package.json",
-                "package-lock.json",
-                "yarn.lock",
-                "pnpm-lock.yaml",
-            ) and (project_root / "node_modules").exists():
+            if (
+                dep_file
+                in (
+                    "package.json",
+                    "package-lock.json",
+                    "yarn.lock",
+                    "pnpm-lock.yaml",
+                )
+                and (project_root / "node_modules").exists()
+            ):
                 continue
             if dep_file in ("requirements.txt", "Gemfile"):
                 continue
@@ -226,9 +230,7 @@ def ensure_test_deps(
                         if state is not None:
                             add_console_time(state, t1)
             except (subprocess.TimeoutExpired, OSError):
-                logger.warning(
-                    f"Unable to verify/install test tool '{tool_name}' automatically."
-                )
+                logger.warning(f"Unable to verify/install test tool '{tool_name}' automatically.")
             break
 
 
@@ -249,7 +251,7 @@ Tests are failing after implementing issue {issue.id}: {issue.title}
 ## Instructions
 
 Fix the failing tests. The implementation should match the acceptance criteria:
-{chr(10).join(f'- {ac}' for ac in issue.acceptance_criteria)}
+{chr(10).join(f"- {ac}" for ac in issue.acceptance_criteria)}
 
 Fix the code or tests so everything passes. Do not remove or skip tests.
 

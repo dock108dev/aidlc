@@ -92,9 +92,7 @@ def sort_issues_for_implementation(
             if removed:
                 id_to_issue[candidate]["dependencies"] = deps
                 removed_edges.append((candidate, successor))
-                logger.warning(
-                    f"Removed circular dependency edge: {candidate} -> {successor}"
-                )
+                logger.warning(f"Removed circular dependency edge: {candidate} -> {successor}")
             else:
                 logger.error(
                     f"Could not auto-resolve cycle edge for {candidate}; manual fix required."
@@ -111,9 +109,7 @@ def sort_issues_for_implementation(
             if not issue_data:
                 continue
             state.update_issue(Issue.from_dict(issue_data))
-            logger.info(
-                f"Updated issue dependencies after cycle resolution: {issue_id}"
-            )
+            logger.info(f"Updated issue dependencies after cycle resolution: {issue_id}")
         sync_all_issue_markdown()
 
     sorted_ids: list[str] = []

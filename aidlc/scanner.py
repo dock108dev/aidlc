@@ -80,10 +80,19 @@ class ProjectScanner:
         self.project_root = project_root
         self.config = config
         self.scan_patterns = config.get("doc_scan_patterns", ["**/*.md"])
-        self.exclude_patterns = config.get("doc_scan_exclude", [
-            "node_modules/**", ".git/**", "venv/**", ".venv/**",
-            "__pycache__/**", ".aidlc/**", "dist/**", "build/**",
-        ])
+        self.exclude_patterns = config.get(
+            "doc_scan_exclude",
+            [
+                "node_modules/**",
+                ".git/**",
+                "venv/**",
+                ".venv/**",
+                "__pycache__/**",
+                ".aidlc/**",
+                "dist/**",
+                "build/**",
+            ],
+        )
         self.max_doc_chars = config.get("max_doc_chars", DEFAULT_MAX_DOC_CHARS)
         self.max_context_chars = config.get("max_context_chars", 80000)
 
@@ -150,14 +159,16 @@ class ProjectScanner:
             try:
                 content = full_path.read_text(errors="replace")
                 if len(content) > self.max_doc_chars:
-                    content = content[:self.max_doc_chars] + "\n\n... (truncated)"
+                    content = content[: self.max_doc_chars] + "\n\n... (truncated)"
                 priority = self._doc_priority(rel_path)
-                docs.append({
-                    "path": rel_path,
-                    "content": content,
-                    "priority": priority,
-                    "size": len(content),
-                })
+                docs.append(
+                    {
+                        "path": rel_path,
+                        "content": content,
+                        "priority": priority,
+                        "size": len(content),
+                    }
+                )
             except (OSError, UnicodeDecodeError):
                 self._skipped_docs_count += 1
                 continue
@@ -232,7 +243,9 @@ class ProjectScanner:
                         content = path.read_text(errors="replace")
                         rel = str(path.relative_to(self.project_root))
                         parsed_issue = self._parse_issue_markdown(path, content)
-                        issues.append({"path": rel, "content": content, "parsed_issue": parsed_issue})
+                        issues.append(
+                            {"path": rel, "content": content, "parsed_issue": parsed_issue}
+                        )
                     except (OSError, UnicodeDecodeError):
                         self._skipped_issue_reads += 1
                         continue
@@ -269,7 +282,15 @@ class ProjectScanner:
             dependencies=dependencies,
             acceptance_criteria=acceptance_criteria,
         )
-        if status in {"pending", "in_progress", "implemented", "verified", "failed", "blocked", "skipped"}:
+        if status in {
+            "pending",
+            "in_progress",
+            "implemented",
+            "verified",
+            "failed",
+            "blocked",
+            "skipped",
+        }:
             issue.status = issue.status.__class__(status)
         issue.implementation_notes = implementation_notes
         issue.verification_result = verification_result
@@ -307,6 +328,7 @@ class ProjectScanner:
     def _load_audit_result(self) -> dict | None:
         """Load audit results from .aidlc/audit_result.json if present."""
         import json
+
         audit_path = self.project_root / ".aidlc" / "audit_result.json"
         self._audit_load_errors = 0
         if audit_path.exists():
@@ -349,7 +371,9 @@ class ProjectScanner:
 
         for doc in scan_result["doc_files"]:
             if total_chars + doc["size"] > max_context_chars:
-                sections.append(f"\n... ({scan_result['total_docs'] - included} more docs not shown)")
+                sections.append(
+                    f"\n... ({scan_result['total_docs'] - included} more docs not shown)"
+                )
                 break
             sections.append(f"### {doc['path']}\n")
             sections.append(doc["content"])
@@ -362,8 +386,12 @@ class ProjectScanner:
         if audit:
             sections.append("\n## Code Audit Findings\n")
             sections.append(f"**Audit depth**: {audit.get('depth', 'quick')}")
-            sections.append(f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}")
-            sections.append(f"**Entry points**: {', '.join(audit.get('entry_points', [])) or 'none'}")
+            sections.append(
+                f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}"
+            )
+            sections.append(
+                f"**Entry points**: {', '.join(audit.get('entry_points', [])) or 'none'}"
+            )
 
             modules = audit.get("modules", [])
             if modules:
@@ -377,11 +405,15 @@ class ProjectScanner:
 
             stats = audit.get("source_stats", {})
             if stats:
-                sections.append(f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines")
+                sections.append(
+                    f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines"
+                )
 
             tc = audit.get("test_coverage")
             if tc:
-                sections.append(f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)")
+                sections.append(
+                    f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)"
+                )
 
             features = audit.get("features")
             if features:
@@ -393,7 +425,9 @@ class ProjectScanner:
             if tech_debt:
                 sections.append(f"\n**Tech debt markers**: {len(tech_debt)} found")
                 for td in tech_debt[:10]:
-                    sections.append(f"- `{td.get('file', '?')}:{td.get('line', 0)}` [{td.get('type', '?')}] {td.get('text', '')[:100]}")
+                    sections.append(
+                        f"- `{td.get('file', '?')}:{td.get('line', 0)}` [{td.get('type', '?')}] {td.get('text', '')[:100]}"
+                    )
                 if len(tech_debt) > 10:
                     sections.append(f"- ... and {len(tech_debt) - 10} more")
 
@@ -407,7 +441,9 @@ class ProjectScanner:
             for issue in scan_result["existing_issues"]:
                 if shown >= max_issue_lines:
                     break
-                parsed = issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
+                parsed = (
+                    issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
+                )
                 issue_id = parsed.get("id") or Path(issue.get("path", "")).stem
                 title = (parsed.get("title") or "").strip()
                 if len(title) > 90:
@@ -425,6 +461,8 @@ class ProjectScanner:
                 shown += 1
             omitted = len(scan_result["existing_issues"]) - shown
             if omitted > 0:
-                sections.append(f"- ... and {omitted} more issues (read .aidlc/issues/*.md as needed)")
+                sections.append(
+                    f"- ... and {omitted} more issues (read .aidlc/issues/*.md as needed)"
+                )
 
         return "\n".join(sections)

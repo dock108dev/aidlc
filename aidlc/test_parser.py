@@ -11,6 +11,7 @@ from dataclasses import dataclass
 @dataclass
 class FailureReport:
     """A single test failure extracted from test output."""
+
     test_name: str
     file: str = ""
     line: int = 0
@@ -26,7 +27,9 @@ class FailureReport:
         return self.test_name
 
 
-def parse_test_failures(output: str, framework: str = "auto", max_failures: int = 20) -> list[FailureReport]:
+def parse_test_failures(
+    output: str, framework: str = "auto", max_failures: int = 20
+) -> list[FailureReport]:
     """Parse test output into structured failures.
 
     Args:
@@ -87,22 +90,26 @@ def _parse_pytest(output: str) -> list[FailureReport]:
         file_path = match.group(1)
         test_name = match.group(2)
         assertion = match.group(3).strip()
-        failures.append(FailureReport(
-            test_name=test_name,
-            file=file_path,
-            assertion=assertion,
-            framework="pytest",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_name,
+                file=file_path,
+                assertion=assertion,
+                framework="pytest",
+            )
+        )
 
     # If no FAILED lines, try the short format
     if not failures:
         short_pattern = re.compile(r"([\w/\\.]+)::(\S+)\s+FAILED", re.MULTILINE)
         for match in short_pattern.finditer(output):
-            failures.append(FailureReport(
-                test_name=match.group(2),
-                file=match.group(1),
-                framework="pytest",
-            ))
+            failures.append(
+                FailureReport(
+                    test_name=match.group(2),
+                    file=match.group(1),
+                    framework="pytest",
+                )
+            )
 
     # Try to extract assertion details from the verbose output
     error_blocks = re.split(r"_{5,}\s+(\S+)\s+_{5,}", output)
@@ -134,24 +141,28 @@ def _parse_jest(output: str) -> list[FailureReport]:
         assert_match = re.search(r"(expect\(.+?\)\.[\w.]+\(.+?\))", details)
         assertion = assert_match.group(1) if assert_match else details[:200]
 
-        failures.append(FailureReport(
-            test_name=test_path,
-            file=file_path,
-            line=line,
-            assertion=assertion,
-            stack_trace=details[:500],
-            framework="jest",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_path,
+                file=file_path,
+                line=line,
+                assertion=assertion,
+                stack_trace=details[:500],
+                framework="jest",
+            )
+        )
 
     # Fallback: FAIL lines
     if not failures:
         fail_pattern = re.compile(r"FAIL\s+(\S+)", re.MULTILINE)
         for match in fail_pattern.finditer(output):
-            failures.append(FailureReport(
-                test_name=match.group(1),
-                file=match.group(1),
-                framework="jest",
-            ))
+            failures.append(
+                FailureReport(
+                    test_name=match.group(1),
+                    file=match.group(1),
+                    framework="jest",
+                )
+            )
 
     return failures
 
@@ -171,14 +182,16 @@ def _parse_go(output: str) -> list[FailureReport]:
         file_path = loc_match.group(1) if loc_match else ""
         line = int(loc_match.group(2)) if loc_match else 0
 
-        failures.append(FailureReport(
-            test_name=test_name,
-            file=file_path,
-            line=line,
-            assertion=details[:200],
-            stack_trace=details[:500],
-            framework="go",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_name,
+                file=file_path,
+                line=line,
+                assertion=details[:200],
+                stack_trace=details[:500],
+                framework="go",
+            )
+        )
 
     return failures
 
@@ -199,14 +212,16 @@ def _parse_cargo(output: str) -> list[FailureReport]:
         file_path = loc_match.group(2) if loc_match else ""
         line = int(loc_match.group(3)) if loc_match else 0
 
-        failures.append(FailureReport(
-            test_name=test_name,
-            file=file_path,
-            line=line,
-            assertion=assertion,
-            stack_trace=details[:500],
-            framework="cargo",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_name,
+                file=file_path,
+                line=line,
+                assertion=assertion,
+                stack_trace=details[:500],
+                framework="cargo",
+            )
+        )
 
     return failures
 
@@ -222,12 +237,14 @@ def _parse_gut(output: str) -> list[FailureReport]:
         test_name = match.group(1).strip()
         details = match.group(2).strip()
 
-        failures.append(FailureReport(
-            test_name=test_name,
-            assertion=details[:200],
-            stack_trace=details[:500],
-            framework="gut",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_name,
+                assertion=details[:200],
+                stack_trace=details[:500],
+                framework="gut",
+            )
+        )
 
     return failures
 
@@ -247,14 +264,16 @@ def _parse_rspec(output: str) -> list[FailureReport]:
         file_path = loc_match.group(1) if loc_match else ""
         line = int(loc_match.group(2)) if loc_match else 0
 
-        failures.append(FailureReport(
-            test_name=test_name,
-            file=file_path,
-            line=line,
-            assertion=details[:200],
-            stack_trace=details[:500],
-            framework="rspec",
-        ))
+        failures.append(
+            FailureReport(
+                test_name=test_name,
+                file=file_path,
+                line=line,
+                assertion=details[:200],
+                stack_trace=details[:500],
+                framework="rspec",
+            )
+        )
 
     return failures
 
@@ -275,9 +294,11 @@ def _parse_generic(output: str) -> list[FailureReport]:
             name = match.group(1).strip()[:120]
             if name and name not in seen:
                 seen.add(name)
-                failures.append(FailureReport(
-                    test_name=name,
-                    framework="generic",
-                ))
+                failures.append(
+                    FailureReport(
+                        test_name=name,
+                        framework="generic",
+                    )
+                )
 
     return failures

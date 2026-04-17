@@ -181,9 +181,7 @@ def git_push_current_branch(project_root: Path, logger, state) -> bool:
                 timeout=90,
             )
             if push_upstream.returncode == 0:
-                logger.info(
-                    f"Autosync pushed and set upstream origin/{branch}."
-                )
+                logger.info(f"Autosync pushed and set upstream origin/{branch}.")
                 return True
             logger.warning(
                 "Autosync push with upstream failed: "
@@ -192,8 +190,7 @@ def git_push_current_branch(project_root: Path, logger, state) -> bool:
             return False
 
         logger.warning(
-            "Autosync push failed: "
-            f"{(push.stderr or push.stdout or 'unknown git error').strip()}"
+            f"Autosync push failed: {(push.stderr or push.stdout or 'unknown git error').strip()}"
         )
         return False
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:

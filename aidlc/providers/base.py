@@ -11,9 +11,9 @@ from pathlib import Path
 
 class HealthStatus(Enum):
     HEALTHY = "healthy"
-    LIMITED = "limited"           # authenticated but rate-limited or degraded
+    LIMITED = "limited"  # authenticated but rate-limited or degraded
     RATE_LIMITED = "rate_limited"
-    EXPIRED = "expired"           # credentials expired
+    EXPIRED = "expired"  # credentials expired
     MISSING_MODEL = "missing_model"
     UNREACHABLE = "unreachable"
     NOT_INSTALLED = "not_installed"

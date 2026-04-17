@@ -25,7 +25,9 @@ def config(tmp_path):
         "_runs_dir": str(aidlc_dir / "runs"),
         "_reports_dir": str(aidlc_dir / "reports"),
         "_issues_dir": str(aidlc_dir / "issues"),
-        "providers": {"claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}},
+        "providers": {
+            "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}
+        },
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
         "dry_run": True,

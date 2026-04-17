@@ -21,7 +21,9 @@ class TestGenerateRunReport:
         state.issues_failed = 1
         state.claude_calls_total = 6
         state.claude_cost_usd_exact = 0.55
-        state.claude_model_usage = {"sonnet": {"calls": 6, "input_tokens": 100, "output_tokens": 50}}
+        state.claude_model_usage = {
+            "sonnet": {"calls": 6, "input_tokens": 100, "output_tokens": 50}
+        }
 
         path = generate_run_report(state, tmp_path)
         assert path.exists()
