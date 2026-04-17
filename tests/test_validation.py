@@ -267,7 +267,9 @@ class TestValidatorInternals:
             "validation_max_cycles": 1,
             "test_timeout_seconds": 10,
         }
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock()
+        )
         issue = Issue(
             id="VFIX-009",
             title="Fix login",
@@ -499,7 +501,9 @@ class TestValidatorTiersAndCommand:
             "validation_max_cycles": 1,
             "test_timeout_seconds": 30,
         }
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock()
+        )
         ok, out = v._run_command("echo x")
         assert ok is True
         assert "hello" in out

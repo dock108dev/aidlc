@@ -62,7 +62,11 @@ def test_build_context_truncates_when_over_char_budget(tmp_path: Path):
             {"path": "b.md", "content": "B" * 40, "size": 40},
         ],
         "existing_issues": [],
-        "scan_warnings": {"skipped_docs": 1, "skipped_issue_reads": 0, "audit_result_load_errors": 0},
+        "scan_warnings": {
+            "skipped_docs": 1,
+            "skipped_issue_reads": 0,
+            "audit_result_load_errors": 0,
+        },
     }
     text = s.build_context_prompt(scan)
     assert "Scanner degraded reads" in text
@@ -72,8 +76,7 @@ def test_build_context_truncates_when_over_char_budget(tmp_path: Path):
 def test_build_context_audit_sections_and_tech_debt_overflow(tmp_path: Path):
     s = ProjectScanner(tmp_path, {})
     tech_debt = [
-        {"file": f"f{i}.py", "line": i, "type": "todo", "text": "fixme"}
-        for i in range(15)
+        {"file": f"f{i}.py", "line": i, "type": "todo", "text": "fixme"} for i in range(15)
     ]
     scan = {
         "project_type": "python",

@@ -278,9 +278,7 @@ def test_resolve_best_quality_picks_highest_tier_account():
 
 def test_resolve_best_quality_skips_excluded_providers_in_scan():
     r = _FakeRouter(adapters={"openai": _FakeAdapter("openai", "gpt-5.4")})
-    d = sr.resolve_best_quality(
-        r, "planning", "normal", None, {"claude", "copilot"}, set(), 0.0
-    )
+    d = sr.resolve_best_quality(r, "planning", "normal", None, {"claude", "copilot"}, set(), 0.0)
     assert d.provider_id == "openai"
 
 

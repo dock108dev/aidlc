@@ -26,7 +26,9 @@ def test_build_doc_manifest_truncates_summary():
 
 
 def test_extract_summary_skips_headers_and_short():
-    assert context_prep._extract_summary("# only\n\n---\n\n", 80) == "(empty or header-only document)"
+    assert (
+        context_prep._extract_summary("# only\n\n---\n\n", 80) == "(empty or header-only document)"
+    )
     assert context_prep._extract_summary("hi\n\n", 80) == "(empty or header-only document)"
 
 
@@ -55,9 +57,7 @@ def test_build_project_brief_single_batch_truncates():
     cli = MagicMock()
     cli.execute_prompt.return_value = {"success": True, "output": "x" * 2000}
     docs = [{"path": "a.md", "size": 3, "content": "abc"}]
-    out = context_prep.build_project_brief(
-        docs, cli, Path("."), MagicMock(), max_brief_chars=100
-    )
+    out = context_prep.build_project_brief(docs, cli, Path("."), MagicMock(), max_brief_chars=100)
     assert out is not None
     assert "truncated" in out
 
@@ -101,7 +101,5 @@ def test_summarize_batch_failure():
     cli = MagicMock()
     cli.execute_prompt.return_value = {"success": False}
     logger = MagicMock()
-    assert (
-        context_prep._summarize_batch("c", 1, 2, cli, Path("."), logger) is None
-    )
+    assert context_prep._summarize_batch("c", 1, 2, cli, Path("."), logger) is None
     logger.warning.assert_called()

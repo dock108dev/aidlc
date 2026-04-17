@@ -43,7 +43,9 @@ def test_cmd_usage_by_account_with_provider_map(tmp_path, capsys):
     runs.mkdir(parents=True)
     state = RunState(run_id="r2", config_name="default")
     state.provider_account_usage = {
-        "openai": {"acct1": {"calls": 1, "calls_succeeded": 1, "input_tokens": 10, "output_tokens": 5}}
+        "openai": {
+            "acct1": {"calls": 1, "calls_succeeded": 1, "input_tokens": 10, "output_tokens": 5}
+        }
     }
     rd = runs / "r2"
     rd.mkdir(parents=True)
@@ -57,7 +59,9 @@ def test_cmd_usage_by_phase(tmp_path, capsys):
     runs = tmp_path / ".aidlc" / "runs"
     runs.mkdir(parents=True)
     state = RunState(run_id="r3", config_name="default")
-    state.phase_usage = {"planning": {"calls": 1, "calls_succeeded": 1, "input_tokens": 1, "output_tokens": 1}}
+    state.phase_usage = {
+        "planning": {"calls": 1, "calls_succeeded": 1, "input_tokens": 1, "output_tokens": 1}
+    }
     rd = runs / "r3"
     rd.mkdir(parents=True)
     save_state(state, rd)
@@ -70,7 +74,9 @@ def test_cmd_usage_by_model(tmp_path, capsys):
     runs = tmp_path / ".aidlc" / "runs"
     runs.mkdir(parents=True)
     state = RunState(run_id="r4", config_name="default")
-    state.claude_model_usage = {"opus": {"calls": 1, "calls_succeeded": 1, "input_tokens": 2, "output_tokens": 3}}
+    state.claude_model_usage = {
+        "opus": {"calls": 1, "calls_succeeded": 1, "input_tokens": 2, "output_tokens": 3}
+    }
     rd = runs / "r4"
     rd.mkdir(parents=True)
     save_state(state, rd)
@@ -110,7 +116,9 @@ def test_cmd_usage_corrupt_state_skipped(tmp_path, capsys):
 
 def test_accumulate_usage_creates_and_merges():
     t = {}
-    _accumulate_usage(t, "a", {"calls": 1, "calls_succeeded": 1, "input_tokens": 1, "output_tokens": 1})
+    _accumulate_usage(
+        t, "a", {"calls": 1, "calls_succeeded": 1, "input_tokens": 1, "output_tokens": 1}
+    )
     _accumulate_usage(t, "a", {"calls": 1, "succeeded": 1, "input_tokens": 2, "output_tokens": 0})
     assert t["a"]["calls"] == 2
     assert t["a"]["input_tokens"] == 3
