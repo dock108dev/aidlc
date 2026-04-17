@@ -11,6 +11,18 @@ from aidlc.runner import init_run, run_full, scan_project
 from aidlc.state_manager import save_state
 
 
+def _issue_stub(iid: str, status: str = "pending") -> dict:
+    return {
+        "id": iid,
+        "title": "t",
+        "description": "d",
+        "status": status,
+        "dependencies": [],
+        "attempt_count": 0,
+        "max_attempts": 3,
+    }
+
+
 @pytest.fixture
 def config(tmp_path):
     aidlc_dir = tmp_path / ".aidlc"
@@ -130,6 +142,53 @@ class TestRunFullEdgeCases:
         MockLock.return_value = mock_lock
 
         run_full(config=config, dry_run=True, verbose=True, plan_only=True)
+
+
+class TestResumeSkipsPlanning:
+    @patch("aidlc.doc_gap_detector.detect_doc_gaps")
+    @patch("aidlc.runner.Implementer")
+    @patch("aidlc.runner.scan_project")
+    @patch("aidlc.runner.ProviderRouter")
+    @patch("aidlc.runner.RunLock")
+    def test_resume_implementing_skips_planner_and_doc_gaps(
+        self, MockLock, MockRouter, mock_scan, MockImplementer, mock_doc_gaps, config, tmp_path
+    ):
+        (tmp_path / "README.md").write_text("# Test")
+        runs_dir = Path(config["_runs_dir"])
+        run_dir = runs_dir / "paused_run"
+        run_dir.mkdir(parents=True)
+        (run_dir / "claude_outputs").mkdir()
+        state = RunState(run_id="paused_run", config_name="default")
+        state.status = RunStatus.PAUSED
+        state.phase = RunPhase.IMPLEMENTING
+        state.issues = [_issue_stub("ISSUE-001")]
+        state.total_issues = 1
+        save_state(state, run_dir)
+
+        MockLock.return_value = MagicMock()
+        mock_cli = MagicMock()
+        mock_cli.check_available.return_value = True
+        MockRouter.return_value = mock_cli
+
+        def _scan(state, cfg, logger, cli=None):
+            return (
+                "ctx",
+                {
+                    "doc_files": [],
+                    "existing_issues": [],
+                    "total_docs": 0,
+                    "project_type": "py",
+                },
+            )
+
+        mock_scan.side_effect = _scan
+        MockImplementer.return_value.run.return_value = True
+
+        with patch("aidlc.runner.Planner") as MockPlanner:
+            run_full(config=config, resume=True, dry_run=True, verbose=False)
+            MockPlanner.assert_not_called()
+        mock_doc_gaps.assert_not_called()
+        MockImplementer.return_value.run.assert_called_once()
 
 
 class TestScanProject:

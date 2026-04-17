@@ -6,11 +6,23 @@ AIDLC is a normal Python package (setuptools). There is no separate server proce
 
 ```bash
 pip install -e .
-# optional dev deps (pytest, etc.)
+# optional dev deps (pytest, ruff, etc.)
 pip install -e ".[dev]"
 ```
 
 Entry point: `aidlc` → `aidlc.__main__:main`.
+
+## Install with pipx (isolated CLI)
+
+From a local clone (editable, with dev tools in the pipx venv):
+
+```bash
+pipx install --editable '/absolute/path/to/aidlc[dev]'
+```
+
+Use an absolute path. Avoid running `pipx uninstall aidlc` from a directory whose name is `aidlc`, or pipx may treat the name as a path—run the uninstall from `$HOME` or another directory.
+
+After install, ensure `~/.local/bin` (or your pipx apps path) precedes other `aidlc` shims on `PATH` if multiple copies exist.
 
 ## Install from a wheel
 

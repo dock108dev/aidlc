@@ -13,22 +13,19 @@ aidlc init --project /path/to/target-repo
 aidlc run --project /path/to/target-repo
 ```
 
+Isolated CLI install (optional):
+
+```bash
+pipx install --editable '/path/to/aidlc/checkout[dev]'
+```
+
 - **Python:** 3.11+
-- **Providers:** Configure [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli), Codex, or Copilot per `.aidlc/config.json` (see [docs/configuration.md](docs/configuration.md)). Use `--dry-run` to exercise flows without calling a provider.
+- **Providers:** Configure Claude CLI, OpenAI Codex CLI, GitHub Copilot CLI, etc. per the **target repo’s** `.aidlc/config.json` (see [docs/configuration.md](docs/configuration.md)). Use `dry_run: true` or `--dry-run` to exercise flows without calling a provider.
 
 ## Documentation
 
-All detailed docs live under **[`docs/`](docs/README.md)**:
-
-| Topic | Link |
-|--------|------|
-| Index | [docs/README.md](docs/README.md) |
-| Commands & lifecycle | [docs/cli-lifecycle.md](docs/cli-lifecycle.md) |
-| Configuration | [docs/configuration.md](docs/configuration.md) |
-| Local dev & tests | [docs/local-development.md](docs/local-development.md) |
-| Audit behavior | [docs/audit.md](docs/audit.md) |
-| Limits & deprecations | [docs/limitations.md](docs/limitations.md), [docs/deprecations.md](docs/deprecations.md) |
+All guides and reference material (commands, config, auditing, coverage, deployment) are in **`[docs/](docs/README.md)`**. Start at the **[documentation index](docs/README.md)**.
 
 ## Deploy / distribute
 
-Install from a git checkout or a built wheel; entry point: `aidlc`. See **[docs/deployment.md](docs/deployment.md)**.
+Install from a git checkout or a built wheel; entry point `aidlc`. See **[docs/deployment.md](docs/deployment.md)**.

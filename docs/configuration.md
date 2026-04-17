@@ -165,3 +165,14 @@ Additionally, `aidlc run` rejects:
 - Unknown keys are loaded; they only have effect if runtime code reads them.
 - In dry-run mode, planning/implementation cycles are effectively capped when max-cycle settings are left at unlimited.
 - `test_profile_mode` values other than `"progressive"` are intentionally unsupported.
+
+## Environment variables
+
+AIDLC does **not** overload the environment for core routing; behavior is driven primarily by `.aidlc/config.json` and CLI flags.
+
+| Variable | Where used |
+|----------|------------|
+| `EDITOR`, `VISUAL` | `aidlc config edit` (and config subcommand `edit`): opens `config.json` in the chosen editor. |
+| `CI` | Full-audit **runtime** subprocesses: set to `1` in the child environment when running build/test/playwright-style checks (`aidlc/audit/runtime_engine.py`). |
+
+Provider authentication uses each vendor’s normal CLI login flow (see provider commands in the CLI help), not a single AIDLC-specific env var.

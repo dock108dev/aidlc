@@ -33,7 +33,7 @@ Full mode is bounded by:
 - `audit_max_source_chars_per_module`
 - `audit_runtime_timeout_seconds`
 
-Standalone `aidlc audit --full` exits if Claude CLI is unavailable.
+Standalone `aidlc audit --full` builds a `ProviderRouter` and requires `check_available()` to succeed (no configured provider / CLI available). User-facing messages may still mention Claude; quick audit does not require a provider CLI.
 
 Runtime checks run with:
 

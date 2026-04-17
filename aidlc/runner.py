@@ -27,9 +27,22 @@ from .logger import setup_logger
 from .models import Issue, RunPhase, RunState, RunStatus
 from .planner import Planner
 from .reporting import generate_run_report
+from .resume_reconcile import reconcile_issues_on_resume
 from .routing import ProviderRouter
 from .scanner import ProjectScanner
 from .state_manager import RunLock, find_latest_run, generate_run_id, load_state, save_state
+
+# Phases after planning: resuming here must not trigger another planning session.
+_POST_PLANNING_PHASES = frozenset(
+    {
+        RunPhase.IMPLEMENTING,
+        RunPhase.VERIFYING,
+        RunPhase.VALIDATING,
+        RunPhase.FINALIZING,
+        RunPhase.REPORTING,
+        RunPhase.DONE,
+    }
+)
 
 
 def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]:
@@ -185,6 +198,7 @@ def run_full(
             sys.exit(1)
 
     state.status = RunStatus.RUNNING
+    phase_before_scan = state.phase
 
     try:
         # AUDIT (optional) — analyze existing code before planning
@@ -224,11 +238,27 @@ def run_full(
         # SCAN — always scan (even on resume, to get fresh context)
         project_context, scan_result = scan_project(state, config, logger, cli=cli)
         hydrate_existing_issues(state, scan_result, logger)
+
+        resume_skip_planning = (
+            resume and not implement_only and phase_before_scan in _POST_PLANNING_PHASES
+        )
+        if resume_skip_planning:
+            state.phase = phase_before_scan
+            logger.info(
+                f"Resume: restoring phase '{phase_before_scan.value}' — "
+                "skipping new planning (scan refreshed context only)."
+            )
+            reconcile_issues_on_resume(state, Path(config["_project_root"]), logger, config)
+
         save_state(state, run_dir)
 
         # DOC-GAP DETECTION — scan docs for TBD/placeholder markers
         doc_gaps = []
-        if config.get("doc_gap_detection_enabled", True) and not implement_only:
+        if (
+            config.get("doc_gap_detection_enabled", True)
+            and not implement_only
+            and not resume_skip_planning
+        ):
             from .doc_gap_detector import detect_doc_gaps
 
             doc_gaps = detect_doc_gaps(Path(config["_project_root"]), config)

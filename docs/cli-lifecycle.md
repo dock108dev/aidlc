@@ -2,17 +2,21 @@
 
 ## `aidlc run` Phase Order
 
-`aidlc run` orchestrates a stateful run with these phases:
+`aidlc run` orchestrates a stateful run. Phase values persisted in state match `RunPhase` in **`aidlc.models`** (enum values are lowercase with underscores, e.g. `plan_finalization`).
 
-1. `AUDITING` (optional): only when `--audit quick|full` is used
-2. `SCANNING`: documentation and repo structure scan
-3. `PLANNING`: iterative issue/doc/research action cycles
-4. `PLAN_FINALIZATION`: planning wind-down near budget end
-5. `IMPLEMENTING`: issue-by-issue implementation
-6. `VERIFYING`: final verification pass over implemented issues
-7. `VALIDATING` (optional): test/fix loop
-8. `FINALIZING` (optional): ssot/security/abend/docs/cleanup passes
-9. `REPORTING` -> `DONE`
+Typical progression:
+
+1. **`auditing`** (optional): only when `--audit` or `--audit full` is used
+2. **`scanning`**: documentation and repo structure scan
+3. **`planning`**: iterative issue/doc/research action cycles
+4. **`plan_finalization`**: planning wind-down near budget end
+5. **`implementing`**: issue-by-issue implementation
+6. **`verifying`**: verification pass over implemented issues
+7. **`validating`** (optional): test/fix loop
+8. **`finalizing`** (optional): ssot/security/abend/docs/cleanup-style passes
+9. **`reporting`** → **`done`**
+
+There is also an initial **`init`** phase before the first substantive work in a new run.
 
 ## Run Modes
 
@@ -20,6 +24,8 @@
 - **Plan-only:** `aidlc run --plan-only`
 - **Implement-only:** `aidlc run --implement-only`
 - **Resume latest:** `aidlc run --resume`
+  - When the saved run is already past planning (`implementing` and later phases), resume **does not start a new planning cycle**. The scan step still runs to refresh context, then the prior phase is restored.
+  - A short **resume reconcile** pass may mark issues as implemented when the issue id already appears in the git tree outside `.aidlc/` (best-effort; disable with `resume_reconcile_enabled: false` in config).
 - **Dry run (no Claude execution):** `aidlc run --dry-run`
 - **Audit before planning:** `aidlc run --audit` or `aidlc run --audit full`
 - **Skip optional stages:** `--skip-validation`, `--skip-finalize` (not allowed in production profile)

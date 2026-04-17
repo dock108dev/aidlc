@@ -184,6 +184,29 @@ class TestRunState:
         assert "ISSUE-003" in ids  # Deps met (002 is implemented)
         assert "ISSUE-004" not in ids  # Dep 999 not met
 
+    def test_get_pending_issues_prefers_in_progress(self):
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            {
+                "id": "ISSUE-001",
+                "title": "A",
+                "status": "pending",
+                "dependencies": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "B",
+                "status": "in_progress",
+                "dependencies": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+        ]
+        ids = [i.id for i in state.get_pending_issues()]
+        assert ids == ["ISSUE-002", "ISSUE-001"]
+
     def test_get_pending_excludes_exhausted(self):
         state = RunState(run_id="t", config_name="c")
         state.issues = [

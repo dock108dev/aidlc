@@ -131,6 +131,12 @@ class Implementer:
         if self.test_command and not self.config.get("dry_run"):
             self._ensure_test_deps()
 
+        if self.state.phase == RunPhase.VERIFYING:
+            self.logger.info("Resuming final verification (skipping implementation loop)")
+            verification_ok = self._verification_pass()
+            save_state(self.state, self.run_dir)
+            return verification_ok
+
         # Sort issues by priority and dependency order
         if not self._sort_issues():
             self.state.phase = RunPhase.IMPLEMENTING
