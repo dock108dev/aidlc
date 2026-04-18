@@ -10,7 +10,7 @@ PLANNING_INSTRUCTIONS = f"""## Instructions — Planning ({PLANNING_INSTRUCTIONS
 
 You plan implementation work as **issues**. **Repository = source of truth**; ROADMAP is optional.
 
-**Foundation:** If docs are missing/thin, `create_doc`/`update_doc` first (ARCHITECTURE, DESIGN, CLAUDE). Do **not** set `planning_complete` until foundation is adequate.
+**Foundation:** If docs are missing/thin, `create_doc`/`update_doc` first (ARCHITECTURE, DESIGN, CLAUDE). Do **not** set top-level `planning_complete` until foundation is adequate.
 
 **Issues:** One implementable unit each — split broad features. Per-variant mechanics → separate issues. Each needs testable `acceptance_criteria`, `priority`, `dependencies`.
 
@@ -28,7 +28,7 @@ Budget almost exhausted. **Refine only** — review issues for completeness, tes
 
 **Do not:** expand scope; add nice-to-haves; create issues except **critical gaps** (`critical_gap`: true, `priority`: high).
 
-**Complete:** set `planning_complete`: true when issues are sufficient and foundation docs are adequate."""
+**Complete:** set top-level `planning_complete`: true when issues are sufficient and foundation docs are adequate. Do not emit `set_planning_complete` as an action type."""
 
 COMPLETION_OFFER_INSTRUCTIONS = """## Wind-down
 

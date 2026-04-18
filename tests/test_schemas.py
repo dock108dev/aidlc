@@ -299,6 +299,38 @@ class TestPlanningOutput:
         assert len(output.actions) == 1
         assert output.cycle_notes == "Notes"
 
+    def test_from_dict_normalizes_set_planning_complete_action(self):
+        data = {
+            "frontier_assessment": "Done",
+            "actions": [
+                {
+                    "action_type": "set_planning_complete",
+                    "rationale": "Repository scope appears fully covered.",
+                }
+            ],
+        }
+        output = PlanningOutput.from_dict(data)
+        assert output.planning_complete is True
+        assert output.completion_reason == "Repository scope appears fully covered."
+        assert output.actions == []
+
+    def test_from_dict_preserves_explicit_completion_reason(self):
+        data = {
+            "frontier_assessment": "Done",
+            "planning_complete": True,
+            "completion_reason": "top-level reason",
+            "actions": [
+                {
+                    "action_type": "set_planning_complete",
+                    "rationale": "legacy reason",
+                }
+            ],
+        }
+        output = PlanningOutput.from_dict(data)
+        assert output.planning_complete is True
+        assert output.completion_reason == "top-level reason"
+        assert output.actions == []
+
 
 class TestImplementationResult:
     def test_from_dict(self):

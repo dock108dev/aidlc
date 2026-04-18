@@ -44,6 +44,14 @@ class PlanningAction:
     research_question: Optional[str] = None
     research_scope: list = field(default_factory=list)  # file paths to examine
 
+    @staticmethod
+    def _pick_value(payload: dict, keys: tuple[str, ...]):
+        """Pick the first present value from candidate keys."""
+        for key in keys:
+            if key in payload:
+                return payload.get(key)
+        return None
+
     def validate(
         self,
         is_finalization: bool = False,
@@ -115,9 +123,41 @@ class PlanningAction:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlanningAction":
+        doc_payload = data.get("document") if isinstance(data.get("document"), dict) else {}
+
+        action_type = cls._pick_value(data, ("action_type", "type")) or ""
+        rationale = cls._pick_value(data, ("rationale", "reason")) or ""
+
+        file_path = cls._pick_value(
+            data,
+            ("file_path", "path", "doc_path", "target_path", "filename"),
+        )
+        if file_path is None and doc_payload:
+            file_path = cls._pick_value(
+                doc_payload,
+                ("file_path", "path", "doc_path", "target_path", "filename"),
+            )
+
+        content = cls._pick_value(
+            data,
+            ("content", "body", "text", "markdown", "doc_content", "document_content"),
+        )
+        if content is None and doc_payload:
+            content = cls._pick_value(
+                doc_payload,
+                (
+                    "content",
+                    "body",
+                    "text",
+                    "markdown",
+                    "doc_content",
+                    "document_content",
+                ),
+            )
+
         return cls(
-            action_type=data.get("action_type", ""),
-            rationale=data.get("rationale", ""),
+            action_type=action_type,
+            rationale=rationale,
             issue_id=data.get("issue_id"),
             title=data.get("title"),
             description=data.get("description"),
@@ -126,10 +166,10 @@ class PlanningAction:
             labels=data.get("labels", []),
             dependencies=data.get("dependencies", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
-            file_path=data.get("file_path"),
-            content=data.get("content"),
-            research_topic=data.get("research_topic"),
-            research_question=data.get("research_question"),
+            file_path=file_path,
+            content=content,
+            research_topic=cls._pick_value(data, ("research_topic", "topic")),
+            research_question=cls._pick_value(data, ("research_question", "question")),
             research_scope=data.get("research_scope", []),
         )
 
@@ -142,15 +182,45 @@ class PlanningOutput:
     planning_complete: bool = False
     completion_reason: str = ""
 
+    @staticmethod
+    def _normalize_completion_signals(data: dict) -> tuple[list[dict], bool, str]:
+        """Normalize completion signals from either top-level fields or legacy action forms."""
+        planning_complete = bool(data.get("planning_complete", False))
+        completion_reason = data.get("completion_reason", "")
+        normalized_actions = []
+
+        for raw_action in data.get("actions", []):
+            if not isinstance(raw_action, dict):
+                continue
+
+            action_type = raw_action.get("action_type")
+            if action_type in {"set_planning_complete", "planning_complete"}:
+                planning_complete = True
+                if not completion_reason:
+                    completion_reason = (
+                        raw_action.get("completion_reason")
+                        or raw_action.get("reason")
+                        or raw_action.get("rationale")
+                        or ""
+                    )
+                continue
+
+            normalized_actions.append(raw_action)
+
+        return normalized_actions, planning_complete, completion_reason
+
     @classmethod
     def from_dict(cls, data: dict) -> "PlanningOutput":
-        actions = [PlanningAction.from_dict(a) for a in data.get("actions", [])]
+        normalized_actions, planning_complete, completion_reason = (
+            cls._normalize_completion_signals(data)
+        )
+        actions = [PlanningAction.from_dict(a) for a in normalized_actions]
         return cls(
             frontier_assessment=data.get("frontier_assessment", ""),
             actions=actions,
             cycle_notes=data.get("cycle_notes", ""),
-            planning_complete=data.get("planning_complete", False),
-            completion_reason=data.get("completion_reason", ""),
+            planning_complete=planning_complete,
+            completion_reason=completion_reason,
         )
 
     def validate(
@@ -265,9 +335,11 @@ Fields:
 - `frontier_assessment`: ≤400 chars — what you checked and why these actions.
 - `cycle_notes`: ≤300 chars — notes for the next cycle.
 - `actions[]`: 1–15 items. Each needs `action_type`, `rationale` (≤200 chars).
+- `planning_complete` / `completion_reason`: top-level completion signal (not an action).
 
 `create_issue`: `issue_id` (ISSUE-NNN), `title`, `description`, `priority`, `labels`, `dependencies`, `acceptance_criteria` (testable bullets), `critical_gap` (finalization only).
 `update_issue` / `create_doc` / `update_doc` / `research`: per schema in examples below.
+Do not use `action_type: "set_planning_complete"`; set top-level `planning_complete` instead.
 
 ```
 {
