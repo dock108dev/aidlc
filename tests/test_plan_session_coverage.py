@@ -143,7 +143,7 @@ def test_run_research_orders_high_priority_first(tmp_path):
     ps = PlanSession(tmp_path, {}, MagicMock(), MagicMock())
     order = []
 
-    def side_effect(prompt, root):
+    def side_effect(prompt, root, **kwargs):
         order.append(prompt)
         return {"success": True, "output": "# ok"}
 
@@ -212,6 +212,8 @@ def test_generate_docs_builds_drafts(tmp_path):
     )
     assert "ROADMAP.md" in drafts
     assert "draft body" in drafts["ARCHITECTURE.md"]
+    for call in ps.cli.execute_prompt.call_args_list:
+        assert call.kwargs.get("allow_edits") is True
 
 
 def test_generate_docs_cli_failure_logs(tmp_path):

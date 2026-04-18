@@ -10,3 +10,4 @@ venv/
 .aidlc/runs/
 .aidlc/reports/
 .coverage
+*.DS_Store*

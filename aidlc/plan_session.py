@@ -211,7 +211,9 @@ class PlanSession:
             )
             prompt = add_research_output_constraints(prompt)
 
-            research_result = self.cli.execute_prompt(prompt, self.project_root)
+            research_result = self.cli.execute_prompt(
+                prompt, self.project_root, allow_edits=True
+            )
             if research_result["success"] and research_result.get("output"):
                 output = research_result["output"]
                 if is_permission_chatter(output):
@@ -219,7 +221,9 @@ class PlanSession:
                         "Research output requested write permissions; retrying with stricter constraints"
                     )
                     retry_prompt = build_repair_prompt(name, question, output)
-                    retry_result = self.cli.execute_prompt(retry_prompt, self.project_root)
+                    retry_result = self.cli.execute_prompt(
+                        retry_prompt, self.project_root, allow_edits=True
+                    )
                     if not retry_result["success"] or not retry_result.get("output"):
                         print(f"  {_yellow('!')} research failed for {name}")
                         continue
@@ -278,7 +282,7 @@ class PlanSession:
 
             print(f"  {_cyan('generating')} {doc_name}...")
             prompt = prompt_template.format(**template_vars)
-            result = self.cli.execute_prompt(prompt, self.project_root)
+            result = self.cli.execute_prompt(prompt, self.project_root, allow_edits=True)
 
             if result["success"] and result.get("output"):
                 drafts[doc_name] = result["output"].strip()
