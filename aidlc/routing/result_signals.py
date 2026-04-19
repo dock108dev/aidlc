@@ -55,26 +55,31 @@ def is_rate_limited_result(result: dict) -> bool:
     if not message.strip():
         return False
 
+    # Avoid overly broad phrases that match Claude/Code *dashboard* copy pasted into
+    # responses (e.g. "Plan usage limits", "Learn more about usage limits", "30% used").
     patterns = (
         r"rate.?limit",
         r"rate_limit",
         r"ratelimit",
-        r"usage.?limit",
-        # Codex CLI plain text: "You've hit your usage limit … try again at 5:41 PM"
-        r"hit your usage",
+        # Strong usage / quota refusal (not generic "usage limits" UI headings)
+        r"you'?ve\s+hit\s+your\s+usage\b",
+        r"hit\s+your\s+usage\s+limit",
+        r"usage\s+limit\s+(?:reached|exceeded|hit|blocked)",
+        r"exceeded\s+(?:your\s+)?(?:api\s+)?(?:rate\s+)?usage",
         r"upgrade to pro",
         r"purchase more credits",
         r"too many requests",
         r"too_many_requests",
         r"\b429\b",
-        r"try again later",
-        r"try again at",
-        r"try again in",
-        r"\bagain at\s+\d",  # line-wrapped "… try" + "again at 5:41 PM"
+        r"try\s+again\s+later\b",
+        # Require a numeric backoff / clock hint (avoids doc prose "try again at the next step")
+        r"try\s+again\s+at\s+\d",
+        r"try\s+again\s+in\s+\d",
+        r"\bagain\s+at\s+\d",  # line-wrapped "… try" + "again at 5:41 PM"
         r"request limit",
         r"throttl",
         r"resource.?exhausted",
-        r"capacity",
+        r"(?:overloaded|at)\s+capacity|capacity\s+(?:exceeded|reached|limit)",
         r"overloaded",
         r"slow down",
         r"requests.*per.*minute",

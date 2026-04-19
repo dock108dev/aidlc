@@ -167,3 +167,24 @@ def test_reclassify_quota_chatter_success():
 def test_reclassify_quota_chatter_leaves_normal_success():
     r = {"success": True, "output": "# Hello\n\nThis is a ROADMAP."}
     assert rs.reclassify_quota_chatter_success(r) == r
+
+
+def test_plan_usage_limits_dashboard_copy_not_rate_limited():
+    """Claude/Code UI 'Plan usage limits' must not trigger provider cooldown."""
+    msg = """Plan usage limits
+Max (20x)
+Current session
+Resets in 22 min
+Learn more about usage limits
+Weekly limits
+30% used
+"""
+    assert rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"}) is False
+
+
+def test_reclassify_leaves_success_with_usage_limits_heading():
+    r = {
+        "success": True,
+        "output": "# Design\n\n## Plan usage limits\n\nWe track usage per tenant.\n",
+    }
+    assert rs.reclassify_quota_chatter_success(r) == r
