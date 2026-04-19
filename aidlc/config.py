@@ -12,6 +12,9 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 DEFAULTS = {
     "runtime_profile": "standard",  # standard | production
     "routing_strategy": "balanced",  # balanced | cheapest | best_quality | custom
+    # Per implementation routing resolve: probability (0–1) to try Copilot/OpenAI before
+    # max_capacity backends so budget CLIs get occasional usage without starving premium.
+    "routing_impl_budget_explore_probability": 0.05,
     "routing_rate_limit_cooldown_seconds": 300,
     # Added on top of any provider-reported restore time (429/retry-after). Doubles per
     # consecutive rate limit on the same (provider, model): 1×, 2×, 4× … capped at 8× base.

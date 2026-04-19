@@ -394,7 +394,8 @@ class ProviderRouter:
     # ------------------------------------------------------------------
 
     def _tier_aware_provider_order(self, phase: str, complexity_level: str) -> list[str]:
-        """Return provider IDs: max-capacity first for implementation; weighted-fair elsewhere."""
+        """Return provider IDs: implementation defaults to max-capacity first, with a
+        configurable random chance to try budget CLIs first; other phases use weighted-fair."""
         return context.tier_aware_provider_order(
             self.config,
             set(self._adapters.keys()),

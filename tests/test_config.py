@@ -73,6 +73,7 @@ class TestLoadConfig:
             "providers",
             "routing_rate_limit_cooldown_seconds",
             "routing_rate_limit_buffer_base_seconds",
+            "routing_impl_budget_explore_probability",
             "claude_long_run_warn_seconds",
             "claude_hard_timeout_seconds",
             "claude_timeout_grace_seconds",

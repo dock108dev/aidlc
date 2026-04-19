@@ -6,7 +6,7 @@ import logging
 from types import SimpleNamespace
 
 from aidlc.accounts.models import MembershipTier
-from aidlc.routing import context
+from aidlc.routing import context, helpers
 from aidlc.routing.types import UsagePressure
 
 from tests.test_routing_engine import FakeAdapter
@@ -77,10 +77,11 @@ def test_fallback_decision_no_adapters_instantiates_claude():
 
 def test_tier_aware_provider_order_implementation_prefers_premium_tag():
     cfg = {
+        "routing_impl_budget_explore_probability": 0.0,
         "providers": {
             "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
             "openai": {"enabled": True, "max_capacity": False},
-        }
+        },
     }
     order = context.tier_aware_provider_order(
         cfg,
@@ -92,6 +93,50 @@ def test_tier_aware_provider_order_implementation_prefers_premium_tag():
     )
     assert order[0] == "claude"
     assert "openai" in order
+
+
+def test_tier_aware_impl_budget_explore_reorders_when_probability_one():
+    cfg = {
+        "routing_impl_budget_explore_probability": 1.0,
+        "providers": {
+            "claude": {"enabled": True, "max_capacity": True},
+            "openai": {"enabled": True},
+            "copilot": {"enabled": True},
+        },
+    }
+    order = context.tier_aware_provider_order(
+        cfg,
+        {"claude", "openai", "copilot"},
+        UsagePressure(),
+        None,
+        "implementation",
+        "normal",
+    )
+    assert order[0] in helpers.get_budget_providers()
+    assert order.index("claude") > order.index(order[0])
+
+
+def test_tier_aware_impl_explore_random(monkeypatch):
+    cfg = {
+        "routing_impl_budget_explore_probability": 0.05,
+        "providers": {
+            "claude": {"enabled": True, "max_capacity": True},
+            "openai": {"enabled": True},
+        },
+    }
+    adapters = {"claude", "openai"}
+
+    monkeypatch.setattr("aidlc.routing.context.random.random", lambda: 0.001)
+    order_hit = context.tier_aware_provider_order(
+        cfg, adapters, UsagePressure(), None, "implementation", "normal"
+    )
+    assert order_hit[0] == "openai"
+
+    monkeypatch.setattr("aidlc.routing.context.random.random", lambda: 0.99)
+    order_miss = context.tier_aware_provider_order(
+        cfg, adapters, UsagePressure(), None, "implementation", "normal"
+    )
+    assert order_miss[0] == "claude"
 
 
 def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():

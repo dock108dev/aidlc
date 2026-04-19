@@ -68,17 +68,33 @@ def resolve_balanced(
             f"model={model} ({model_reason})"
         )
 
+        explore_p = 0.05
+        try:
+            explore_p = float(
+                router.config.get("routing_impl_budget_explore_probability", 0.05) or 0.0
+            )
+        except (TypeError, ValueError):
+            explore_p = 0.05
+        explore_p = max(0.0, min(1.0, explore_p))
+
         quality_note: str | None = None
-        if is_impl and max_cap:
-            quality_note = (
-                f"implementation → max-capacity backend ({provider_id}/{model}); "
-                "other CLIs only if excluded or unavailable"
-            )
-        elif is_impl and not max_cap:
-            quality_note = (
-                f"implementation: {provider_id}/{model} — no max_capacity backend first "
-                f"(cooldown/excluded); set providers.<id>.max_capacity"
-            )
+        if is_impl:
+            if provider_id in helpers.get_budget_providers():
+                quality_note = (
+                    f"implementation → budget CLI ({provider_id}/{model}); "
+                    f"~{explore_p:.0%} of resolves try budget CLIs first when enabled"
+                )
+            elif max_cap:
+                quality_note = (
+                    f"implementation → max-capacity backend ({provider_id}/{model}); "
+                    f"~{explore_p:.0%} of resolves try budget CLIs first; "
+                    "others when excluded or unavailable"
+                )
+            else:
+                quality_note = (
+                    f"implementation: {provider_id}/{model} — no max_capacity provider; "
+                    "set providers.<id>.max_capacity for premium-first ordering"
+                )
         elif is_legacy_premium and provider_id == "claude":
             quality_note = f"legacy Claude-first phase ({phase}) → {provider_id}/{model}"
         elif is_legacy_premium and provider_id != "claude":

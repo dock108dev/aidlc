@@ -5,6 +5,7 @@ Extracted from ``ProviderRouter`` to keep ``engine.py`` focused on the execute/r
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable
 from typing import Any
 
@@ -80,8 +81,10 @@ def tier_aware_provider_order(
 ) -> list[str]:
     """Order providers for balanced routing.
 
-    * **Implementation** phases: all ``max_capacity`` providers first (stable reference order),
-      then the rest — so high-capacity backends own coding work when enabled.
+    * **Implementation** phases: by default all ``max_capacity`` providers first (stable
+      reference order), then the rest. With probability ``routing_impl_budget_explore_probability``
+      (default 5%), enabled Copilot/OpenAI are tried first (fair order), then max_capacity,
+      then any remainder — so budget CLIs still receive occasional implementation traffic.
     * **Other phases**: weighted-fair order — minimize ``calls / max_capacity_weight`` so a
       provider with weight 20 is chosen roughly 20× as often per unit of usage before rotating.
     """
@@ -103,6 +106,24 @@ def tier_aware_provider_order(
 
     if is_impl:
         if max_cap_ids:
+            p_raw = config.get("routing_impl_budget_explore_probability", 0.05)
+            try:
+                explore_p = float(p_raw)
+            except (TypeError, ValueError):
+                explore_p = 0.05
+            explore_p = max(0.0, min(1.0, explore_p))
+            budget_enabled = [x for x in helpers.get_budget_providers() if x in enabled]
+            if budget_enabled and explore_p > 0.0 and random.random() < explore_p:
+                budget_set = set(budget_enabled)
+                budget_ordered = budget_provider_order(
+                    usage, session_budget_provider, budget_set
+                )
+                used = set(budget_ordered)
+                max_cap_rest = [
+                    p for p in _reference_ordered_subset(max_cap_ids, ref) if p not in used
+                ]
+                tail = enabled - used - set(max_cap_rest)
+                return list(budget_ordered) + max_cap_rest + _reference_ordered_subset(tail, ref)
             rest = enabled - max_cap_ids
             return _reference_ordered_subset(max_cap_ids, ref) + _reference_ordered_subset(
                 rest, ref
