@@ -38,6 +38,54 @@ def is_token_exhaustion_result(result: dict) -> bool:
     return any(re.search(pat, message) for pat in patterns)
 
 
+# (label, regex) — labels appear in routing diagnostics when a heuristic fires.
+# Avoid substrings common in doc-gap / design prose (e.g. "rate limiting", "overloaded servers").
+RATE_LIMIT_HEURISTIC_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("rate_limit_snake", r"rate_limit"),
+    ("ratelimit_token", r"\bratelimit\b"),
+    (
+        "rate_limit_api_phrase",
+        r"rate[\s_-]+limits?\s*(?:exceeded|reached|error|hit|429|\(|:)",
+    ),
+    ("rate_limited_word", r"\brate[\s_-]+limited\b"),
+    ("being_rate_limited", r"being\s+rate\s+limited"),
+    # Strong usage / quota refusal (not generic "usage limits" UI headings)
+    ("hit_your_usage", r"you'?ve\s+hit\s+your\s+usage\b"),
+    ("hit_usage_limit", r"hit\s+your\s+usage\s+limit"),
+    ("usage_limit_blocked", r"usage\s+limit\s+(?:reached|exceeded|hit|blocked)"),
+    ("exceeded_usage", r"exceeded\s+(?:your\s+)?(?:api\s+)?(?:rate\s+)?usage"),
+    ("upgrade_to_pro", r"upgrade to pro"),
+    ("purchase_credits", r"purchase more credits"),
+    ("too_many_requests", r"too many requests"),
+    ("too_many_requests_snake", r"too_many_requests"),
+    ("http_429", r"\b429\b"),
+    ("try_again_later", r"try\s+again\s+later\b"),
+    ("try_again_at_clock", r"try\s+again\s+at\s+\d"),
+    ("try_again_in_delay", r"try\s+again\s+in\s+\d"),
+    ("again_at_clock", r"\bagain\s+at\s+\d"),
+    ("request_limit_hit", r"request\s+limit\s*(?:exceeded|reached|hit)"),
+    ("throttle", r"throttl"),
+    ("resource_exhausted", r"resource.?exhausted"),
+    ("capacity_exceeded", r"(?:overloaded|at)\s+capacity|capacity\s+(?:exceeded|reached|limit)"),
+    ("server_overloaded", r"(?:server|service|endpoint|upstream)\s+overloaded"),
+    ("overloaded_error", r"overloaded\s+(?:error|exception|503|502|504)"),
+    ("rpm_tpm_limits", r"(?:requests|tokens).{0,12}per.{0,8}minute"),
+    ("tpm_token", r"\btpm\b"),
+    ("rpm_token", r"\brpm\b"),
+)
+
+
+def first_rate_limit_heuristic_match(message_lower: str) -> tuple[str | None, str | None]:
+    """Return (pattern_label, matched_text) for the first heuristic hit, or (None, None)."""
+    if not message_lower.strip():
+        return None, None
+    for label, pat in RATE_LIMIT_HEURISTIC_PATTERNS:
+        m = re.search(pat, message_lower)
+        if m:
+            return label, m.group(0).strip()[:200]
+    return None, None
+
+
 def is_rate_limited_result(result: dict) -> bool:
     """True when provider failure indicates temporary rate limiting."""
     if not isinstance(result, dict):
@@ -52,42 +100,54 @@ def is_rate_limited_result(result: dict) -> bool:
             str(result.get("output") or ""),
         ]
     ).lower()
-    if not message.strip():
-        return False
+    label, _span = first_rate_limit_heuristic_match(message)
+    return label is not None
 
-    # Avoid overly broad phrases that match Claude/Code *dashboard* copy pasted into
-    # responses (e.g. "Plan usage limits", "Learn more about usage limits", "30% used").
-    patterns = (
-        r"rate.?limit",
-        r"rate_limit",
-        r"ratelimit",
-        # Strong usage / quota refusal (not generic "usage limits" UI headings)
-        r"you'?ve\s+hit\s+your\s+usage\b",
-        r"hit\s+your\s+usage\s+limit",
-        r"usage\s+limit\s+(?:reached|exceeded|hit|blocked)",
-        r"exceeded\s+(?:your\s+)?(?:api\s+)?(?:rate\s+)?usage",
-        r"upgrade to pro",
-        r"purchase more credits",
-        r"too many requests",
-        r"too_many_requests",
-        r"\b429\b",
-        r"try\s+again\s+later\b",
-        # Require a numeric backoff / clock hint (avoids doc prose "try again at the next step")
-        r"try\s+again\s+at\s+\d",
-        r"try\s+again\s+in\s+\d",
-        r"\bagain\s+at\s+\d",  # line-wrapped "… try" + "again at 5:41 PM"
-        r"request limit",
-        r"throttl",
-        r"resource.?exhausted",
-        r"(?:overloaded|at)\s+capacity|capacity\s+(?:exceeded|reached|limit)",
-        r"overloaded",
-        r"slow down",
-        r"requests.*per.*minute",
-        r"tokens.*per.*minute",
-        r"\btpm\b",
-        r"\brpm\b",
-    )
-    return any(re.search(pat, message) for pat in patterns)
+
+def format_rate_limit_diagnostics(
+    result: dict,
+    *,
+    raw_restore_epoch: float | None = None,
+    cooldown_until_epoch: float | None = None,
+    buffer_seconds: float | None = None,
+) -> str:
+    """Multi-line explanation for logs when treating a provider result as rate-limited."""
+    lines: list[str] = []
+    if not isinstance(result, dict):
+        return "invalid result (not a dict)"
+    ft = str(result.get("failure_type") or "").strip()
+    if ft:
+        lines.append(f"failure_type={ft!r}")
+    err = str(result.get("error") or "")
+    out = str(result.get("output") or "")
+    combined_lower = f"{err}\n{out}".lower()
+    if ft.lower() in {"rate_limited", "rate_limit", "429"}:
+        lines.append("classification=provider_failure_type_keyword")
+    else:
+        label, span = first_rate_limit_heuristic_match(combined_lower)
+        if label:
+            lines.append(f"classification=heuristic pattern={label!r} matched_span={span!r}")
+        else:
+            lines.append("classification=heuristic (unexpected: no pattern after positive check)")
+    preview = f"{err}\n{out}".strip()
+    if len(preview) > 900:
+        preview = preview[:450] + "\n… [truncated] …\n" + preview[-400:]
+    lines.append(f"message_chars={len(err) + len(out)} preview:\n{preview}")
+    if raw_restore_epoch is not None:
+        lines.append(
+            "parsed_restore_epoch="
+            f"{datetime.fromtimestamp(raw_restore_epoch).isoformat(timespec='seconds')}"
+        )
+    else:
+        lines.append("parsed_restore_epoch=None (no retry-after / try-again time in payload)")
+    if cooldown_until_epoch is not None:
+        lines.append(
+            "cooldown_until_epoch="
+            f"{datetime.fromtimestamp(cooldown_until_epoch).isoformat(timespec='seconds')}"
+        )
+        if buffer_seconds is not None and buffer_seconds > 0:
+            lines.append(f"buffer_added_seconds≈{buffer_seconds:.0f} (routing_rate_limit_buffer_base × backoff step)")
+    return "\n".join(lines)
 
 
 def parse_wait_seconds(value: str) -> float | None:

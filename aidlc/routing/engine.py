@@ -208,9 +208,25 @@ class ProviderRouter:
                     excluded_models.add((decision.provider_id, decision.model))
                     rate_limited_models.append((decision.provider_id, decision.model))
 
+                    raw_reported = result_signals.extract_restore_time_epoch(result)
                     restore_at = self._compute_rate_limit_cooldown_until(
                         decision.provider_id, decision.model, result, now
                     )
+                    buf_hint: float | None = None
+                    if restore_at is not None and raw_reported is not None:
+                        buf_hint = max(0.0, restore_at - raw_reported)
+                    elif restore_at is not None and raw_reported is None:
+                        buf_hint = max(0.0, restore_at - now)
+                    detail = result_signals.format_rate_limit_diagnostics(
+                        result,
+                        raw_restore_epoch=raw_reported,
+                        cooldown_until_epoch=restore_at,
+                        buffer_seconds=buf_hint,
+                    )
+                    for line in detail.splitlines():
+                        self.logger.warning(
+                            f"[routing] {effective_phase}: rate_limited_detail | {line}"
+                        )
                     if restore_at is not None:
                         self._provider_cooldowns[decision.provider_id] = restore_at
                         self._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
@@ -219,12 +235,14 @@ class ProviderRouter:
                         )
                         self.logger.warning(
                             f"[routing] {effective_phase}: rate limited on "
-                            f"{decision.provider_id}/{decision.model}; restore at {restore_text}"
+                            f"{decision.provider_id}/{decision.model}; cooldown_until={restore_text} "
+                            f"(try another provider if configured)"
                         )
                     else:
                         self.logger.warning(
                             f"[routing] {effective_phase}: rate limited on "
-                            f"{decision.provider_id}/{decision.model}; no restore time provided"
+                            f"{decision.provider_id}/{decision.model}; no cooldown_until "
+                            f"(try another provider if configured)"
                         )
                     continue
 
