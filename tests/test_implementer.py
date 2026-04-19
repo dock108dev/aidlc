@@ -68,6 +68,49 @@ def cli():
     return cli
 
 
+def test_reopen_verified_without_verification_result(tmp_path, logger):
+    """Hydrated verified rows with empty Verification Result must re-open for implementation."""
+    cfg = {
+        "_project_root": str(tmp_path),
+        "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+        "_reports_dir": str(tmp_path / ".aidlc" / "reports"),
+        "checkpoint_interval_minutes": 999,
+        "max_consecutive_failures": 3,
+        "max_implementation_attempts": 3,
+        "max_implementation_cycles": 5,
+        "test_timeout_seconds": 30,
+        "max_implementation_context_chars": 30000,
+        "dry_run": True,
+        "run_tests_command": None,
+        "autosync_issue_status_sync": False,
+        "implementation_reopen_verified_without_result": True,
+    }
+    state = RunState(run_id="r1", config_name="default")
+    state.issues = [
+        {
+            "id": "ISSUE-001",
+            "title": "A",
+            "description": "d",
+            "priority": "medium",
+            "labels": [],
+            "dependencies": [],
+            "acceptance_criteria": [],
+            "status": "verified",
+            "implementation_notes": "",
+            "verification_result": "",
+            "files_changed": [],
+            "attempt_count": 0,
+            "max_attempts": 3,
+        },
+    ]
+    state.total_issues = 1
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    impl = Implementer(state, run_dir, cfg, MagicMock(), "", logger)
+    assert impl._maybe_reopen_stale_verified_issues() is True
+    assert state.issues[0]["status"] == "pending"
+
+
 class TestImplementer:
     def test_dry_run_completes(self, state_with_issues, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"

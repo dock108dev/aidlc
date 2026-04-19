@@ -229,6 +229,11 @@ class TestRunState:
             {"id": "ISSUE-001", "status": "verified", "attempt_count": 1, "max_attempts": 3},
             {"id": "ISSUE-002", "status": "implemented", "attempt_count": 1, "max_attempts": 3},
         ]
+        assert not state.all_issues_resolved()
+
+        state.issues = [
+            {"id": "ISSUE-001", "status": "verified", "attempt_count": 1, "max_attempts": 3},
+        ]
         assert state.all_issues_resolved()
 
     def test_all_issues_resolved_with_failed_exhausted(self):

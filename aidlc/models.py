@@ -157,9 +157,13 @@ class RunState:
         return pending
 
     def all_issues_resolved(self) -> bool:
-        """True when every issue is implemented, verified, or skipped."""
+        """True when every issue is terminal for this lifecycle (verified/skipped) or exhausted.
+
+        ``implemented`` is *not* terminal: those issues still need the final verification pass
+        to be promoted to verified; otherwise the implementation loop is skipped early.
+        """
         for d in self.issues:
-            if d.get("status") in ("pending", "in_progress", "blocked"):
+            if d.get("status") in ("pending", "in_progress", "blocked", "implemented"):
                 return False
             if d.get("status") == "failed":
                 issue = Issue.from_dict(d)

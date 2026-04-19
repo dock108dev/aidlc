@@ -86,6 +86,7 @@ class TestLoadConfig:
             "planning_finalization_grace_cycles",
             "max_implementation_attempts",
             "implementation_escalate_on_retry",
+            "implementation_reopen_verified_without_result",
             "implementation_accept_pre_existing_suite_failures",
             "implementation_pre_existing_debt_min_chars",
             "implementation_pre_existing_prose_heuristic",

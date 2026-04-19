@@ -115,6 +115,38 @@ class Implementer:
             config.get("stop_on_all_models_token_exhausted", True)
         )
 
+    def _maybe_reopen_stale_verified_issues(self) -> bool:
+        """Re-open verified issues that have no Verification Result body (planner/template noise).
+
+        Without this, hydrated ``Status: verified`` rows make ``all_issues_resolved()`` true and
+        the implementation loop is skipped entirely while work was never done.
+        """
+        if not self.config.get("implementation_reopen_verified_without_result", True):
+            return False
+        non_skip = [d for d in self.state.issues if d.get("status") != IssueStatus.SKIPPED.value]
+        if not non_skip:
+            return False
+        for d in non_skip:
+            if d.get("status") != IssueStatus.VERIFIED.value:
+                return False
+        stale: list[Issue] = []
+        for d in non_skip:
+            issue = Issue.from_dict(d)
+            if not (issue.verification_result or "").strip():
+                stale.append(issue)
+        if not stale:
+            return False
+        self.logger.warning(
+            f"{len(stale)} issue(s) are verified but have no Verification Result text; "
+            "re-opening as pending so implementation runs "
+            "(disable via implementation_reopen_verified_without_result=false)."
+        )
+        for issue in stale:
+            issue.status = IssueStatus.PENDING
+            self.state.update_issue(issue)
+            self._sync_issue_markdown(issue)
+        return True
+
     def _emit_run_checkpoint_summary(self) -> None:
         """Snapshot state to checkpoints/, write markdown summary, log CHECKPOINT block."""
         checkpoint(self.state, self.run_dir)
@@ -159,6 +191,16 @@ class Implementer:
             self.logger.error(self.state.stop_reason)
             save_state(self.state, self.run_dir)
             return False
+
+        if self._maybe_reopen_stale_verified_issues():
+            if not self._sort_issues():
+                self.state.phase = RunPhase.IMPLEMENTING
+                self.state.stop_reason = (
+                    "Dependency cycle detected after re-opening verified issues."
+                )
+                self.logger.error(self.state.stop_reason)
+                save_state(self.state, self.run_dir)
+                return False
 
         self.state.phase = RunPhase.IMPLEMENTING
         save_state(self.state, self.run_dir)

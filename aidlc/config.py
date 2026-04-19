@@ -153,6 +153,10 @@ DEFAULTS = {
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
     "implementation_escalate_on_retry": True,  # escalate retries to complex implementation model
+    # If true, issues that are Status=verified but have an empty Verification Result (common when
+    # templates or planning copy mark verified without work) are re-opened as pending so the
+    # implementation phase actually runs. Set false if you intentionally keep verified without prose.
+    "implementation_reopen_verified_without_result": True,
     # If true, allow ISSUE implemented when full test cmd still fails but fix prompt documents
     # pre-existing unrelated failures and follow_up_documentation meets min length.
     "implementation_accept_pre_existing_suite_failures": True,
