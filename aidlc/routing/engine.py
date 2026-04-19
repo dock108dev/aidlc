@@ -160,6 +160,7 @@ class ProviderRouter:
                     model_override=decision.model,
                     account_id=decision.account_id,
                 )
+                result = result_signals.reclassify_quota_chatter_success(result)
 
                 # Enrich result with routing metadata
                 result.setdefault("provider_id", decision.provider_id)

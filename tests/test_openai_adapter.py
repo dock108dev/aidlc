@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from aidlc.providers.openai_adapter import (
     OpenAIAdapter,
     _classify_openai_cli_failure,
+    _codex_exit_zero_is_quota_blocker,
     _extract_codex_failure_diagnostics,
     _parse_codex_jsonl,
 )
@@ -122,6 +123,35 @@ def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_pa
     assert result["failure_type"] == "rate_limited"
     assert "rate limit" in result["error"].lower()
     assert result["output"] is not None
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_zero_exit_with_usage_tui_is_failure(mock_popen, tmp_path):
+    """Codex may exit 0 while only printing quota / TUI text (no JSONL completion)."""
+    stdout = """■ You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro),
+visit https://chatgpt.com/codex/settings/usage to purchase more credits or try
+again at 5:41 PM.
+"""
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "")
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {
+            "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
+            "claude_hard_timeout_seconds": 30,
+        },
+        MagicMock(),
+    )
+    result = adapter.execute_prompt("hello", tmp_path)
+    assert result["success"] is False
+    assert result["failure_type"] == "rate_limited"
+    assert "usage limit" in (result.get("error") or "").lower()
+
+
+def test_codex_exit_zero_blocker_helper_negative():
+    ok, _ = _codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
+    assert ok is False
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")

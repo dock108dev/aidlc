@@ -62,6 +62,7 @@ def is_rate_limited_result(result: dict) -> bool:
         r"usage.?limit",
         # Codex CLI plain text: "You've hit your usage limit … try again at 5:41 PM"
         r"hit your usage",
+        r"upgrade to pro",
         r"purchase more credits",
         r"too many requests",
         r"too_many_requests",
@@ -161,6 +162,60 @@ def parse_restore_clock_time(message: str, now_epoch: float) -> float | None:
     return None
 
 
+def parse_natural_try_again_datetime(message: str) -> float | None:
+    """Parse Codex long-window lines like 'try again at Apr 22nd, 2026 9:04 PM'."""
+    if not message:
+        return None
+    compact = " ".join(message.split())
+    m = re.search(
+        r"(?:try\s+again\s+at|again\s+at)\s+"
+        r"([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,\s*(\d{4})\s+"
+        r"(\d{1,2}):(\d{2})\s*([AP]M)",
+        compact,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    month_s, day_s, year_s, hour_s, minute_s, ampm = m.groups()
+    day = int(day_s)
+    year = int(year_s)
+    hour = int(hour_s)
+    minute = int(minute_s)
+    for fmt in ("%b %d %Y %I:%M %p", "%B %d %Y %I:%M %p"):
+        try:
+            dt = datetime.strptime(
+                f"{month_s} {day} {year} {hour}:{minute} {ampm.upper()}",
+                fmt,
+            )
+            return dt.timestamp()
+        except ValueError:
+            continue
+    return None
+
+
+def reclassify_quota_chatter_success(result: dict) -> dict:
+    """If a provider returned success=True but the body is quota/rate-limit text, mark failure."""
+    if not isinstance(result, dict) or not result.get("success"):
+        return result
+    msg = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).strip()
+    if not msg:
+        return result
+    probe = {"error": msg, "output": msg}
+    if is_rate_limited_result(probe):
+        out = dict(result)
+        out["success"] = False
+        out["failure_type"] = "rate_limited"
+        out.setdefault("error", msg[:20000])
+        return out
+    if is_token_exhaustion_result(probe):
+        out = dict(result)
+        out["success"] = False
+        out["failure_type"] = "token_exhausted"
+        out.setdefault("error", msg[:20000])
+        return out
+    return result
+
+
 def extract_restore_time_epoch(result: dict) -> float | None:
     """Best-effort extraction of a rate-limit restore time from provider output."""
     if not isinstance(result, dict):
@@ -239,5 +294,9 @@ def extract_restore_time_epoch(result: dict) -> float | None:
     clock_restore = parse_restore_clock_time(message, now)
     if clock_restore is not None:
         return clock_restore
+
+    natural = parse_natural_try_again_datetime(message)
+    if natural is not None:
+        return natural
 
     return None

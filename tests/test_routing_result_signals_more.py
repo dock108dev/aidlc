@@ -135,3 +135,35 @@ def test_extract_restore_from_restore_at_iso():
     r = {"restore_at": "2025-01-15T12:00:00+00:00"}
     t = rs.extract_restore_time_epoch(r)
     assert t is not None
+
+
+def test_parse_natural_try_again_datetime():
+    msg = "visit settings or try again at Apr 22nd, 2026 9:04 PM."
+    t = rs.parse_natural_try_again_datetime(msg)
+    assert t is not None
+    dt = datetime.fromtimestamp(t)
+    assert dt.year == 2026
+    assert dt.month == 4
+    assert dt.day == 22
+
+
+def test_extract_restore_codex_long_date_in_message():
+    with patch("aidlc.routing.result_signals.time.time", return_value=1000.0):
+        r = {
+            "error": "",
+            "output": "try again at Apr 22nd, 2026 9:04 PM.",
+        }
+        t = rs.extract_restore_time_epoch(r)
+        assert t is not None
+
+
+def test_reclassify_quota_chatter_success():
+    r = {"success": True, "output": "■ You've hit your usage limit. Upgrade to Pro."}
+    out = rs.reclassify_quota_chatter_success(r)
+    assert out["success"] is False
+    assert out["failure_type"] == "rate_limited"
+
+
+def test_reclassify_quota_chatter_leaves_normal_success():
+    r = {"success": True, "output": "# Hello\n\nThis is a ROADMAP."}
+    assert rs.reclassify_quota_chatter_success(r) == r

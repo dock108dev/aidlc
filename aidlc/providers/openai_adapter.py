@@ -134,6 +134,26 @@ def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
     return combined.strip()
 
 
+def _codex_exit_zero_is_quota_blocker(stdout: str, stderr: str, parsed_out: str) -> tuple[bool, str]:
+    """Codex may exit 0 while printing usage limits / interactive TUI (no real completion)."""
+    from ..routing import result_signals as rs
+
+    diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
+    merged = "\n".join(
+        [
+            diagnostic,
+            parsed_out.strip(),
+            (stdout or "").strip(),
+        ]
+    )
+    probe = {"error": diagnostic or merged, "output": merged}
+    if not merged.strip():
+        return False, ""
+    if rs.is_rate_limited_result(probe) or rs.is_token_exhaustion_result(probe):
+        return True, (diagnostic or merged).strip()[:20000]
+    return False, ""
+
+
 def _classify_openai_cli_failure(diagnostic: str) -> str:
     """Map combined stderr/stdout diagnostic to a normalized failure_type."""
     from ..routing import result_signals as rs
@@ -226,6 +246,20 @@ class OpenAIAdapter(ProviderAdapter):
             if proc.returncode == 0:
                 parsed_out, usage = _parse_codex_jsonl(stdout or "")
                 out_text = parsed_out if parsed_out.strip() else (stdout or "")
+                blocked, diag = _codex_exit_zero_is_quota_blocker(
+                    stdout or "", stderr or "", parsed_out
+                )
+                if blocked:
+                    failure_type = _classify_openai_cli_failure(diag)
+                    out_tail = (stdout or "")[-16000:] if stdout else None
+                    return self._failure_result(
+                        model,
+                        account_id,
+                        duration,
+                        error=diag,
+                        failure_type=failure_type,
+                        output=out_tail,
+                    )
                 usage_source = "codex_jsonl" if usage else "openai_cli"
                 return {
                     "success": True,
