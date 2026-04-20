@@ -287,9 +287,22 @@ class Implementer:
 
         if self.state.stop_reason and not self.state.all_issues_resolved():
             self.logger.info(
-                "Skipping final verification because implementation stopped early: "
-                f"{self.state.stop_reason}"
+                "Implementation stopped early: running finalization passes (ssot, abend, cleanup) before exit."
             )
+            # Run finalization passes for ssot, abend, cleanup
+            try:
+                from .finalizer import Finalizer
+                finalizer = Finalizer(
+                    self.state,
+                    self.run_dir,
+                    self.config,
+                    self.cli,
+                    self.project_context,
+                    self.logger,
+                )
+                finalizer.run(passes=["ssot", "abend", "cleanup"])
+            except Exception as e:
+                self.logger.error(f"Finalization passes failed: {e}")
             save_state(self.state, self.run_dir)
             return False
 

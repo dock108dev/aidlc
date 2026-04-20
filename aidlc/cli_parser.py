@@ -5,6 +5,14 @@ import textwrap
 
 
 def build_parser(version: str) -> argparse.ArgumentParser:
+        validate_parser = subparsers.add_parser(
+            "validate",
+            help="Run validation phase only",
+            description="Run the validation (test/fix) loop on the latest run state.",
+        )
+        validate_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+        validate_parser.add_argument("--config", "-c", help="Config file path")
+        validate_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
     """Build top-level argparse parser for AIDLC."""
     parser = argparse.ArgumentParser(
         prog="aidlc",

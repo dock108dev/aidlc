@@ -328,7 +328,7 @@ def run_full(
                         state.stop_reason = "Implementation stopped: final verification failed"
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
-                    return
+                    # Do not return here; always proceed to validation
             else:
                 logger.warning("No issues to implement. Did planning produce any issues?")
 
