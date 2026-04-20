@@ -5,36 +5,39 @@ import textwrap
 
 
 def build_parser(version: str) -> argparse.ArgumentParser:
+
+        """Build top-level argparse parser for AIDLC."""
+        parser = argparse.ArgumentParser(
+                prog="aidlc",
+                description="AIDLC — AI Development Life Cycle. Drop into any repo, plan with a time budget, implement until done.",
+                formatter_class=argparse.RawDescriptionHelpFormatter,
+                epilog=textwrap.dedent("""\
+                        Quick start:
+                            aidlc precheck            Check what docs are needed
+                            aidlc init --with-docs    Set up AIDLC + copy planning templates
+                            aidlc run                 Run full lifecycle
+
+                        For existing repos:
+                            aidlc precheck            See what's missing
+                            aidlc audit               Generate STATUS.md from your code
+                            aidlc run --audit         Audit first, then run lifecycle
+
+                        More info: https://github.com/highlyprofitable108/aidlc
+                """),
+        )
+        parser.add_argument("--version", "-V", action="version", version=f"aidlc {version}")
+
+        subparsers = parser.add_subparsers(dest="command", help="Command")
+
+        # Add validate_parser at the correct place
         validate_parser = subparsers.add_parser(
-            "validate",
-            help="Run validation phase only",
-            description="Run the validation (test/fix) loop on the latest run state.",
+                "validate",
+                help="Run validation phase only",
+                description="Run the validation (test/fix) loop on the latest run state.",
         )
         validate_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
         validate_parser.add_argument("--config", "-c", help="Config file path")
         validate_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
-    """Build top-level argparse parser for AIDLC."""
-    parser = argparse.ArgumentParser(
-        prog="aidlc",
-        description="AIDLC — AI Development Life Cycle. Drop into any repo, plan with a time budget, implement until done.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""\
-            Quick start:
-              aidlc precheck            Check what docs are needed
-              aidlc init --with-docs    Set up AIDLC + copy planning templates
-              aidlc run                 Run full lifecycle
-
-            For existing repos:
-              aidlc precheck            See what's missing
-              aidlc audit               Generate STATUS.md from your code
-              aidlc run --audit         Audit first, then run lifecycle
-
-            More info: https://github.com/highlyprofitable108/aidlc
-        """),
-    )
-    parser.add_argument("--version", "-V", action="version", version=f"aidlc {version}")
-
-    subparsers = parser.add_subparsers(dest="command", help="Command")
 
     precheck_parser = subparsers.add_parser(
         "precheck",
