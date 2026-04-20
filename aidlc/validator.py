@@ -4,10 +4,10 @@ After implementation, runs stack-specific test suites, parses failures,
 generates fix issues, and loops until stable or max iterations reached.
 """
 
-import subprocess
 import time
 from pathlib import Path
 
+from ._proc import run_with_group_kill
 from .context_utils import parse_project_type
 from .models import Issue, IssueStatus, RunPhase, RunState
 from .state_manager import save_state
@@ -204,22 +204,20 @@ class Validator:
         """Run a test command and return (passed, output)."""
         t0 = time.time()
         try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                cwd=str(self.project_root),
-                timeout=self.test_timeout,
-            )
-            output = (result.stdout or "") + "\n" + (result.stderr or "")
+            try:
+                result = run_with_group_kill(
+                    command,
+                    cwd=str(self.project_root),
+                    timeout=self.test_timeout,
+                )
+            except FileNotFoundError:
+                self.logger.warning(f"Test command not found: {command}")
+                return False, ""
+            if result.timed_out:
+                self.logger.warning(f"Test command timed out after {self.test_timeout}s: {command}")
+                return False, "Test timed out"
+            output = result.stdout + "\n" + result.stderr
             return result.returncode == 0, output
-        except subprocess.TimeoutExpired:
-            self.logger.warning(f"Test command timed out after {self.test_timeout}s: {command}")
-            return False, "Test timed out"
-        except FileNotFoundError:
-            self.logger.warning(f"Test command not found: {command}")
-            return False, ""
         finally:
             add_console_time(self.state, t0)
 

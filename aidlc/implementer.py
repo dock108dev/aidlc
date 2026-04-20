@@ -1,9 +1,9 @@
 """Implementation engine for AIDLC issue execution and verification."""
 
-import subprocess
 import time
 from pathlib import Path
 
+from ._proc import run_with_group_kill
 from .implementer_helpers import (
     FixTestsOutcome,
     build_implementation_prompt,
@@ -620,27 +620,25 @@ class Implementer:
 
         t0 = time.time()
         try:
-            proc = subprocess.run(
-                cmd,
-                shell=True,
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=self.test_timeout,
-            )
+            try:
+                result = run_with_group_kill(
+                    cmd,
+                    cwd=str(self.project_root),
+                    timeout=self.test_timeout,
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to run tests: {e}")
+                if capture_output:
+                    return f"Failed to run tests: {e}"
+                return False
+            if result.timed_out:
+                self.logger.warning(f"Test suite timed out ({self.test_timeout}s)")
+                if capture_output:
+                    return f"Tests timed out after {self.test_timeout}s"
+                return False
             if capture_output:
-                return proc.stdout + proc.stderr
-            return proc.returncode == 0
-        except subprocess.TimeoutExpired:
-            self.logger.warning(f"Test suite timed out ({self.test_timeout}s)")
-            if capture_output:
-                return f"Tests timed out after {self.test_timeout}s"
-            return False
-        except Exception as e:
-            self.logger.error(f"Failed to run tests: {e}")
-            if capture_output:
-                return f"Failed to run tests: {e}"
-            return False
+                return result.stdout + result.stderr
+            return result.returncode == 0
         finally:
             add_console_time(self.state, t0)
 
