@@ -259,24 +259,34 @@ def parse_natural_try_again_datetime(message: str) -> float | None:
 
 
 def reclassify_quota_chatter_success(result: dict) -> dict:
-    """If a provider returned success=True but the body is quota/rate-limit text, mark failure."""
+    """If a provider returned success=True but the error field reports quota/rate-limit text, mark failure.
+
+    Only the 'error' field is inspected — never 'output'. A success=True result's 'output'
+    is model-generated content (code, docs, dashboards, JSON). It can legitimately contain
+    phrases like 'rate-limited' (e.g. a Grafana panel named 'rate-limited count stat')
+    without implying the provider itself was throttled. Keyword-scanning that body produced
+    false positives that triggered multi-hour cooldowns on perfectly healthy accounts.
+
+    Adapters (Claude CLI, OpenAI/Codex) are authoritative: they inspect raw stdout/stderr
+    before returning and set success=False with the appropriate failure_type when they see
+    real quota signals. This function is a defensive net for adapters that accidentally set
+    success=True while populating 'error' with a quota message.
+    """
     if not isinstance(result, dict) or not result.get("success"):
         return result
-    msg = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).strip()
-    if not msg:
+    err = str(result.get("error") or "").strip()
+    if not err:
         return result
-    probe = {"error": msg, "output": msg}
+    probe = {"error": err, "output": ""}
     if is_rate_limited_result(probe):
         out = dict(result)
         out["success"] = False
         out["failure_type"] = "rate_limited"
-        out.setdefault("error", msg[:20000])
         return out
     if is_token_exhaustion_result(probe):
         out = dict(result)
         out["success"] = False
         out["failure_type"] = "token_exhausted"
-        out.setdefault("error", msg[:20000])
         return out
     return result
 

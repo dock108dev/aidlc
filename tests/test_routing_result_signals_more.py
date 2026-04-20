@@ -158,7 +158,7 @@ def test_extract_restore_codex_long_date_in_message():
 
 
 def test_reclassify_quota_chatter_success():
-    r = {"success": True, "output": "■ You've hit your usage limit. Upgrade to Pro."}
+    r = {"success": True, "error": "■ You've hit your usage limit. Upgrade to Pro."}
     out = rs.reclassify_quota_chatter_success(r)
     assert out["success"] is False
     assert out["failure_type"] == "rate_limited"
@@ -166,6 +166,36 @@ def test_reclassify_quota_chatter_success():
 
 def test_reclassify_quota_chatter_leaves_normal_success():
     r = {"success": True, "output": "# Hello\n\nThis is a ROADMAP."}
+    assert rs.reclassify_quota_chatter_success(r) == r
+
+
+def test_reclassify_ignores_rate_limit_word_in_model_output():
+    """Model output (success=True) may legitimately contain rate-limit phrasing.
+
+    Regression: Claude-generated Grafana dashboard with a panel named
+    'rate-limited count stat' triggered a bogus provider cooldown because the
+    reclassifier scanned the output body for rate-limit keywords.
+    """
+    r = {
+        "success": True,
+        "error": None,
+        "output": (
+            '{"success": true, "files_changed": ["social-collection-health.json"], '
+            '"notes": "5-panel dashboard with 2-hour rolling success rate and '
+            'rate-limited count stat per handle"}'
+        ),
+        "provider_id": "claude",
+    }
+    assert rs.reclassify_quota_chatter_success(r) == r
+
+
+def test_reclassify_ignores_try_again_later_prose_in_output():
+    """Generated code/docs may contain 'try again later' advice without being rate-limited."""
+    r = {
+        "success": True,
+        "error": None,
+        "output": 'def on_429(): logger.warn("rate limit exceeded; try again later at 2s backoff")',
+    }
     assert rs.reclassify_quota_chatter_success(r) == r
 
 
