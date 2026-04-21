@@ -333,7 +333,7 @@ class TestBuildImplementationPrompt:
 
 
 class TestGetChangedFiles:
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer_workspace.subprocess.run")
     def test_returns_changed_files(self, mock_run, config, cli, logger, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -346,7 +346,7 @@ class TestGetChangedFiles:
         files = impl._get_changed_files()
         assert files == ["src/main.py", "src/utils.py"]
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer_workspace.subprocess.run")
     def test_returns_empty_on_no_changes(self, mock_run, config, cli, logger, tmp_path):
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         state = RunState(run_id="t", config_name="c")

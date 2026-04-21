@@ -115,9 +115,7 @@ def tier_aware_provider_order(
             budget_enabled = [x for x in helpers.get_budget_providers() if x in enabled]
             if budget_enabled and explore_p > 0.0 and random.random() < explore_p:
                 budget_set = set(budget_enabled)
-                budget_ordered = budget_provider_order(
-                    usage, session_budget_provider, budget_set
-                )
+                budget_ordered = budget_provider_order(usage, session_budget_provider, budget_set)
                 used = set(budget_ordered)
                 max_cap_rest = [
                     p for p in _reference_ordered_subset(max_cap_ids, ref) if p not in used

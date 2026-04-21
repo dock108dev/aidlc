@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aidlc._proc import ProcResult
 from aidlc.implementer import Implementer
 from aidlc.implementer_helpers import FixTestsOutcome
 from aidlc.models import Issue, IssueStatus, RunState
@@ -89,9 +90,9 @@ def make_state_with_issue(issue_id="ISSUE-001", **overrides):
 
 
 class TestImplementIssueSuccess:
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_uses_standard_implementation_routing(self, mock_subproc, config, logger, tmp_path):
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         cli = make_cli_success(
             {
                 "issue_id": "ISSUE-001",
@@ -114,9 +115,9 @@ class TestImplementIssueSuccess:
         kwargs = cli.execute_prompt.call_args.kwargs
         assert "model_override" not in kwargs
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         config["implementation_complexity_acceptance_criteria_threshold"] = 2
         cli = make_cli_success(
             {
@@ -138,9 +139,9 @@ class TestImplementIssueSuccess:
         assert result is True
         cli.set_complexity.assert_called_once_with("complex")
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         config["implementation_escalate_on_retry"] = True
         cli = make_cli_success(
             {
@@ -162,9 +163,9 @@ class TestImplementIssueSuccess:
         assert result is True
         cli.set_complexity.assert_called_once_with("complex")
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_successful_with_json_result(self, mock_subproc, config, logger, tmp_path):
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         cli = make_cli_success(
             {
                 "issue_id": "ISSUE-001",
@@ -185,10 +186,10 @@ class TestImplementIssueSuccess:
         assert result is True
         assert state.issues_implemented == 1
 
-    @patch("aidlc.implementer.subprocess.run")
-    def test_no_json_but_files_changed(self, mock_subproc, config, logger, tmp_path):
+    @patch("aidlc.implementer_workspace.subprocess.run")
+    def test_no_json_but_files_changed(self, mock_git, config, logger, tmp_path):
         """Non-JSON output with file changes should fail (legacy path removed)."""
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
+        mock_git.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
             "success": True,
@@ -207,10 +208,10 @@ class TestImplementIssueSuccess:
         result = impl._implement_issue(issue)
         assert result is False
 
-    @patch("aidlc.implementer.subprocess.run")
-    def test_no_json_no_files_fails(self, mock_subproc, config, logger, tmp_path):
+    @patch("aidlc.implementer_workspace.subprocess.run")
+    def test_no_json_no_files_fails(self, mock_git, config, logger, tmp_path):
         """Non-JSON output with no file changes should fail."""
-        mock_subproc.return_value = MagicMock(returncode=0, stdout="")
+        mock_git.return_value = MagicMock(returncode=0, stdout="")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
             "success": True,
@@ -246,13 +247,11 @@ class TestImplementIssueFail:
 
 
 class TestRunWithTests:
-    @patch("aidlc.implementer.subprocess.run")
-    def test_tests_pass(self, mock_subproc, config, logger, tmp_path):
-        mock_subproc.side_effect = [
-            MagicMock(returncode=0, stdout="a.py\n"),  # git diff (for validation)
-            MagicMock(returncode=0, stdout="ok", stderr=""),  # test run
-            MagicMock(returncode=0, stdout="a.py\n"),  # git diff (for validation again)
-        ]
+    @patch("aidlc.implementer.run_with_group_kill")
+    @patch("aidlc.implementer_workspace.subprocess.run")
+    def test_tests_pass(self, mock_git, mock_rgk, config, logger, tmp_path):
+        mock_git.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_rgk.return_value = ProcResult(0, "ok", "", False)
         config["run_tests_command"] = "echo pass"
         cli = make_cli_success(
             {
@@ -273,13 +272,14 @@ class TestRunWithTests:
         result = impl._implement_issue(issue)
         assert result is True
 
-    @patch("aidlc.implementer.subprocess.run")
-    def test_test_timeout_leads_to_failure(self, mock_subproc, config, logger, tmp_path):
+    @patch("aidlc.implementer.run_with_group_kill")
+    @patch("aidlc.implementer_workspace.subprocess.run")
+    def test_test_timeout_leads_to_failure(self, mock_git, mock_rgk, config, logger, tmp_path):
         config["run_tests_command"] = "sleep 100"
         config["test_timeout_seconds"] = 1
 
-        # All subprocess calls timeout
-        mock_subproc.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=1)
+        mock_git.return_value = MagicMock(returncode=0, stdout="a.py\n")
+        mock_rgk.return_value = ProcResult(0, "", "", True)
 
         cli_mock = MagicMock()
         cli_mock.execute_prompt.side_effect = [
@@ -330,10 +330,10 @@ class TestRunTests:
         assert impl._run_tests() is True
         assert impl._run_tests(capture_output=True) == "[DRY RUN] Tests passed"
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_test_pass(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
-        mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+        mock_run.return_value = ProcResult(0, "ok", "", False)
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -341,10 +341,10 @@ class TestRunTests:
         impl.test_command = "pytest"
         assert impl._run_tests() is True
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_test_fail(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
-        mock_run.return_value = MagicMock(returncode=1, stdout="FAILED", stderr="err")
+        mock_run.return_value = ProcResult(1, "FAILED", "err", False)
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -352,10 +352,10 @@ class TestRunTests:
         impl.test_command = "pytest"
         assert impl._run_tests() is False
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_capture_output(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
-        mock_run.return_value = MagicMock(returncode=1, stdout="FAIL\n", stderr="error\n")
+        mock_run.return_value = ProcResult(1, "FAIL\n", "error\n", False)
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -365,7 +365,7 @@ class TestRunTests:
         assert "FAIL" in output
         assert "error" in output
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_test_exception(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
         mock_run.side_effect = OSError("cannot run")
@@ -378,10 +378,10 @@ class TestRunTests:
         output = impl._run_tests(capture_output=True)
         assert "Failed to run tests" in output
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_timeout_capture(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="pytest", timeout=5)
+        mock_run.return_value = ProcResult(0, "", "", True)
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
         run_dir.mkdir()
@@ -499,13 +499,13 @@ class TestBlockedIssues:
 
 
 class TestFixFailingTests:
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_fix_attempt(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
         # First call: capture test output (fail), second: run tests after fix (pass)
         mock_run.side_effect = [
-            MagicMock(returncode=1, stdout="FAILED test", stderr=""),
-            MagicMock(returncode=0, stdout="ok", stderr=""),
+            ProcResult(1, "FAILED test", "", False),
+            ProcResult(0, "ok", "", False),
         ]
         cli = MagicMock()
         cli.execute_prompt.return_value = {
@@ -527,10 +527,10 @@ class TestFixFailingTests:
         kwargs = cli.execute_prompt.call_args.kwargs
         assert kwargs.get("model_override") == "opus"
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_fix_fails(self, mock_run, config, logger, tmp_path):
         config["run_tests_command"] = "pytest"
-        mock_run.return_value = MagicMock(returncode=1, stdout="FAILED", stderr="")
+        mock_run.return_value = ProcResult(1, "FAILED", "", False)
         cli = MagicMock()
         cli.execute_prompt.return_value = {
             "success": False,
@@ -752,9 +752,9 @@ class TestImplementerMoreBranches:
             )
         assert "requested" in caplog.text
 
-    @patch("aidlc.implementer.subprocess.run")
+    @patch("aidlc.implementer.run_with_group_kill")
     def test_run_tests_timeout_capture_output(self, mock_run, config, logger, tmp_path):
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
+        mock_run.return_value = ProcResult(0, "", "", True)
         config["dry_run"] = False
         config["run_tests_command"] = "pytest"
         state = RunState(run_id="t", config_name="c")

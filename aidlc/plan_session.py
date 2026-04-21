@@ -211,9 +211,7 @@ class PlanSession:
             )
             prompt = add_research_output_constraints(prompt)
 
-            research_result = self.cli.execute_prompt(
-                prompt, self.project_root, allow_edits=True
-            )
+            research_result = self.cli.execute_prompt(prompt, self.project_root, allow_edits=True)
             if research_result["success"] and research_result.get("output"):
                 output = research_result["output"]
                 if is_permission_chatter(output):

@@ -146,7 +146,9 @@ def format_rate_limit_diagnostics(
             f"{datetime.fromtimestamp(cooldown_until_epoch).isoformat(timespec='seconds')}"
         )
         if buffer_seconds is not None and buffer_seconds > 0:
-            lines.append(f"buffer_added_seconds≈{buffer_seconds:.0f} (routing_rate_limit_buffer_base × backoff step)")
+            lines.append(
+                f"buffer_added_seconds≈{buffer_seconds:.0f} (routing_rate_limit_buffer_base × backoff step)"
+            )
     return "\n".join(lines)
 
 

@@ -1,10 +1,10 @@
 """Tests for validation loop: test_profiles, test_parser, validation_issues, validator."""
 
 import json
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+from aidlc._proc import ProcResult
 from aidlc.models import Issue, IssueStatus, RunPhase, RunState
 from aidlc.test_parser import FailureReport, parse_test_failures
 from aidlc.test_profiles import detect_test_profile
@@ -284,9 +284,9 @@ class TestValidatorInternals:
         assert "Fix login" in md
         assert "- [ ] tests pass" in md
 
-    @patch("aidlc.validator.subprocess.run")
+    @patch("aidlc.validator.run_with_group_kill")
     def test_run_command_timeout(self, mock_run, tmp_path):
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="x", timeout=1)
+        mock_run.return_value = ProcResult(0, "", "", True)
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -301,7 +301,7 @@ class TestValidatorInternals:
         assert "timed out" in out.lower()
         logger.warning.assert_called()
 
-    @patch("aidlc.validator.subprocess.run")
+    @patch("aidlc.validator.run_with_group_kill")
     def test_run_command_file_not_found(self, mock_run, tmp_path):
         mock_run.side_effect = FileNotFoundError()
         state = RunState(run_id="test", config_name="default")
@@ -486,14 +486,9 @@ class TestValidatorTiersAndCommand:
         assert results[0]["passed"] is True
         logger.info.assert_any_call("  unit: PASSED")
 
-    @patch("aidlc.validator.subprocess.run")
+    @patch("aidlc.validator.run_with_group_kill")
     def test_run_command_success_returns_output(self, mock_run, tmp_path):
-        class _R:
-            returncode = 0
-            stdout = "hello"
-            stderr = ""
-
-        mock_run.return_value = _R()
+        mock_run.return_value = ProcResult(0, "hello", "", False)
         state = RunState(run_id="t", config_name="default")
         config = {
             "_project_root": str(tmp_path),

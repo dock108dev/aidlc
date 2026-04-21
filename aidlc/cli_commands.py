@@ -67,7 +67,9 @@ def cmd_validate(args: argparse.Namespace, version: str) -> None:
     if is_stable:
         print("Validation passed — project is stable")
     else:
-        print(f"Validation incomplete: {state.validation_cycles} cycles, {state.validation_issues_created} fix issues created")
+        print(
+            f"Validation incomplete: {state.validation_cycles} cycles, {state.validation_issues_created} fix issues created"
+        )
 
 
 def cmd_precheck(args: argparse.Namespace, version: str) -> None:

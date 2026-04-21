@@ -95,9 +95,7 @@ class Implementer:
         self.autosync_every_cycles = max(
             1, int(config.get("autosync_every_implementation_cycles", 25) or 25)
         )
-        self.autosync_finalize_before_push = bool(
-            config.get("autosync_finalize_before_push", True)
-        )
+        self.autosync_finalize_before_push = bool(config.get("autosync_finalize_before_push", True))
         self.autosync_push_remote = bool(config.get("autosync_push_remote", True))
         self.autosync_issue_status_sync = bool(config.get("autosync_issue_status_sync", True))
         self.autosync_commit_message_template = str(
@@ -292,6 +290,7 @@ class Implementer:
             # Run finalization passes for ssot, abend, cleanup
             try:
                 from .finalizer import Finalizer
+
                 finalizer = Finalizer(
                     self.state,
                     self.run_dir,
@@ -323,9 +322,7 @@ class Implementer:
 
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
-        self.logger.info(
-            f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)"
-        )
+        self.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
         is_complex = self._is_complex_issue(issue)
         # Signal complexity to router so it can apply phase-aware model selection
         if hasattr(self.cli, "set_complexity"):

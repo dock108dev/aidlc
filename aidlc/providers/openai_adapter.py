@@ -91,10 +91,15 @@ def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
             parts.append(nested.strip())
 
         msg = obj.get("message")
-        if isinstance(msg, str) and msg.strip() and typ not in (
-            "turn.completed",
-            "item.completed",
-            "thread.started",
+        if (
+            isinstance(msg, str)
+            and msg.strip()
+            and typ
+            not in (
+                "turn.completed",
+                "item.completed",
+                "thread.started",
+            )
         ):
             parts.append(msg.strip())
 
@@ -134,7 +139,9 @@ def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
     return combined.strip()
 
 
-def _codex_exit_zero_is_quota_blocker(stdout: str, stderr: str, parsed_out: str) -> tuple[bool, str]:
+def _codex_exit_zero_is_quota_blocker(
+    stdout: str, stderr: str, parsed_out: str
+) -> tuple[bool, str]:
     """Codex may exit 0 while printing usage limits / interactive TUI (no real completion)."""
     from ..routing import result_signals as rs
 

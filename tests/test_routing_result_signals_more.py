@@ -209,19 +209,29 @@ Learn more about usage limits
 Weekly limits
 30% used
 """
-    assert rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"}) is False
+    assert (
+        rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"})
+        is False
+    )
 
 
 def test_doc_gap_rate_limiting_prose_not_rate_limited():
     """Doc-gap / design copy often says 'rate limiting' without an API rate-limit error."""
     msg = "Add graceful rate limiting middleware for the public API gateway."
-    assert rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"}) is False
+    assert (
+        rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"})
+        is False
+    )
 
 
 def test_overloaded_servers_prose_not_rate_limited():
     assert (
         rs.is_rate_limited_result(
-            {"success": False, "error": "Avoid overloaded servers during peak.", "failure_type": "issue"}
+            {
+                "success": False,
+                "error": "Avoid overloaded servers during peak.",
+                "failure_type": "issue",
+            }
         )
         is False
     )
