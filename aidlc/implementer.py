@@ -13,7 +13,6 @@ from .implementer_helpers import (
     implementation_instructions,
 )
 from .implementer_issue_order import sort_issues_for_implementation
-from .implementer_targeted_tests import effective_implementation_test_command
 from .implementer_signals import (
     compact_error_text,
     is_all_models_token_exhausted,
@@ -21,6 +20,7 @@ from .implementer_signals import (
     sample_error_payload,
     should_stop_for_provider_availability,
 )
+from .implementer_targeted_tests import effective_implementation_test_command
 from .implementer_workspace import (
     get_changed_files,
     git_commit_cycle_snapshot,

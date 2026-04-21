@@ -1,36 +1,6 @@
-def cmd_validate(args: argparse.Namespace, version: str) -> None:
-    """Run validation phase ad hoc on the latest run state."""
-    from .validator import Validator
-    from .logger import setup_logger
-    from .state_manager import find_latest_run, load_state, save_state
-    from .routing import ProviderRouter
-    import sys
-    from pathlib import Path
-
-    project_root = Path(args.project or ".").resolve()
-    runs_dir = project_root / ".aidlc" / "runs"
-    if not runs_dir.exists():
-        print("No AIDLC runs found. Run aidlc init first.")
-        sys.exit(1)
-    run_dir = find_latest_run(runs_dir)
-    if not run_dir:
-        print("No runs found.")
-        sys.exit(1)
-    state = load_state(run_dir)
-    config_path = getattr(args, "config", None)
-    from .config import load_config
-    config = load_config(config_path=config_path, project_root=str(project_root))
-    logger = setup_logger("validate", project_root / ".aidlc", verbose=args.verbose)
-    cli = ProviderRouter(config, logger)
-    print(f"Running validation on run {state.run_id}...")
-    validator = Validator(state, run_dir, config, cli, None, logger)
-    is_stable = validator.run()
-    save_state(state, run_dir)
-    if is_stable:
-        print("Validation passed — project is stable")
-    else:
-        print(f"Validation incomplete: {state.validation_cycles} cycles, {state.validation_issues_created} fix issues created")
 """CLI command handlers and display helpers."""
+
+from __future__ import annotations
 
 import argparse
 import shutil
@@ -67,7 +37,37 @@ from .cli.display import (
 )
 from .cli.provider import cmd_provider_auth
 from .config import load_config, write_default_config
-from .state_manager import find_latest_run, load_state
+from .state_manager import find_latest_run, load_state, save_state
+
+
+def cmd_validate(args: argparse.Namespace, version: str) -> None:
+    """Run validation phase ad hoc on the latest run state."""
+    from .logger import setup_logger
+    from .routing import ProviderRouter
+    from .validator import Validator
+
+    project_root = Path(args.project or ".").resolve()
+    runs_dir = project_root / ".aidlc" / "runs"
+    if not runs_dir.exists():
+        print("No AIDLC runs found. Run aidlc init first.")
+        sys.exit(1)
+    run_dir = find_latest_run(runs_dir)
+    if not run_dir:
+        print("No runs found.")
+        sys.exit(1)
+    state = load_state(run_dir)
+    config_path = getattr(args, "config", None)
+    config = load_config(config_path=config_path, project_root=str(project_root))
+    logger = setup_logger("validate", project_root / ".aidlc", verbose=args.verbose)
+    cli = ProviderRouter(config, logger)
+    print(f"Running validation on run {state.run_id}...")
+    validator = Validator(state, run_dir, config, cli, None, logger)
+    is_stable = validator.run()
+    save_state(state, run_dir)
+    if is_stable:
+        print("Validation passed — project is stable")
+    else:
+        print(f"Validation incomplete: {state.validation_cycles} cycles, {state.validation_issues_created} fix issues created")
 
 
 def cmd_precheck(args: argparse.Namespace, version: str) -> None:
