@@ -51,15 +51,15 @@ def _make_planner(tmp_path, num_issues: int, config_overrides: dict | None = Non
 @pytest.mark.parametrize(
     "num_issues,expected",
     [
-        (0, 3),    # floor
-        (10, 3),   # ceil(10/10)=1, clamped to floor 3
-        (25, 3),   # ceil(25/10)=3
-        (30, 3),   # ceil(30/10)=3
-        (31, 4),   # ceil(31/10)=4
-        (40, 4),   # ceil(40/10)=4
-        (50, 5),   # ceil(50/10)=5
-        (51, 6),   # ceil(51/10)=6
-        (60, 6),   # ceil(60/10)=6
+        (0, 3),  # floor
+        (10, 3),  # ceil(10/10)=1, clamped to floor 3
+        (25, 3),  # ceil(25/10)=3
+        (30, 3),  # ceil(30/10)=3
+        (31, 4),  # ceil(31/10)=4
+        (40, 4),  # ceil(40/10)=4
+        (50, 5),  # ceil(50/10)=5
+        (51, 6),  # ceil(51/10)=6
+        (60, 6),  # ceil(60/10)=6
         (100, 6),  # ceil(100/10)=10, clamped to ceiling 6
     ],
 )

@@ -225,7 +225,9 @@ def _render_foundation_docs_section(planner) -> list[str]:
             continue
         excerpt = content[:excerpt_max]
         truncated_marker = (
-            f"\n... (truncated; full file at {doc.get('path')})" if len(content) > excerpt_max else ""
+            f"\n... (truncated; full file at {doc.get('path')})"
+            if len(content) > excerpt_max
+            else ""
         )
         display_name = name.upper()
         lines.append(f"\n### {display_name}\n```\n{excerpt}{truncated_marker}\n```")

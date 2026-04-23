@@ -76,9 +76,7 @@ def _exhausted_cli():
 
 
 @patch("aidlc.finalizer.Finalizer")
-def test_default_does_not_auto_run_finalize_on_early_stop(
-    mock_finalizer_cls, logger, tmp_path
-):
+def test_default_does_not_auto_run_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path):
     """ISSUE-009: by default, hitting token exhaustion does NOT trigger
     ssot/abend/cleanup passes."""
     config = _config(tmp_path)  # default: implementation_finalize_on_early_stop is False

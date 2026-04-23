@@ -321,8 +321,7 @@ class PlanSession:
                 self.logger.warning(f"Could not prune session dir {d}: {exc}")
         if deleted:
             self.logger.info(
-                f"Pruned {deleted} old session subdir(s) "
-                f"(keeping most recent {max_keep})"
+                f"Pruned {deleted} old session subdir(s) (keeping most recent {max_keep})"
             )
         return deleted
 

@@ -545,9 +545,7 @@ def cmd_reset(args: argparse.Namespace, version: str) -> None:
     print()
     if not auto_yes:
         try:
-            response = input(
-                f"  {_yellow('?')} Proceed with deletion? (y/N) [N]: "
-            ).strip().lower()
+            response = input(f"  {_yellow('?')} Proceed with deletion? (y/N) [N]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             response = ""
         if response not in ("y", "yes"):

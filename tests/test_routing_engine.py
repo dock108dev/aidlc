@@ -205,9 +205,7 @@ def test_token_exhaustion_walks_chain_within_provider(tmp_path):
 
 def test_token_exhaustion_chain_exhausted_returns_terminal_failure(tmp_path):
     """All chain entries exhausted: provider excluded; failure terminal."""
-    router = ProviderRouter(
-        _chain_config(), logging.getLogger("test.router.chain_exhausted")
-    )
+    router = ProviderRouter(_chain_config(), logging.getLogger("test.router.chain_exhausted"))
     fake = FakeAdapter(
         "claude",
         [_exhaust("sonnet"), _exhaust("opus"), _exhaust("haiku")],

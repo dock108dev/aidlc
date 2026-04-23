@@ -604,9 +604,7 @@ class ProviderRouter:
         by_provider: dict[str, list[str]] = {}
         for provider_id, model in sorted(excluded_models):
             by_provider.setdefault(provider_id, []).append(model)
-        return "; ".join(
-            f"{pid}=[{', '.join(models)}]" for pid, models in by_provider.items()
-        )
+        return "; ".join(f"{pid}=[{', '.join(models)}]" for pid, models in by_provider.items())
 
     def _provider_is_on_cooldown(self, provider_id: str, now: float | None = None) -> bool:
         """Return True when a provider is temporarily excluded after rate limiting."""
