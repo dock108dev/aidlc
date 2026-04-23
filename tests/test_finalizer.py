@@ -52,30 +52,26 @@ def cli():
 
 class TestFinalizer:
     def test_runs_all_passes_by_default(self, state, config, cli, logger, tmp_path):
+        """Default pass set is intentionally narrow (docs + cleanup) since
+        ssot/security/abend were removed in the core-focus audit. New passes
+        will be reintroduced once their prompts are nailed down."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run()
 
-        assert len(state.finalize_passes_completed) == 5
-        assert "ssot" in state.finalize_passes_completed
-        assert "security" in state.finalize_passes_completed
-        assert "abend" in state.finalize_passes_completed
-        assert "docs" in state.finalize_passes_completed
-        assert "cleanup" in state.finalize_passes_completed
+        assert state.finalize_passes_completed == ["docs", "cleanup"]
 
     def test_runs_selected_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
-        finalizer.run(passes=["docs", "security"])
+        finalizer.run(passes=["cleanup", "docs"])
 
-        assert state.finalize_passes_completed == ["docs", "security"]
-        # Wrong order preserved from input, not PASS_ORDER
-        # Actually they run in input order
-        assert len(state.finalize_passes_completed) == 2
+        # Passes run in user-supplied order, not PASS_ORDER.
+        assert state.finalize_passes_completed == ["cleanup", "docs"]
 
     def test_skips_invalid_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
@@ -85,6 +81,18 @@ class TestFinalizer:
         finalizer.run(passes=["nonexistent", "docs"])
 
         assert state.finalize_passes_completed == ["docs"]
+
+    def test_dropped_legacy_passes_are_invalid(self, state, config, cli, logger, tmp_path):
+        """ssot, security, abend used to be valid pass names. Make sure the
+        finalizer treats them as unknown so old configs don't silently run
+        nothing useful."""
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
+        finalizer.run(passes=["ssot", "security", "abend"])
+
+        assert state.finalize_passes_completed == []
 
     def test_handles_failed_pass(self, state, config, logger, tmp_path):
         cli = MagicMock()
@@ -101,10 +109,10 @@ class TestFinalizer:
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "context", logger)
-        finalizer.run(passes=["security"])
+        finalizer.run(passes=["docs"])
 
         # Failed pass should NOT be in completed list
-        assert "security" not in state.finalize_passes_completed
+        assert "docs" not in state.finalize_passes_completed
 
     def test_writes_futures_note(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
@@ -134,9 +142,9 @@ class TestFinalizer:
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
-        finalizer.run(passes=["security"])
+        finalizer.run(passes=["cleanup"])
 
-        output_file = run_dir / "claude_outputs" / "finalize_security.md"
+        output_file = run_dir / "claude_outputs" / "finalize_cleanup.md"
         assert output_file.exists()
 
     def test_tracks_requested_passes(self, state, config, cli, logger, tmp_path):
@@ -144,9 +152,9 @@ class TestFinalizer:
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
-        finalizer.run(passes=["ssot", "docs"])
+        finalizer.run(passes=["docs", "cleanup"])
 
-        assert state.finalize_passes_requested == ["ssot", "docs"]
+        assert state.finalize_passes_requested == ["docs", "cleanup"]
 
     def test_sets_finalizing_phase(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
@@ -164,8 +172,8 @@ class TestFinalizer:
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["docs"])
         assert state.finalize_passes_completed == ["docs"]
-        finalizer.run(passes=["security"])
-        assert state.finalize_passes_completed == ["security"]
+        finalizer.run(passes=["cleanup"])
+        assert state.finalize_passes_completed == ["cleanup"]
 
     def test_empty_passes_logs_warning(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"

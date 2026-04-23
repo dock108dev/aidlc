@@ -1,18 +1,20 @@
-"""High-yield coverage for aidlc.cli_commands (mocked I/O and subprocess)."""
+"""High-yield coverage for aidlc.cli_commands (mocked I/O and subprocess).
+
+The CLI surface was trimmed in the core-focus audit: ``cmd_audit``,
+``cmd_finalize``, ``cmd_improve``, ``cmd_plan``, and ``cmd_validate`` were
+removed (audit + finalize now run as part of ``aidlc run``; improve/plan/
+validate were duplicating ``run`` or producing orthogonal artifacts). This
+file therefore covers only the surviving handlers.
+"""
 
 import json
 from argparse import Namespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidlc.audit_models import AuditConflict, AuditResult, CoverageInfo
 from aidlc.cli_commands import (
     cmd_accounts,
-    cmd_audit,
-    cmd_finalize,
-    cmd_improve,
     cmd_init,
-    cmd_plan,
     cmd_precheck,
     cmd_status,
 )
@@ -31,14 +33,7 @@ def _args(**kw):
         verbose=False,
         with_docs=False,
         providers=False,
-        full=False,
         config=None,
-        concern=None,
-        plan_only=False,
-        skip_wizard=False,
-        wizard_only=False,
-        review=False,
-        passes=None,
     )
     base.update(kw)
     return Namespace(**base)
@@ -74,11 +69,30 @@ def test_cmd_precheck_not_ready_exits(
 @patch("aidlc.cli_commands.write_default_config")
 @patch("aidlc.cli_commands._print_banner")
 def test_cmd_init_new_project(mock_banner, mock_wdc, mock_tpl, version, tmp_path, capsys):
-    mock_tpl.return_value = tmp_path / "tpl"
-    mock_tpl.return_value.mkdir()
-    (mock_tpl.return_value / "README.md").write_text("t")
+    template_dir = tmp_path / "tpl"
+    template_dir.mkdir()
+    (template_dir / "README.md").write_text("t")
+    (template_dir / "BRAINDUMP.md").write_text("b")
+    mock_tpl.return_value = template_dir
     cmd_init(_args(project=str(tmp_path), with_docs=True), version)
     assert (tmp_path / "README.md").exists()
+    assert (tmp_path / "BRAINDUMP.md").exists()
+
+
+@patch("aidlc.cli_commands._get_template_dir")
+@patch("aidlc.cli_commands.write_default_config")
+@patch("aidlc.cli_commands._print_banner")
+def test_cmd_init_scaffolds_braindump_without_with_docs(
+    mock_banner, mock_wdc, mock_tpl, version, tmp_path
+):
+    """Even without --with-docs, BRAINDUMP.md is scaffolded — it is the
+    customer-voice entry point for the lifecycle."""
+    template_dir = tmp_path / "tpl"
+    template_dir.mkdir()
+    (template_dir / "BRAINDUMP.md").write_text("# braindump template\n")
+    mock_tpl.return_value = template_dir
+    cmd_init(_args(project=str(tmp_path), with_docs=False), version)
+    assert (tmp_path / "BRAINDUMP.md").exists()
 
 
 @patch("aidlc.cli_commands._get_template_dir")
@@ -154,178 +168,6 @@ def test_cmd_init_providers_wizard(
 
     with patch("aidlc.cli_commands.input", side_effect=EOFError()):
         cmd_init(_args(project=str(tmp_path), with_docs=False, providers=True), version)
-
-
-@patch("aidlc.auditor.CodeAuditor")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_audit_quick(
-    mock_banner, mock_load, mock_log, mock_router, mock_auditor, version, tmp_path
-):
-    (tmp_path / "README.md").write_text("# x")
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    ar = AuditResult(
-        project_type="py",
-        frameworks=["f"],
-        modules=[MagicMock()],
-        source_stats={"total_files": 3, "total_lines": 100},
-        generated_docs=["STATUS.md"],
-    )
-    mock_auditor.return_value.run.return_value = ar
-    cmd_audit(_args(project=str(tmp_path), full=False), version)
-
-
-@patch("aidlc.auditor.CodeAuditor")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_audit_full_no_cli_exits(
-    mock_banner, mock_load, mock_log, mock_router_cls, mock_auditor, version, tmp_path
-):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": False}
-    cli = MagicMock()
-    cli.check_available.return_value = False
-    mock_router_cls.return_value = cli
-    with patch("aidlc.cli_commands.sys.exit", side_effect=SystemExit(1)):
-        with pytest.raises(SystemExit):
-            cmd_audit(_args(project=str(tmp_path), full=True), version)
-
-
-@patch("aidlc.auditor.CodeAuditor")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_audit_with_conflicts_and_coverage(
-    mock_banner, mock_load, mock_log, mock_router, mock_auditor, version, tmp_path
-):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    tc = CoverageInfo(
-        estimated_coverage="50%", test_framework="pytest", test_functions=1, source_files=1
-    )
-    c = AuditConflict(
-        doc_path="ARCHITECTURE.md",
-        field="summary",
-        audit_value="a",
-        user_value="b",
-        severity="high",
-    )
-    ar = AuditResult(
-        project_type="py",
-        test_coverage=tc,
-        tech_debt=[MagicMock()],
-        conflicts=[c],
-        generated_docs=["A.md"],
-    )
-    mock_auditor.return_value.run.return_value = ar
-    cmd_audit(_args(project=str(tmp_path), full=False), version)
-
-
-@patch("aidlc.improve.ImprovementCycle")
-@patch("aidlc.scanner.ProjectScanner")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_improve_with_concern(
-    mock_banner, mock_load, mock_log, mock_router, mock_scan_cls, mock_cycle, version, tmp_path
-):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    mock_router.return_value.check_available.return_value = True
-    inst = MagicMock()
-    inst.scan.return_value = {
-        "doc_files": [],
-        "total_docs": 0,
-        "project_type": "x",
-        "existing_issues": [],
-    }
-    inst.build_context_prompt.return_value = "ctx"
-    mock_scan_cls.return_value = inst
-    mock_cycle.return_value.run.return_value = {"status": "complete", "implemented": 2}
-    cmd_improve(_args(project=str(tmp_path), concern="fix bugs"), version)
-
-
-@patch("aidlc.improve.ImprovementCycle")
-@patch("aidlc.scanner.ProjectScanner")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_improve_prompts_concern_eof(
-    mock_banner, mock_load, mock_log, mock_router, mock_scan_cls, mock_cycle, version, tmp_path
-):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    mock_router.return_value.check_available.return_value = True
-    inst = MagicMock()
-    inst.scan.return_value = {
-        "doc_files": [],
-        "total_docs": 0,
-        "project_type": "x",
-        "existing_issues": [],
-    }
-    inst.build_context_prompt.return_value = "ctx"
-    mock_scan_cls.return_value = inst
-    with patch("aidlc.cli_commands.input", side_effect=EOFError()):
-        cmd_improve(_args(project=str(tmp_path), concern=None), version)
-
-
-@patch("aidlc.plan_session.PlanSession")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_plan(mock_banner, mock_load, mock_log, mock_router, mock_session, version, tmp_path):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    mock_router.return_value.check_available.return_value = True
-    cmd_plan(
-        _args(project=str(tmp_path), skip_wizard=True, wizard_only=False, review=False),
-        version,
-    )
-    mock_session.return_value.run.assert_called_once()
-
-
-@patch("aidlc.finalizer.Finalizer")
-@patch("aidlc.scanner.ProjectScanner")
-@patch("aidlc.routing.ProviderRouter")
-@patch("aidlc.logger.setup_logger")
-@patch("aidlc.cli_commands.find_latest_run")
-@patch("aidlc.cli_commands.load_config")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_finalize(
-    mock_banner,
-    mock_load,
-    mock_find,
-    mock_log,
-    mock_router,
-    mock_scan,
-    mock_fin,
-    version,
-    tmp_path,
-):
-    mock_load.return_value = {"_project_root": str(tmp_path), "dry_run": True}
-    runs = tmp_path / ".aidlc" / "runs"
-    run_dir = runs / "r1"
-    run_dir.mkdir(parents=True)
-    state = RunState(run_id="r1", config_name="c")
-    state.status = RunStatus.COMPLETE
-    state.phase = RunPhase.DONE
-    state.finalize_passes_completed = ["docs"]
-    save_state(state, run_dir)
-    mock_find.return_value = run_dir
-    inst = MagicMock()
-    inst.scan.return_value = {
-        "doc_files": [],
-        "total_docs": 0,
-        "project_type": "x",
-        "existing_issues": [],
-    }
-    inst.build_context_prompt.return_value = "ctx"
-    mock_scan.return_value = inst
-    mock_router.return_value.check_available.return_value = True
-    cmd_finalize(_args(project=str(tmp_path), passes="docs,lint"), version)
 
 
 @patch("aidlc.cli_commands._print_banner")

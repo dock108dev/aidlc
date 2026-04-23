@@ -1,6 +1,17 @@
 # AIDLC
 
-Python CLI for an **AI-assisted development lifecycle** inside a target repository: scan documentation, plan work as issues, implement with provider-backed agents, verify, and report.
+Python CLI for an **AI-assisted development lifecycle** inside a target
+repository.
+
+The flow is intentionally narrow:
+
+1. The customer writes `BRAINDUMP.md` — what to build, what matters.
+2. `aidlc run` scans the repo, plans work as issues, implements them with
+   provider-backed agents, validates, and reports.
+
+For new repos, the BRAINDUMP describes the product. For existing repos, it
+describes what to add or change next. Either way, AIDLC works from the
+braindump plus whatever supporting docs are present.
 
 ## Run locally
 
@@ -9,8 +20,9 @@ python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-aidlc init --project /path/to/target-repo
-aidlc run --project /path/to/target-repo
+aidlc init --project /path/to/target-repo   # scaffolds .aidlc/ + BRAINDUMP.md
+# edit BRAINDUMP.md to describe what you want built
+aidlc run  --project /path/to/target-repo
 ```
 
 Isolated CLI install (optional):

@@ -6,22 +6,42 @@ implement, validate, finalize — emitting issues, code changes, and reports.
 Every Claude/Copilot/OpenAI call is dispatched through one router so model and
 account selection is centralized.
 
+The product surface is intentionally narrow: the customer writes
+`BRAINDUMP.md`, runs `aidlc run`, and the lifecycle does the rest. There are
+no parallel "improve / plan / audit / finalize" entry points — those either
+duplicated `run` or produced orthogonal artifacts and were removed in the
+core-focus audit.
+
 ## High-level flow
 
 ```
+aidlc init      (scaffolds .aidlc/ + BRAINDUMP.md)
 aidlc run
    ├── scan         (ProjectScanner — read repo, detect type, find existing issues/docs)
+   ├── audit        (optional, --audit; produces STATUS.md + audit_result.json — read-only)
    ├── plan         (Planner — repeated cycles → create_issue / create_doc / research)
    │   └── plan_finalization (wind-down near budget end)
    ├── implement    (Implementer — one issue at a time, dependency-sorted)
    ├── verify       (Final pass over implemented issues)
    ├── validate     (test/fix loop, optional)
-   ├── finalize     (ssot / security / abend / docs / cleanup passes)
+   ├── finalize     (docs / cleanup passes)
    └── report
 ```
 
 State for the run lives at `.aidlc/runs/<run_id>/state.json` and is checkpointed
 on every cycle so the run is resumable.
+
+## BRAINDUMP.md is the contract
+
+`BRAINDUMP.md` is the single source of truth for what the user wants built. It
+sits at the project root, is owned by the user, and is **never overwritten by
+the tool**. The auditor used to generate a workload-capped BRAINDUMP from
+runtime checks and overwrite the user's file; that inverted the design and was
+removed. The auditor still runs (via `aidlc run --audit`) but only writes
+`STATUS.md` (a generated artifact) and `.aidlc/audit_result.json`.
+
+`aidlc init` scaffolds an empty `BRAINDUMP.md` template if missing. The user
+fills it in, then runs `aidlc run`.
 
 ## Module map
 
@@ -31,17 +51,39 @@ on every cycle so the run is resumable.
 | `aidlc/scanner.py` | Reads the project: docs, source files, prior `.aidlc/issues/`, audit cache. Builds the context blob the planner sees first. |
 | `aidlc/planner.py` | Iterative planning loop — emits `create_issue`, `update_issue`, `create_doc`, `update_doc`, `research` actions. Decides when planning is done. |
 | `aidlc/planner_helpers.py` | Prompt construction (`build_prompt`), prompt-budget enforcement, `_render_existing_issues_section`. The cache-friendly static prefix lives here. |
-| `aidlc/plan_session.py` | The interactive `aidlc plan` wizard — generates first-draft `ARCHITECTURE.md` / `ROADMAP.md` / `DESIGN.md` / `CLAUDE.md` and launches the Claude refinement chat. |
 | `aidlc/implementer.py` | Drives implementation cycles, one issue per CLI call. Owns the early-stop logic (token exhaustion, dep cycles, consecutive failures). |
 | `aidlc/implementer_helpers.py` | Implementation prompt builder. |
 | `aidlc/implementer_signals.py` | Predicates over CLI results — `is_all_models_token_exhausted`, `should_stop_for_provider_availability`. |
-| `aidlc/finalizer.py` | Runs finalization passes (`ssot`, `security`, `abend`, `docs`, `cleanup`). |
+| `aidlc/finalizer.py` | Runs finalization passes (`docs`, `cleanup`). |
 | `aidlc/validator.py` | Test/fix loop after implementation. |
-| `aidlc/auditor.py` | Standalone code-audit subcommand and `--audit` pre-planning hook. |
+| `aidlc/auditor.py` + `aidlc/audit/` | Read-only code analysis. Triggered via `aidlc run --audit`; writes STATUS.md + audit_result.json. |
+| `aidlc/doc_gap_detector.py` | TBD/placeholder scanner. **Opt-in** (`doc_gap_detection_enabled: true`); off by default to avoid spurious issues on mature repos. |
 | `aidlc/state_manager.py` | `save_state` / `load_state`, `find_latest_run`. Run lock at `.aidlc/run.lock`. |
 | `aidlc/config.py` | `DEFAULTS` dict, `_merge_user_config`, `load_config`, `write_default_config`. |
 | `aidlc/routing/` | `ProviderRouter` — drop-in replacement for a single CLI; selects provider/account/model per call. |
 | `aidlc/cli/`, `aidlc/cli_parser.py`, `aidlc/cli_commands.py` | argparse + per-subcommand handlers. |
+
+## CLI surface
+
+Core lifecycle:
+- `aidlc init` — scaffold `.aidlc/` + `BRAINDUMP.md`
+- `aidlc precheck` — readiness check
+- `aidlc run` — full lifecycle
+- `aidlc status` — last run summary
+- `aidlc reset` — clear `.aidlc/` working state
+
+Admin sugar:
+- `aidlc accounts` — manage provider accounts
+- `aidlc provider` — enable/disable/auth providers
+- `aidlc usage` — token + cost reporting
+- `aidlc config` — show/edit config
+
+Removed in the core-focus audit (see `CHANGELOG.md`):
+- `aidlc audit` — folded into `aidlc run --audit`
+- `aidlc finalize` — now runs as part of `aidlc run`
+- `aidlc improve` — duplicated `aidlc run`; concerns now go in `BRAINDUMP.md`
+- `aidlc plan` — interactive multi-doc generator was orthogonal to the core flow
+- `aidlc validate` — runs as part of `aidlc run`
 
 ## The router
 
@@ -83,8 +125,8 @@ under prompt-budget pressure (`_enforce_prompt_budget`):
 |---|---|
 | Instructions / schema (static prefix) | never |
 | Run state (phase, cycle, elapsed/budget) | never |
-| Doc-gap summary | last |
-| Foundation docs (ROADMAP / ARCHITECTURE / DESIGN excerpts) | 3rd |
+| Doc-gap summary (when opt-in is enabled) | last |
+| Foundation docs (BRAINDUMP / ROADMAP / ARCHITECTURE / DESIGN excerpts) | 3rd |
 | Prior cycle notes | 2nd |
 | Existing issues (current run + prior runs with status) | 1st (drop first) |
 
@@ -107,35 +149,27 @@ The CLI returns structured JSON: `{issue_id, success, summary, files_changed,
 tests_passed, notes, existing_callers_checked}`. The implementer parses this,
 updates the issue status, and continues to the next.
 
-## Doc-generation pipeline (`aidlc plan` wizard)
+## Finalization passes
 
-1. `PlanSession._run_wizard()` collects answers via stdin Q&A.
-2. `_generate_drafts()` calls `cli.execute_prompt()` for each of
-   `ROADMAP.md`, `ARCHITECTURE.md`, `DESIGN.md`, `CLAUDE.md`. The flag
-   `allow_edits=False` is used so the CLI returns the doc body as text
-   (not as a Write tool side-effect that the caller never sees).
-3. `_save_drafts()` is the single writer:
-   - backs up any existing project-root copy to
-     `.aidlc/session/<ts>/<doc>.bak`,
-   - writes the new content to `<project_root>/<doc>`,
-   - saves a duplicate to `.aidlc/session/<ts>/<doc>.generated` for the audit
-     trail.
-4. `_launch_refinement()` opens an interactive Claude session for further
-   editing in place.
+`PASS_PROMPTS` is intentionally narrow: `docs`, `cleanup`. The legacy `ssot`,
+`security`, and `abend` passes were removed because their semantics had
+drifted (vague objectives, no clear definition of done) and the code shipped
+prompts no one was confident in. New passes will be reintroduced once their
+prompts and acceptance criteria are nailed down. See `aidlc/finalize_prompts.py`.
 
 ## Lifecycle of a run's working directory
 
 ```
-<project_root>/.aidlc/
-├── config.json                       # user + auth config (preserved by `aidlc reset`)
-├── audit_result.json                 # cached audit (deleted by reset)
-├── planning_index.md                 # docs/issues index for the planner
-├── issues/                           # ISSUE-<N>.md files (deleted by reset unless --keep-issues)
-├── runs/
-│   └── <run_id>/                     # per-run: state.json, claude_outputs/, cycle_snapshots/, checkpoints/
-├── reports/                          # per-run report markdown
-└── session/
-    └── <YYYYMMDD_HHMMSS>/            # per-`aidlc plan` invocation: drafts, refinement_prompt.txt
+<project_root>/
+├── BRAINDUMP.md                      # customer's voice — never overwritten
+├── STATUS.md                         # auto-generated by audit (optional)
+└── .aidlc/
+    ├── config.json                   # user + auth config (preserved by `aidlc reset`)
+    ├── audit_result.json             # cached audit (deleted by reset)
+    ├── planning_index.md             # docs/issues index for the planner
+    ├── issues/                       # ISSUE-<N>.md files (deleted by reset unless --keep-issues)
+    ├── runs/<run_id>/                # per-run: state.json, claude_outputs/, cycle_snapshots/
+    └── reports/                      # per-run report markdown
 ```
 
 `aidlc reset` clears everything except `config.json`. With `--all` it also
@@ -167,9 +201,10 @@ The planner and implementer each have explicit stop conditions.
 - Max-cycle cap (typically only set in dry-run, default 0 = unlimited).
 
 When the implementer stops with work remaining, finalization is **not**
-auto-run. The user opts in via `implementation_finalize_on_early_stop: true`.
-The default is to log a clear single-line stop reason and exit so budget is not
-spent on finalization at the moment of failure.
+auto-run. The user opts in via `implementation_finalize_on_early_stop: true`
+(which now runs the `cleanup` pass only). The default is to log a clear
+single-line stop reason and exit so budget is not spent on finalization at the
+moment of failure.
 
 ## Status & abandoned-run handling
 

@@ -348,7 +348,7 @@ class Implementer:
             if self.config.get("implementation_finalize_on_early_stop", False):
                 self.logger.info(
                     "implementation_finalize_on_early_stop=true: running finalization "
-                    "passes (ssot, abend, cleanup) before exit."
+                    "passes (cleanup) before exit."
                 )
                 try:
                     from .finalizer import Finalizer
@@ -361,7 +361,7 @@ class Implementer:
                         self.project_context,
                         self.logger,
                     )
-                    finalizer.run(passes=["ssot", "abend", "cleanup"])
+                    finalizer.run(passes=["cleanup"])
                 except Exception as e:
                     self.logger.error(f"Finalization passes failed: {e}")
             else:

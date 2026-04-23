@@ -40,18 +40,21 @@ aidlc run --project .
 For full audit testing:
 
 ```bash
-aidlc audit --project . --full
+aidlc run --project . --audit full
 ```
 
 Common targeted commands:
 
 ```bash
-aidlc audit --project .
+aidlc run --project . --audit
 aidlc run --project . --plan-only
 aidlc run --project . --resume
-aidlc finalize --project .
+aidlc run --project . --skip-validation --skip-finalize
 aidlc status --project .
 ```
+
+(Standalone `aidlc audit` and `aidlc finalize` commands were removed in the
+core-focus audit; both engines run as part of `aidlc run`.)
 
 ## Packaging
 

@@ -1,10 +1,12 @@
 # Roadmap
 
-This roadmap is the issue list for the current remediation effort. Issues are
-ordered by dependency: ISSUE-001 (foundation docs) lands first, then Tier A
-(smoking-gun bugs), then Tier B (loop-rewrite quality), then Tier C
-(lifecycle/UX), then Tier D (hygiene). Subsequent issues can rely on what came
-before.
+This roadmap is the issue list for the prior remediation effort. The
+**core-focus audit** (post-ISSUE-013) supersedes much of the lifecycle/UX
+work below: `aidlc plan`, `aidlc improve`, `aidlc audit`, `aidlc finalize`,
+and `aidlc validate` were removed; the auditor stopped writing
+`BRAINDUMP.md`/`ARCHITECTURE.md`; and the vague `ssot`/`security`/`abend`
+finalization passes were dropped. See `CHANGELOG.md` for the full list. The
+issues below are kept for historical reference.
 
 ## Current effort
 

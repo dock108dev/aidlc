@@ -139,7 +139,9 @@ class TestPrecheckResult:
 
     def test_score_good(self):
         r = PrecheckResult()
-        r.recommended_found = ["README.md", "ARCHITECTURE.md", "DESIGN.md"]
+        # BRAINDUMP.md is the lifecycle entry point — once it's present plus a
+        # few common docs the project crosses the "good" threshold.
+        r.recommended_found = ["BRAINDUMP.md", "README.md", "ARCHITECTURE.md", "DESIGN.md"]
         r.optional_found = ["STATUS.md"]
         assert r.score == "good"
 

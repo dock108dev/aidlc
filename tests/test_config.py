@@ -130,17 +130,15 @@ class TestLoadConfig:
             "audit_coverage_threshold_percent",
             "audit_playwright_headless",
             "audit_playwright_command_override",
-            "audit_braindump_enabled",
-            "audit_braindump_path",
-            "audit_planning_workload_stop_ratio",
-            "audit_research_estimate_default_hours",
-            "audit_issue_estimate_defaults",
-            "audit_include_deferred_backlog",
         ]
         for key in expected_keys:
             assert key in DEFAULTS, f"Missing key in DEFAULTS: {key}"
 
     def test_removed_legacy_keys_absent(self):
+        # The audit_braindump_* / audit_planning_workload_* / audit_*_estimate_*
+        # keys were removed in the core-focus audit when the auditor stopped
+        # writing BRAINDUMP.md. Doc-gap detection still ships, but is opt-in:
+        # session_dir_max_keep was retired with the plan_session module.
         removed = {
             "strict_mode",
             "strict_planning_validation",
@@ -148,9 +146,21 @@ class TestLoadConfig:
             "allow_dependency_bypass",
             "auto_break_dependency_cycles",
             "allow_unstructured_success",
+            "audit_braindump_enabled",
+            "audit_braindump_path",
+            "audit_planning_workload_stop_ratio",
+            "audit_research_estimate_default_hours",
+            "audit_issue_estimate_defaults",
+            "audit_include_deferred_backlog",
+            "session_dir_max_keep",
         }
         for key in removed:
             assert key not in DEFAULTS, f"Legacy key should remain removed: {key}"
+
+    def test_doc_gap_detection_off_by_default(self):
+        """ISSUE: doc-gap detection is opt-in. On mature repos it created
+        spurious planning issues; setting opt-out prevents that noise."""
+        assert DEFAULTS["doc_gap_detection_enabled"] is False
 
     def test_defaults_providers_ssot_max_capacity_only(self):
         for _pid, pcfg in DEFAULTS["providers"].items():

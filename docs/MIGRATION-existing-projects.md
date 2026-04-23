@@ -8,11 +8,14 @@ backward-compatible; two require user action.
 
 | You will notice | Why | What to do |
 |---|---|---|
-| Foundation doc files at project root are now actual content, not stub messages | ISSUE-002 fix | Nothing — re-run `aidlc plan` and you'll get full ARCHITECTURE/ROADMAP/DESIGN/CLAUDE bodies. Backups of the previous (broken) versions are in `.aidlc/session/<latest>/`. |
+| `aidlc improve`, `aidlc plan`, `aidlc audit`, `aidlc finalize`, `aidlc validate` no longer exist | Core-focus audit | Audit + finalize run as part of `aidlc run`. To "improve" a specific concern, write it into `BRAINDUMP.md` and run `aidlc run`. |
+| The auditor no longer writes `BRAINDUMP.md` or `ARCHITECTURE.md` | Core-focus audit | If your `BRAINDUMP.md` was previously auto-generated, replace it with what you actually want built. `aidlc init` scaffolds a starter template. |
+| Finalization passes `ssot`, `security`, `abend` are gone | Core-focus audit | Their prompts had drifted. If you relied on them, expect smaller finalization output (just `docs` + `cleanup`). New passes will return once their prompts are nailed down. |
+| Doc-gap detection is now off by default | Core-focus audit | Set `doc_gap_detection_enabled: true` to opt back in (useful on greenfield projects). |
 | `providers.<id>.default_model` in your config now actually applies | ISSUE-003 fix | If you were working around the bug by setting `phase_models.<phase>` per-phase, you can simplify to a single `default_model` if that's what you wanted. |
 | Single-provider runs no longer die at the first quota wall | ISSUE-004 fix | Optionally set `providers.<id>.model_fallback_chain: ["sonnet", "opus", "haiku"]` to control order. Default chain is sensible. |
 | Planning no longer rewrites work from prior runs | ISSUE-005 / ISSUE-006 fix | Nothing — planner now sees prior issues and foundation docs as "already done". |
-| Implementation no longer auto-runs finalization on early stop | ISSUE-009 default change | If you relied on this, set `implementation_finalize_on_early_stop: true` in `.aidlc/config.json`. |
+| Implementation no longer auto-runs finalization on early stop | ISSUE-009 default change | If you relied on this, set `implementation_finalize_on_early_stop: true` in `.aidlc/config.json`. The opt-in now runs `cleanup` only. |
 | `aidlc reset` is now a real command | ISSUE-008 add | Use it instead of `rm -rf .aidlc/`. Preserves `config.json`. |
 | Stale `status=running` runs from before this version may show as `abandoned` | ISSUE-010 detection | Resume them or wipe them. `aidlc status` shows a yellow ABANDONED badge. |
 
@@ -45,9 +48,9 @@ aidlc reset
 # 3b. If you want to preserve issue backlog:
 aidlc reset --keep-issues
 
-# 4. Re-plan (now the prior issues, if kept, are visible to the planner as
-#    "already done" context — see ISSUE-005)
-aidlc plan
+# 4. Edit BRAINDUMP.md (or create one with `aidlc init`) — the customer's
+#    voice is the entry point for the lifecycle. Prior issues, if kept, are
+#    visible to the planner as "already done" context.
 
 # 5. Verify model selection by setting your preferred model
 #    in .aidlc/config.json:
@@ -60,7 +63,7 @@ aidlc run --dry-run --verbose | grep "Resolved model"
 
 ### Stub `ARCHITECTURE.md` from before ISSUE-002
 
-If your project root has files like:
+If your project root has stub files like:
 
 ```
 > ARCHITECTURE.md has been written to the project root. It covers all five
@@ -68,8 +71,8 @@ If your project root has files like:
 > - Overview — Three.js + Cannon-es...
 ```
 
-…that's the bug from ISSUE-002. The actual content was written by Claude
-under `.aidlc/session/<ts>/ARCHITECTURE.md`. To recover:
+…that was the bug from the retired `aidlc plan` wizard. The actual content
+was written by Claude under `.aidlc/session/<ts>/ARCHITECTURE.md`. To recover:
 
 ```bash
 # Find the most recent session backup
@@ -81,7 +84,8 @@ cp .aidlc/session/<ts>/ARCHITECTURE.md .
 # Repeat for ROADMAP.md, DESIGN.md, CLAUDE.md
 ```
 
-Going forward, the wizard writes real content directly.
+Going forward there is no automated wizard for these docs — they are the
+user's voice. Use `aidlc init --with-docs` to copy starter templates.
 
 ### Failed issues from the no-fallback era
 
