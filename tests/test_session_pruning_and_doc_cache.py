@@ -13,7 +13,6 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 from aidlc.doc_gap_detector import clear_doc_gap_cache, detect_doc_gaps
 from aidlc.plan_session import PlanSession
 

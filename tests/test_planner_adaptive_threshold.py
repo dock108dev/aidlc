@@ -12,7 +12,6 @@ Default min=3, max=6, so:
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest

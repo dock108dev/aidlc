@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 
-import pytest
 from aidlc.cli_commands import _reset_targets, cmd_reset
 
 
