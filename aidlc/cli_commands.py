@@ -135,12 +135,12 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     print("Next steps:")
     print(f"  1. Open {_cyan('BRAINDUMP.md')} and describe what you want built")
     if args.with_docs:
-        print(f"  2. Optionally edit {_cyan('ARCHITECTURE.md')}, {_cyan('DESIGN.md')}, {_cyan('ROADMAP.md')}")
+        print(
+            f"  2. Optionally edit {_cyan('ARCHITECTURE.md')}, {_cyan('DESIGN.md')}, {_cyan('ROADMAP.md')}"
+        )
         print(f"  3. Run {_cyan('aidlc run')}")
     else:
-        print(
-            f"  2. Optional: {_cyan('aidlc init --with-docs')} to copy more planning templates"
-        )
+        print(f"  2. Optional: {_cyan('aidlc init --with-docs')} to copy more planning templates")
         print(f"  3. Run {_cyan('aidlc run')}")
 
     # Provider setup wizard (--providers flag)
