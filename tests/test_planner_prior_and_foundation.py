@@ -134,6 +134,28 @@ def test_foundation_docs_section_renders_present_docs(tmp_path):
     assert "Roadmap" in out
 
 
+def test_foundation_docs_section_includes_braindump_with_research_framing(tmp_path):
+    """BRAINDUMP renders first as voice-of-customer with a research trigger.
+
+    When the brain dump asks for concrete content the planner doesn't have, it
+    should emit a `research` action that cycle. This is the wiring for that
+    framing — without BRAINDUMP being prominent in the prompt, the planner
+    treats it as one of many docs and silently omits research kickoff.
+    """
+    brain = "# Brain Dump\n\nI want a 9-hole mini-golf course with named holes."
+    arch = "# Architecture\n\nThree.js + Cannon-es."
+    p = _planner(
+        tmp_path,
+        doc_files=[_doc("BRAINDUMP.md", brain), _doc("ARCHITECTURE.md", arch)],
+    )
+    out = "\n".join(_render_foundation_docs_section(p))
+    assert "BRAINDUMP.MD" in out
+    assert "voice of the customer" in out
+    assert "research" in out  # research trigger framing present
+    # BRAINDUMP rendered before ARCHITECTURE so its content lands first.
+    assert out.index("BRAINDUMP.MD") < out.index("ARCHITECTURE.MD")
+
+
 def test_foundation_docs_section_truncates_long_doc(tmp_path):
     long_arch = "# Architecture\n\n" + ("a" * 5000)
     p = _planner(

@@ -155,6 +155,31 @@ def build_implementation_prompt(impl, issue) -> str:
         for data in tail:
             volatile_sections.append(f"- {data['id']}: {data['title']}")
 
+    # Research awareness: the planner may have written `docs/research/<topic>.md`
+    # files during planning. List them by filename so the agent knows to read
+    # the relevant ones before designing a change rather than re-deriving content.
+    project_root = impl.config.get("_project_root")
+    research_dir = Path(project_root) / "docs" / "research" if project_root else None
+    if research_dir and research_dir.is_dir():
+        research_files = sorted(p.name for p in research_dir.glob("*.md"))
+        if research_files:
+            cap_research = max(5, int(impl.config.get("implementation_research_index_max", 30)))
+            shown = research_files[:cap_research]
+            volatile_sections.append(
+                f"\n## Available Research ({len(research_files)} file(s) in `docs/research/`)\n"
+            )
+            volatile_sections.append(
+                "If any of these are relevant to this issue's topic, **read them first** — "
+                "they contain concrete content/specs the planner researched so the implementer "
+                "doesn't re-derive them. Reference filenames in your `notes` if you used them."
+            )
+            for name in shown:
+                volatile_sections.append(f"- `docs/research/{name}`")
+            if len(research_files) > cap_research:
+                volatile_sections.append(
+                    f"- ... and {len(research_files) - cap_research} more (list in `docs/research/`)"
+                )
+
     return "\n\n".join(static_sections + volatile_sections)
 
 

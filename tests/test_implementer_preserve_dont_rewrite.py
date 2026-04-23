@@ -23,6 +23,65 @@ def test_prompt_contains_preserve_dont_rewrite_clauses():
     assert "regression, not progress" in text
 
 
+def test_implementer_prompt_lists_research_files_when_present(tmp_path):
+    """Research awareness: planner-emitted research lands in docs/research/.
+
+    The implementer must be told these files exist so it reads relevant ones
+    instead of re-deriving content. Without this, the work the planner did
+    via `research` actions is invisible at implementation time.
+    """
+    from unittest.mock import MagicMock
+
+    from aidlc.implementer_helpers import build_implementation_prompt
+    from aidlc.issue_model import Issue
+
+    research_dir = tmp_path / "docs" / "research"
+    research_dir.mkdir(parents=True)
+    (research_dir / "hole-layouts.md").write_text("# Hole layouts")
+    (research_dir / "physics-tuning.md").write_text("# Physics")
+
+    impl = MagicMock()
+    impl.config = {
+        "_project_root": str(tmp_path),
+        "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+        "implementation_completed_issues_max": 12,
+    }
+    impl.test_command = "pytest -q"
+    impl.max_impl_context_chars = 12000
+    impl.project_context = "ctx"
+    impl.state.issues = []
+    issue = Issue(id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"])
+
+    prompt = build_implementation_prompt(impl, issue)
+    assert "## Available Research" in prompt
+    assert "docs/research/hole-layouts.md" in prompt
+    assert "docs/research/physics-tuning.md" in prompt
+    assert "read them first" in prompt
+
+
+def test_implementer_prompt_omits_research_section_when_empty(tmp_path):
+    """Don't pollute the prompt with an empty section on greenfield projects."""
+    from unittest.mock import MagicMock
+
+    from aidlc.implementer_helpers import build_implementation_prompt
+    from aidlc.issue_model import Issue
+
+    impl = MagicMock()
+    impl.config = {
+        "_project_root": str(tmp_path),
+        "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+        "implementation_completed_issues_max": 12,
+    }
+    impl.test_command = None
+    impl.max_impl_context_chars = 12000
+    impl.project_context = "ctx"
+    impl.state.issues = []
+    issue = Issue(id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"])
+
+    prompt = build_implementation_prompt(impl, issue)
+    assert "## Available Research" not in prompt
+
+
 def test_schema_documents_existing_callers_checked():
     assert "existing_callers_checked" in IMPLEMENTATION_SCHEMA_DESCRIPTION
 

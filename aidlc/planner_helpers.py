@@ -186,12 +186,17 @@ def _render_prior_run_issues_section(planner) -> list[str]:
 
 
 def _render_foundation_docs_section(planner) -> list[str]:
-    """Render excerpts of ROADMAP / ARCHITECTURE / DESIGN under "committed" framing.
+    """Render excerpts of BRAINDUMP / ROADMAP / ARCHITECTURE / DESIGN.
 
     ISSUE-006: tells the planner that these docs are authoritative and
     issues should fit inside their scope. The planning_index.md file already
     points at them, but Claude needs the actual content in-prompt to plan
     against it. Drops 3rd under budget pressure.
+
+    BRAINDUMP.md is rendered first as the **voice of the customer** — when the
+    brain dump asks for something the planner doesn't have concrete details on
+    (specific content, formulas, APIs), the planner should emit ``research``
+    actions in this cycle rather than guess in an issue spec.
     """
     docs = list(getattr(planner, "doc_files", None) or [])
     if not docs:
@@ -199,7 +204,9 @@ def _render_foundation_docs_section(planner) -> list[str]:
 
     # First ~2k chars per foundation doc.
     excerpt_max = max(500, int(planner.config.get("planning_foundation_doc_excerpt_chars", 2000)))
-    foundation_names = ("roadmap.md", "architecture.md", "design.md")
+    # BRAINDUMP first: it's the customer's voice and drives whether other
+    # foundation docs even need to exist yet.
+    foundation_names = ("braindump.md", "roadmap.md", "architecture.md", "design.md")
     by_name = {}
     for doc in docs:
         name = (doc.get("path") or "").split("/")[-1].lower()
@@ -211,10 +218,15 @@ def _render_foundation_docs_section(planner) -> list[str]:
 
     lines = [
         "\n## Foundation Docs (committed — incremental changes only)\n",
-        "These docs are authoritative. Propose issues only inside their scope. "
-        "If a fundamental direction change is needed, propose a single "
-        "'Update foundation docs' issue rather than diverging silently. "
-        "Read the full files at the project root for complete context.\n",
+        "BRAINDUMP.md is the **voice of the customer** — what they want built. "
+        "If it asks for something concrete (specific content, formulas, APIs, "
+        "external integrations) and you don't have details, emit a `research` "
+        "action this cycle so `docs/research/<topic>.md` lands before any issue "
+        "depends on it.\n\n"
+        "ROADMAP / ARCHITECTURE / DESIGN are committed scope. Propose issues "
+        "only inside their scope. If a fundamental direction change is needed, "
+        "propose a single 'Update foundation docs' issue rather than diverging "
+        "silently. Read the full files at the project root for complete context.\n",
     ]
     for name in foundation_names:
         doc = by_name.get(name)
