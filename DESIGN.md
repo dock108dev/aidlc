@@ -1,8 +1,16 @@
 # Design
 
-Per-fix design notes for the current remediation effort. Each section maps
-1:1 to an issue in `ROADMAP.md`. Format per section: **Problem** → **Approach**
-→ **Alternatives considered** → **Touchpoints** → **Tests**.
+Per-fix design notes for the prior remediation effort. Each section maps 1:1
+to an issue in `ROADMAP.md`. Format per section: **Problem** → **Approach** →
+**Alternatives considered** → **Touchpoints** → **Tests**.
+
+> **Note (post-core-focus audit):** ISSUE-002 (the `aidlc plan` wizard
+> overwrite bug) and ISSUE-013 (`session_dir_max_keep` pruning) describe
+> behavior in the now-retired `plan_session.py`. Likewise ISSUE-009's
+> "automatic ssot/abend/cleanup on early stop" refers to passes that have
+> since been removed (early-stop opt-in now runs `cleanup` only). The notes
+> are retained for historical context. See `CHANGELOG.md` for the
+> core-focus audit changeset.
 
 ---
 

@@ -5,21 +5,35 @@ import textwrap
 
 
 def build_parser(version: str) -> argparse.ArgumentParser:
-    """Build top-level argparse parser for AIDLC."""
+    """Build top-level argparse parser for AIDLC.
+
+    The CLI surface is intentionally narrow. The core flow is:
+
+        aidlc init    Set up .aidlc/ + scaffold BRAINDUMP.md
+        aidlc run     Run the full lifecycle from BRAINDUMP.md
+
+    Everything else is admin sugar (status, reset, accounts, provider, usage,
+    config). Standalone ``audit``, ``finalize``, ``improve``, ``plan``,
+    ``validate`` commands were removed in the core-focus audit — audit and
+    finalize run as part of ``run``; improve/plan/validate were either
+    duplicating ``run`` or producing orthogonal artifacts.
+    """
     parser = argparse.ArgumentParser(
         prog="aidlc",
-        description="AIDLC — AI Development Life Cycle. Drop into any repo, plan with a time budget, implement until done.",
+        description=(
+            "AIDLC — AI Development Life Cycle. "
+            "Drop into any repo, write BRAINDUMP.md, run the lifecycle."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Quick start:
-              aidlc precheck            Check what docs are needed
-              aidlc init --with-docs    Set up AIDLC + copy planning templates
-              aidlc run                 Run full lifecycle
+              aidlc init                Set up .aidlc/ and scaffold BRAINDUMP.md
+              aidlc precheck            Check what docs/config are in place
+              aidlc run                 Run full lifecycle (scan -> plan -> implement -> finalize)
 
             For existing repos:
-              aidlc precheck            See what's missing
-              aidlc audit               Generate STATUS.md from your code
-              aidlc run --audit         Audit first, then run lifecycle
+              aidlc init                Scaffolds BRAINDUMP.md (edit it, then run)
+              aidlc run --audit         Run a code audit before planning
 
             More info: https://github.com/highlyprofitable108/aidlc
         """),
@@ -28,20 +42,13 @@ def build_parser(version: str) -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", help="Command")
 
-    # Add validate_parser at the correct place
-    validate_parser = subparsers.add_parser(
-        "validate",
-        help="Run validation phase only",
-        description="Run the validation (test/fix) loop on the latest run state.",
-    )
-    validate_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    validate_parser.add_argument("--config", "-c", help="Config file path")
-    validate_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
-
     precheck_parser = subparsers.add_parser(
         "precheck",
         help="Check project readiness",
-        description="Verify docs and config are in place before running. Auto-creates .aidlc/ with defaults if missing.",
+        description=(
+            "Verify docs and config are in place before running. "
+            "Auto-creates .aidlc/ with defaults if missing."
+        ),
     )
     precheck_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
     precheck_parser.add_argument(
@@ -51,69 +58,22 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser(
         "init",
         help="Initialize AIDLC in a project",
-        description="Set up .aidlc/ directory with config and optionally copy planning doc templates.",
+        description=(
+            "Set up .aidlc/ directory with config, scaffold BRAINDUMP.md if missing, "
+            "and optionally copy planning doc templates."
+        ),
     )
     init_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
     init_parser.add_argument(
         "--with-docs",
         action="store_true",
-        help="Copy planning doc templates (ROADMAP.md, ARCHITECTURE.md, etc.) into the project",
+        help="Also copy the rest of the planning doc templates (ARCHITECTURE.md, ROADMAP.md, etc.)",
     )
     init_parser.add_argument(
         "--providers",
         action="store_true",
         help="Run provider setup wizard after init (validate, auth, configure)",
     )
-
-    improve_parser = subparsers.add_parser(
-        "improve",
-        help="Targeted improvement cycle",
-        description="Audit a specific area, research improvements, plan and implement fixes.",
-    )
-    improve_parser.add_argument(
-        "concern",
-        nargs="?",
-        default=None,
-        help="What to improve (e.g., 'economy feels flat', 'needs better UI')",
-    )
-    improve_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    improve_parser.add_argument("--config", "-c", help="Config file path")
-    improve_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
-    improve_parser.add_argument(
-        "--plan-only", action="store_true", help="Create improvement issues but don't implement"
-    )
-
-    plan_parser = subparsers.add_parser(
-        "plan",
-        help="Interactive planning session",
-        description="Guided wizard + doc generation + Claude refinement for planning docs.",
-    )
-    plan_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    plan_parser.add_argument("--config", "-c", help="Config file path")
-    plan_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
-    plan_parser.add_argument(
-        "--skip-wizard", action="store_true", help="Skip wizard, go straight to Claude refinement"
-    )
-    plan_parser.add_argument(
-        "--wizard-only",
-        action="store_true",
-        help="Run wizard and generate drafts, no Claude session",
-    )
-    plan_parser.add_argument(
-        "--review", action="store_true", help="Review existing docs and suggest improvements"
-    )
-
-    audit_parser = subparsers.add_parser(
-        "audit",
-        help="Audit existing codebase",
-        description="Analyze existing code and generate STATUS.md + ARCHITECTURE.md.",
-    )
-    audit_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    audit_parser.add_argument(
-        "--full", action="store_true", help="Full audit with Claude semantic analysis"
-    )
-    audit_parser.add_argument("--config", "-c", help="Config file path")
-    audit_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
 
     run_parser = subparsers.add_parser(
         "run",
@@ -129,7 +89,7 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--resume", action="store_true", help="Resume latest run")
     run_parser.add_argument(
-        "--dry-run", action="store_true", help="No Claude CLI calls (cycles capped at 3)"
+        "--dry-run", action="store_true", help="No provider calls (cycles capped at 3)"
     )
     run_parser.add_argument(
         "--max-plan-cycles", type=int, default=None, help="Max planning cycles (0=unlimited)"
@@ -155,7 +115,7 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--passes",
-        help="Comma-separated finalization passes to run (default: all). Options: ssot,security,abend,docs,cleanup",
+        help="Comma-separated finalization passes to run (default: all). Options: docs,cleanup",
     )
     run_parser.add_argument(
         "--revert-to-cycle",
@@ -172,19 +132,6 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "(token_exhausted, unknown) auto-reopen each cycle."
         ),
     )
-
-    finalize_parser = subparsers.add_parser(
-        "finalize",
-        help="Run finalization passes",
-        description="Run post-implementation audit, cleanup, and documentation passes.",
-    )
-    finalize_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    finalize_parser.add_argument(
-        "--passes",
-        help="Comma-separated passes to run (default: all). Options: ssot,security,abend,docs,cleanup",
-    )
-    finalize_parser.add_argument("--config", "-c", help="Config file path")
-    finalize_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
 
     status_parser = subparsers.add_parser(
         "status",

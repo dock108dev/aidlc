@@ -177,7 +177,6 @@ class AuditResult:
     generated_docs: list = field(default_factory=list)  # paths of generated docs
     degraded_stats: dict = field(default_factory=dict)  # counters for skipped/failed reads
     runtime_checks: Optional[dict] = None  # build/unit/integration/e2e runtime results
-    braindump_summary: Optional[dict] = None  # metadata about generated BRAINDUMP
 
     def to_dict(self) -> dict:
         return {
@@ -199,7 +198,6 @@ class AuditResult:
             "generated_docs": self.generated_docs,
             "degraded_stats": self.degraded_stats,
             "runtime_checks": self.runtime_checks,
-            "braindump_summary": self.braindump_summary,
         }
 
     @classmethod
@@ -215,7 +213,6 @@ class AuditResult:
             generated_docs=data.get("generated_docs", []),
             degraded_stats=data.get("degraded_stats", {}),
             runtime_checks=data.get("runtime_checks"),
-            braindump_summary=data.get("braindump_summary"),
         )
         result.modules = [
             ModuleInfo.from_dict(m) if isinstance(m, dict) else m for m in data.get("modules", [])

@@ -78,7 +78,8 @@ def _exhausted_cli():
 @patch("aidlc.finalizer.Finalizer")
 def test_default_does_not_auto_run_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path):
     """ISSUE-009: by default, hitting token exhaustion does NOT trigger
-    ssot/abend/cleanup passes."""
+    finalization passes — burning more budget at the moment we want to stop
+    cleanly is the wrong default."""
     config = _config(tmp_path)  # default: implementation_finalize_on_early_stop is False
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
@@ -96,7 +97,12 @@ def test_default_does_not_auto_run_finalize_on_early_stop(mock_finalizer_cls, lo
 
 @patch("aidlc.finalizer.Finalizer")
 def test_opt_in_runs_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path):
-    """When the user opts back in, ssot/abend/cleanup passes still run."""
+    """When the user opts back in, the surviving cleanup pass still runs.
+
+    The legacy ssot/abend passes were removed in the core-focus audit; only
+    cleanup remains in the early-stop fallback. Docs is heavier and isn't
+    appropriate when we're already trying to bail out cleanly.
+    """
     config = _config(tmp_path, implementation_finalize_on_early_stop=True)
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
@@ -109,9 +115,8 @@ def test_opt_in_runs_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path
 
     mock_finalizer_cls.assert_called_once()
     mock_finalizer_cls.return_value.run.assert_called_once()
-    # Confirms the canonical pass list.
     call_kwargs = mock_finalizer_cls.return_value.run.call_args
-    assert call_kwargs.kwargs.get("passes") == ["ssot", "abend", "cleanup"]
+    assert call_kwargs.kwargs.get("passes") == ["cleanup"]
 
 
 def test_stop_reason_logged_with_resume_hint(logger, tmp_path, caplog):

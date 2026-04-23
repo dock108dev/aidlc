@@ -236,26 +236,16 @@ DEFAULTS = {
     "audit_coverage_threshold_percent": 85,  # focus shifts to UI when >= threshold
     "audit_playwright_headless": True,  # enforce headless Playwright in runtime audit
     "audit_playwright_command_override": None,  # optional custom Playwright command
-    "audit_braindump_enabled": True,  # generate BRAINDUMP.md during full audit
-    "audit_braindump_path": "BRAINDUMP.md",
-    "audit_planning_workload_stop_ratio": 0.95,  # stop adding issue seeds near planning budget
-    "audit_research_estimate_default_hours": 2.0,
-    "audit_issue_estimate_defaults": {  # default projected effort per issue priority
-        "high": 3.0,
-        "medium": 1.5,
-        "low": 0.75,
-    },
-    "audit_include_deferred_backlog": True,  # include overflow ideas after workload cap
     # Research settings
     "research_max_scope_files": 10,  # max files to read per research action
     "research_max_source_chars": 15000,  # max chars per scope file
     "research_max_per_cycle": 2,  # max research actions per planning cycle
     "research_timeout_seconds": 900,  # 15 min timeout per research call
-    # Doc-gap detection
-    "doc_gap_detection_enabled": True,
-    "doc_gap_max_items": 50,  # cap gaps passed to planner prompt
-    # ISSUE-013: session dir pruning (oldest deleted at start of each `aidlc plan`).
-    "session_dir_max_keep": 10,
+    # Doc-gap detection — opt-in. On mature repos, scanning every doc for TBD
+    # markers and turning them into spurious planning issues creates noise.
+    # Set to true on greenfield projects where doc gaps are real planning input.
+    "doc_gap_detection_enabled": False,
+    "doc_gap_max_items": 50,  # cap gaps passed to planner prompt (when enabled)
     # Resume (implementation-phase continuation)
     "resume_reconcile_enabled": True,  # git-grep heuristic when resuming past planning
     "planning_doc_min_chars": 800,  # minimum chars for "sufficient" planning docs

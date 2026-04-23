@@ -166,19 +166,20 @@ class TestCodeAuditorQuickScan:
         assert "Project Status" in content
         assert "python" in content.lower()
 
-    def test_generates_architecture_md_when_missing(self, python_project, config):
+    def test_does_not_generate_architecture_md(self, python_project, config):
+        """Auditor is read-only for user-owned docs. Even on a new repo with no
+        ARCHITECTURE.md, the audit must NOT scaffold one — that's the user's
+        voice to write."""
         auditor = CodeAuditor(python_project, config)
         result = auditor.run(depth="quick")
-        assert "ARCHITECTURE.md" in result.generated_docs
-        arch_path = python_project / "ARCHITECTURE.md"
-        assert arch_path.exists()
+        assert "ARCHITECTURE.md" not in result.generated_docs
+        assert not (python_project / "ARCHITECTURE.md").exists()
 
-    def test_skips_architecture_md_when_exists(self, python_project, config):
+    def test_does_not_overwrite_existing_architecture_md(self, python_project, config):
         (python_project / "ARCHITECTURE.md").write_text("# My Architecture\nCustom content.")
         auditor = CodeAuditor(python_project, config)
         result = auditor.run(depth="quick")
         assert "ARCHITECTURE.md" not in result.generated_docs
-        # Should not overwrite
         content = (python_project / "ARCHITECTURE.md").read_text()
         assert "Custom content" in content
 
@@ -201,106 +202,49 @@ class TestCodeAuditorQuickScan:
         assert result.source_stats["total_files"] == 0
 
 
-class TestBraindumpGeneration:
-    def test_full_audit_generates_workload_capped_braindump(
-        self, python_project, config, monkeypatch
-    ):
-        config.update(
-            {
-                "plan_budget_hours": 1,
-                "audit_planning_workload_stop_ratio": 0.5,  # 0.5h workload cap
-                "audit_research_estimate_default_hours": 0.4,
-                "audit_issue_estimate_defaults": {"high": 0.4, "medium": 0.3, "low": 0.2},
-                "audit_runtime_enabled": True,
-                "audit_braindump_enabled": True,
-            }
-        )
+class TestAuditDoesNotTouchBraindump:
+    """Core-focus audit invariant: the auditor never writes BRAINDUMP.md.
+
+    BRAINDUMP.md is the customer's voice — the single source of truth that
+    drives the lifecycle. The auditor produces analysis (STATUS.md +
+    audit_result.json) and nothing more.
+    """
+
+    def test_full_audit_does_not_create_braindump(self, python_project, config, monkeypatch):
+        config.update({"plan_budget_hours": 1, "audit_runtime_enabled": True})
 
         cli = object()
         auditor = CodeAuditor(python_project, config, cli=cli)
-
-        monkeypatch.setattr(
-            auditor._full,
-            "full_audit",
-            lambda result: result,
-        )
-        monkeypatch.setattr(
-            auditor._runtime,
-            "run_runtime_checks",
-            lambda _ptype: {
-                "tier_results": [
-                    {
-                        "tier": "build",
-                        "command": "echo build",
-                        "passed": True,
-                        "duration_seconds": 1,
-                    },
-                    {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
-                    {
-                        "tier": "integration",
-                        "command": "echo integ",
-                        "passed": True,
-                        "duration_seconds": 1,
-                    },
-                ],
-                "overall_passed": True,
-                "build_health": "healthy",
-                "playwright_present": True,
-                "playwright_passed": True,
-                "coverage_percent": 96.0,
-            },
-        )
-
-        result = auditor.run(depth="full")
-        braindump_path = python_project / "BRAINDUMP.md"
-        assert braindump_path.exists()
-        content = braindump_path.read_text()
-        assert "## WorkloadBudgetAndStopReason" in content
-        assert "workload_budget_reached: true" in content
-        assert "## DeferredOpportunities" in content
-        assert result.braindump_summary is not None
-        assert result.braindump_summary["workload_budget_reached"] is True
-
-    def test_braindump_focuses_coverage_when_build_is_healthy(
-        self, python_project, config, monkeypatch
-    ):
-        config.update(
-            {
-                "plan_budget_hours": 4,
-                "audit_runtime_enabled": True,
-                "audit_braindump_enabled": True,
-                "audit_coverage_threshold_percent": 85,
-            }
-        )
-
-        cli = object()
-        auditor = CodeAuditor(python_project, config, cli=cli)
-
         monkeypatch.setattr(auditor._full, "full_audit", lambda result: result)
         monkeypatch.setattr(
             auditor._runtime,
             "run_runtime_checks",
-            lambda _ptype: {
-                "tier_results": [
-                    {
-                        "tier": "build",
-                        "command": "echo build",
-                        "passed": True,
-                        "duration_seconds": 1,
-                    },
-                    {"tier": "unit", "command": "echo unit", "passed": True, "duration_seconds": 1},
-                ],
-                "overall_passed": True,
-                "build_health": "healthy",
-                "playwright_present": False,
-                "playwright_passed": None,
-                "coverage_percent": 62.0,
-            },
+            lambda _ptype: {"tier_results": [], "overall_passed": True},
         )
 
         result = auditor.run(depth="full")
-        assert result.braindump_summary is not None
-        assert result.braindump_summary["focus"] == "coverage_uplift"
+        assert "BRAINDUMP.md" not in result.generated_docs
+        assert not (python_project / "BRAINDUMP.md").exists()
+
+    def test_full_audit_does_not_overwrite_existing_braindump(
+        self, python_project, config, monkeypatch
+    ):
+        (python_project / "BRAINDUMP.md").write_text(
+            "# Customer voice\n\nBuild me a thing that does X."
+        )
+
+        cli = object()
+        auditor = CodeAuditor(python_project, config, cli=cli)
+        monkeypatch.setattr(auditor._full, "full_audit", lambda result: result)
+        monkeypatch.setattr(
+            auditor._runtime,
+            "run_runtime_checks",
+            lambda _ptype: {"tier_results": [], "overall_passed": True},
+        )
+
+        auditor.run(depth="full")
+        # User's BRAINDUMP.md is untouched.
+        assert "Build me a thing that does X." in (python_project / "BRAINDUMP.md").read_text()
 
 
 class TestConflictDetection:
@@ -365,7 +309,6 @@ class TestAuditModels:
                 )
             ],
             runtime_checks={"overall_passed": False},
-            braindump_summary={"focus": "ci_build_test_stabilization"},
         )
         d = result.to_dict()
         restored = AuditResult.from_dict(d)
@@ -377,7 +320,9 @@ class TestAuditModels:
         assert restored.test_coverage.estimated_coverage == "moderate"
         assert len(restored.conflicts) == 1
         assert restored.runtime_checks["overall_passed"] is False
-        assert restored.braindump_summary["focus"] == "ci_build_test_stabilization"
+        # braindump_summary was removed when the auditor stopped writing
+        # BRAINDUMP.md. Make sure it isn't sneaking back into serialization.
+        assert "braindump_summary" not in d
 
     def test_module_info_serialization(self):
         m = ModuleInfo(

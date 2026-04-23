@@ -1,13 +1,10 @@
 """Finalization engine for AIDLC.
 
-Runs configurable audit and cleanup passes after implementation:
-- ssot: Dead code removal, enforce single source of truth
-- security: Deep security audit with findings report
-- abend: Error handling audit, fix dangerous suppressions
-- docs: Documentation consolidation and rewrite
-- cleanup: Code quality, formatting, consistency
+Runs configurable cleanup passes after implementation. Pass set is
+intentionally narrow — vague passes (ssot, security, abend) were removed in the
+core-focus audit. New passes will be added once their prompts are nailed down.
 
-Each pass calls Claude with edit permissions and a focused prompt.
+Each pass calls the provider with edit permissions and a focused prompt.
 Reports are written to docs/audits/ and .aidlc/reports/.
 """
 
@@ -17,23 +14,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .finalize_prompts import (
-    ABEND_PROMPT,
     CLEANUP_PROMPT,
     DOCS_PROMPT,
     FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
     PASS_ORDER,
-    SECURITY_PROMPT,
-    SSOT_PROMPT,
 )
 from .models import RunPhase, RunState
 from .state_manager import save_state
 from .timing import add_console_time
 
 PASS_PROMPTS = {
-    "ssot": SSOT_PROMPT,
-    "security": SECURITY_PROMPT,
-    "abend": ABEND_PROMPT,
     "docs": DOCS_PROMPT,
     "cleanup": CLEANUP_PROMPT,
 }
@@ -117,7 +108,7 @@ class Finalizer:
 
         # Build the prompt with project context
         prompt_template = PASS_PROMPTS[pass_name]
-        diff_summary = self._get_diff_summary() if pass_name in ("ssot", "cleanup") else ""
+        diff_summary = self._get_diff_summary() if pass_name == "cleanup" else ""
 
         prompt = prompt_template.format(
             project_context=self._project_context_for_finalize(),

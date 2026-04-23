@@ -73,7 +73,7 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
             *result.required_found,
         ]:
             print(
-                f"    Tip: run {cyan('aidlc audit')} to auto-generate STATUS.md + ARCHITECTURE.md"
+                f"    Tip: run {cyan('aidlc run --audit')} to generate STATUS.md from your code"
             )
     else:
         print(f"  {bold('Project:')} {dim('no source code detected (new project?)')}")

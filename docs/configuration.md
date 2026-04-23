@@ -148,13 +148,14 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | `planning_last_cycle_notes_max_chars` | `300` |
 | `doc_scan_patterns` | `["**/*.md", "**/*.txt", "**/*.rst"]` |
 | `doc_scan_exclude` | `["node_modules/**", ".git/**", "venv/**", ".venv/**", "__pycache__/**", ".aidlc/**", "dist/**", "build/**"]` |
-| `doc_gap_detection_enabled` | `true` |
+| `doc_gap_detection_enabled` | `false` |
 | `doc_gap_max_items` | `50` |
-| `session_dir_max_keep` | `10` |
 
 **Adaptive diminishing-returns threshold.** The planner exits when it sees N consecutive cycles with zero new issues. N is now adaptive to issue count: `N = clamp(min, ceil(num_issues_so_far / 10), max)`. So a small project (≤30 issues) uses 3, a large project (≥60 issues) uses 6. The legacy `diminishing_returns_threshold` is still read with a deprecation log; remove it from your config when you're ready.
 
-**Session pruning.** `session_dir_max_keep` controls how many `.aidlc/session/<timestamp>/` directories survive between `aidlc plan` runs. The oldest are deleted at the start of each session.
+**Doc-gap detection (opt-in).** Off by default — on mature repos, scanning every doc for TBD/placeholder markers and turning them into spurious planning issues created noise. Set `doc_gap_detection_enabled: true` on greenfield projects where doc gaps are real planning input.
+
+**Session pruning** has been removed. The `session_dir_max_keep` knob existed only for the retired `aidlc plan` wizard.
 
 ### Implementation and Testing
 
@@ -181,7 +182,7 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | `fail_on_final_test_failure` | `false` |
 | `stop_on_all_models_token_exhausted` | `true` |
 
-**Early-stop finalization (default off).** When implementation stops with work remaining (token exhaustion, dependency cycle, consecutive failures), the implementer **does not** auto-run `ssot`/`abend`/`cleanup` finalization passes by default. Set `implementation_finalize_on_early_stop: true` to restore the prior behavior. The new default exits cleanly with a single-line `STOP REASON: ...` and `RESUME WITH: aidlc run --resume` so you can pick up after the underlying issue (e.g., billing) is resolved.
+**Early-stop finalization (default off).** When implementation stops with work remaining (token exhaustion, dependency cycle, consecutive failures), the implementer **does not** auto-run finalization passes by default. Set `implementation_finalize_on_early_stop: true` to opt in; that runs the `cleanup` pass only (the legacy `ssot`/`abend` passes were removed in the core-focus audit). The default exits cleanly with a single-line `STOP REASON: ...` and `RESUME WITH: aidlc run --resume` so you can pick up after the underlying issue (e.g., billing) is resolved.
 
 After implementation, if `run_tests_command` fails, AIDLC runs a **fix-tests** prompt. If tests still fail, but the model documents **pre-existing / unrelated** suite failures — ideally via structured JSON (`failures_are_pre_existing_unrelated` + `follow_up_documentation`) — the issue can still be marked **implemented** when `implementation_accept_pre_existing_suite_failures` is `true` and the documentation is at least `implementation_pre_existing_debt_min_chars` long — notes are appended for follow-up issues. If the model omits JSON, `implementation_pre_existing_prose_heuristic` (default `true`) treats clear prose (e.g. "pre-existing unrelated suite", "gate is blocked") as documentation. Set `implementation_accept_pre_existing_suite_failures` to `false` to require a green test command for every issue.
 
@@ -215,12 +216,8 @@ When that happens, the run records that the **project-wide test gate is unstable
 | `audit_coverage_threshold_percent` | `85` |
 | `audit_playwright_headless` | `true` |
 | `audit_playwright_command_override` | `null` |
-| `audit_braindump_enabled` | `true` |
-| `audit_braindump_path` | `"BRAINDUMP.md"` |
-| `audit_planning_workload_stop_ratio` | `0.95` |
-| `audit_research_estimate_default_hours` | `2.0` |
-| `audit_issue_estimate_defaults` | `{"high": 3.0, "medium": 1.5, "low": 0.75}` |
-| `audit_include_deferred_backlog` | `true` |
+
+The auditor used to write `BRAINDUMP.md` and a workload-capped seed plan based on `audit_braindump_*` / `audit_planning_workload_*` / `audit_*_estimate_*` knobs. Those knobs were removed in the core-focus audit because the auditor was overwriting the customer's `BRAINDUMP.md`. The auditor is now read-only for user-owned docs; it writes only `STATUS.md` and `.aidlc/audit_result.json`.
 
 ### Research
 

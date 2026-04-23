@@ -11,12 +11,11 @@ from aidlc.__main__ import main, parse_budget
 @pytest.mark.parametrize(
     "wrapper,inner",
     [
+        # The audit/improve/plan/finalize/validate wrappers were removed in
+        # the core-focus audit (audit + finalize run inside ``aidlc run``;
+        # the others were duplicating the lifecycle).
         ("cmd_precheck", "_cmd_precheck"),
         ("cmd_init", "_cmd_init"),
-        ("cmd_audit", "_cmd_audit"),
-        ("cmd_improve", "_cmd_improve"),
-        ("cmd_plan", "_cmd_plan"),
-        ("cmd_finalize", "_cmd_finalize"),
         ("cmd_status", "_cmd_status"),
         ("cmd_accounts", "_cmd_accounts"),
         ("cmd_provider", "_cmd_provider"),
@@ -68,10 +67,6 @@ def test_main_dispatches_config(mock_cfg):
 @pytest.mark.parametrize(
     "argv_patch,target",
     [
-        (["aidlc", "plan", "--project", "/tmp"], "aidlc.__main__.cmd_plan"),
-        (["aidlc", "audit", "--project", "/tmp"], "aidlc.__main__.cmd_audit"),
-        (["aidlc", "improve", "--project", "/tmp"], "aidlc.__main__.cmd_improve"),
-        (["aidlc", "finalize", "--project", "/tmp"], "aidlc.__main__.cmd_finalize"),
         (["aidlc", "status", "--project", "/tmp"], "aidlc.__main__.cmd_status"),
         (["aidlc", "accounts", "--project", "/tmp", "list"], "aidlc.__main__.cmd_accounts"),
         (["aidlc", "provider", "--project", "/tmp", "list"], "aidlc.__main__.cmd_provider"),
@@ -83,6 +78,17 @@ def test_main_dispatches_other_commands(argv_patch, target):
         with patch.object(sys, "argv", argv_patch):
             main()
     mock_cmd.assert_called_once()
+
+
+@pytest.mark.parametrize("removed_cmd", ["audit", "improve", "plan", "finalize", "validate"])
+def test_removed_commands_no_longer_parse(removed_cmd, capsys):
+    """Commands removed in the core-focus audit must not silently re-parse.
+
+    argparse should fail with SystemExit since these subparsers were dropped.
+    """
+    with patch.object(sys, "argv", ["aidlc", removed_cmd]):
+        with pytest.raises(SystemExit):
+            main()
 
 
 def test_main_no_subcommand_prints_help(capsys):

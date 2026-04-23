@@ -1,7 +1,7 @@
 # Project Status
 
 *This file captures the current state of the codebase. It can be auto-generated
-by running `aidlc audit` or written manually.*
+by running `aidlc run --audit` or written manually.*
 
 ## Current State
 

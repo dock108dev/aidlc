@@ -16,19 +16,7 @@ from .cli_commands import (
     _red,
 )
 from .cli_commands import (
-    cmd_audit as _cmd_audit,
-)
-from .cli_commands import (
-    cmd_finalize as _cmd_finalize,
-)
-from .cli_commands import (
-    cmd_improve as _cmd_improve,
-)
-from .cli_commands import (
     cmd_init as _cmd_init,
-)
-from .cli_commands import (
-    cmd_plan as _cmd_plan,
 )
 from .cli_commands import (
     cmd_precheck as _cmd_precheck,
@@ -60,22 +48,6 @@ def cmd_precheck(args: argparse.Namespace) -> None:
 
 def cmd_init(args: argparse.Namespace) -> None:
     _cmd_init(args, __version__)
-
-
-def cmd_audit(args: argparse.Namespace) -> None:
-    _cmd_audit(args, __version__)
-
-
-def cmd_improve(args: argparse.Namespace) -> None:
-    _cmd_improve(args, __version__)
-
-
-def cmd_plan(args: argparse.Namespace) -> None:
-    _cmd_plan(args, __version__)
-
-
-def cmd_finalize(args: argparse.Namespace) -> None:
-    _cmd_finalize(args, __version__)
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -212,16 +184,8 @@ def main() -> None:
         cmd_precheck(args)
     elif args.command == "init":
         cmd_init(args)
-    elif args.command == "improve":
-        cmd_improve(args)
-    elif args.command == "plan":
-        cmd_plan(args)
-    elif args.command == "audit":
-        cmd_audit(args)
     elif args.command == "run":
         cmd_run(args)
-    elif args.command == "finalize":
-        cmd_finalize(args)
     elif args.command == "status":
         cmd_status(args)
     elif args.command == "reset":

@@ -6,26 +6,11 @@ Project documentation for the **AIDLC** CLI (this repository). Planning template
 
 | Document | Description |
 |----------|-------------|
-| [cli-lifecycle.md](cli-lifecycle.md) | Phases, run modes, stop conditions |
+| [cli-lifecycle.md](cli-lifecycle.md) | Surface, phases, run modes, stop conditions |
 | [configuration.md](configuration.md) | Config file, defaults, production profile, env |
-| [audit.md](audit.md) | Quick/full audit behavior and artifacts |
+| [audit.md](audit.md) | Quick/full audit behavior and artifacts (read-only) |
 | [local-development.md](local-development.md) | Setup, tests, Ruff, pipx |
-| [COVERAGE_PLAN.md](COVERAGE_PLAN.md) | pytest-cov policy and CI alignment |
-| [large-files.md](large-files.md) | Modules intentionally >500 lines (review list) |
 | [deployment.md](deployment.md) | Install wheel / venv / CI usage |
 | [limitations.md](limitations.md) | Non-goals and tradeoffs |
 | [deprecations.md](deprecations.md) | Removed or discouraged behavior |
-
-## Reference audits
-
-Static audit write-ups and checklists retained for review history:
-
-- [audits/abend_audit_one_pager.md](audits/abend_audit_one_pager.md)
-- [audits/abend_audit_full.md](audits/abend_audit_full.md)
-- [audits/abend_remediation_checklist.md](audits/abend_remediation_checklist.md)
-
-## History
-
-| Document | Description |
-|----------|-------------|
-| [history/cleanup-summary-2026-04-15.md](history/cleanup-summary-2026-04-15.md) | Snapshot of an earlier repo cleanup (historical) |
+| [MIGRATION-existing-projects.md](MIGRATION-existing-projects.md) | Upgrading existing aidlc'd repos (includes core-focus audit changes) |
