@@ -139,6 +139,124 @@ def test_all_token_exhausted_returns_terminal_failure(tmp_path):
     assert "out of tokens" in result["error"].lower() or "quota" in result["error"].lower()
 
 
+def _chain_config() -> dict:
+    """Single-provider config with a model_fallback_chain (ISSUE-004)."""
+    return {
+        "routing_strategy": "balanced",
+        "routing_rate_limit_buffer_base_seconds": 0,
+        "providers": {
+            "claude": {
+                "enabled": True,
+                "default_model": "sonnet",
+                "phase_models": {"default": "sonnet", "planning": "sonnet"},
+                "model_fallback_chain": ["sonnet", "opus", "haiku"],
+                "max_capacity": True,
+                "max_capacity_weight": 20,
+            },
+            "openai": {"enabled": False},
+            "copilot": {"enabled": False},
+        },
+    }
+
+
+def _exhaust(model_name: str) -> dict:
+    return {
+        "success": False,
+        "output": None,
+        "error": f"claude-{model_name}-4-5 has reached its quota; out of tokens",
+        "failure_type": "token_exhausted",
+        "duration_seconds": 0.0,
+        "retries": 0,
+        "usage": {},
+        "total_cost_usd": None,
+        "model_used": model_name,
+        "usage_source": "none",
+    }
+
+
+def _ok(model_name: str) -> dict:
+    return {
+        "success": True,
+        "output": "ok",
+        "error": None,
+        "failure_type": None,
+        "duration_seconds": 0.0,
+        "retries": 0,
+        "usage": {},
+        "total_cost_usd": None,
+        "model_used": model_name,
+        "usage_source": "none",
+    }
+
+
+def test_token_exhaustion_walks_chain_within_provider(tmp_path):
+    """ISSUE-004: sonnet exhausted → router tries opus on same provider."""
+    router = ProviderRouter(_chain_config(), logging.getLogger("test.router.chain"))
+    fake = FakeAdapter("claude", [_exhaust("sonnet"), _ok("opus")], default_model="sonnet")
+    router._adapters = {"claude": fake}
+
+    result = router.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["provider_id"] == "claude"
+    # The successful call carried model_used=opus.
+    assert result["model_used"] == "opus"
+
+
+def test_token_exhaustion_chain_exhausted_returns_terminal_failure(tmp_path):
+    """All chain entries exhausted: provider excluded; failure terminal."""
+    router = ProviderRouter(
+        _chain_config(), logging.getLogger("test.router.chain_exhausted")
+    )
+    fake = FakeAdapter(
+        "claude",
+        [_exhaust("sonnet"), _exhaust("opus"), _exhaust("haiku")],
+        default_model="sonnet",
+    )
+    router._adapters = {"claude": fake}
+
+    result = router.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is False
+    assert result["failure_type"] == "token_exhausted_all_models"
+    # Stop-reason includes the chain that was attempted.
+    assert "claude=" in result["error"]
+    assert "sonnet" in result["error"]
+    assert "opus" in result["error"]
+
+
+def test_token_exhaustion_chain_skips_excluded_models(tmp_path):
+    """When opus is on cooldown, chain skips it and tries haiku next."""
+    router = ProviderRouter(_chain_config(), logging.getLogger("test.router.skip"))
+    fake = FakeAdapter("claude", [_exhaust("sonnet"), _ok("haiku")], default_model="sonnet")
+    router._adapters = {"claude": fake}
+    # Pre-load opus cooldown so the chain skips it.
+    import time as _time
+
+    router._model_cooldowns[("claude", "opus")] = _time.time() + 600
+
+    result = router.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["model_used"] == "haiku"
+
+
+def test_is_model_exhausted_result_named_model():
+    """The new signal distinguishes per-model from per-provider exhaustion."""
+    named = {
+        "failure_type": "token_exhausted",
+        "error": "claude-sonnet-4-5 has reached its quota",
+    }
+    unnamed = {
+        "failure_type": "token_exhausted",
+        "error": "your account is over the monthly token limit",
+    }
+    not_exhausted = {"failure_type": "transient", "error": "timeout"}
+    assert result_signals.is_model_exhausted_result(named) is True
+    assert result_signals.is_model_exhausted_result(unnamed) is False
+    assert result_signals.is_model_exhausted_result(not_exhausted) is False
+
+
 def test_rate_limit_falls_back_to_other_provider(tmp_path):
     router = ProviderRouter(_config(), logging.getLogger("test.router.rate_limit_fallback"))
     router._adapters = {

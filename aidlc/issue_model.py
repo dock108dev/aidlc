@@ -28,6 +28,20 @@ def issue_progress_rank(status: IssueStatus) -> int:
     return order.get(status, 0)
 
 
+# ISSUE-012: failure cause taxonomy. Distinguishes transient causes
+# (auto-reopen on next cycle) from real-blocker causes (manual review).
+FAILURE_CAUSE_TOKEN_EXHAUSTED = "failed_token_exhausted"
+FAILURE_CAUSE_DEPENDENCY = "failed_dependency"
+FAILURE_CAUSE_TEST_REGRESSION = "failed_test_regression"
+FAILURE_CAUSE_UNKNOWN = "failed_unknown"
+
+# Causes considered transient — auto-reopened to PENDING on a fresh
+# implementation cycle (or always with --retry-failed).
+TRANSIENT_FAILURE_CAUSES = frozenset(
+    {FAILURE_CAUSE_TOKEN_EXHAUSTED, FAILURE_CAUSE_UNKNOWN}
+)
+
+
 @dataclass
 class Issue:
     """A single work item created during planning."""
@@ -45,6 +59,10 @@ class Issue:
     files_changed: list = field(default_factory=list)
     attempt_count: int = 0
     max_attempts: int = 3
+    # ISSUE-012: optional cause set when status flips to FAILED. Used to
+    # distinguish transient (token exhaustion) from real blockers (dep/test
+    # regression). None when not failed.
+    failure_cause: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +79,7 @@ class Issue:
             "files_changed": self.files_changed,
             "attempt_count": self.attempt_count,
             "max_attempts": self.max_attempts,
+            "failure_cause": self.failure_cause,
         }
 
     @classmethod
@@ -80,4 +99,5 @@ class Issue:
         issue.files_changed = data.get("files_changed", [])
         issue.attempt_count = data.get("attempt_count", 0)
         issue.max_attempts = data.get("max_attempts", 3)
+        issue.failure_cause = data.get("failure_cause")
         return issue

@@ -130,8 +130,118 @@ def _render_existing_issues_section(planner) -> list[str]:
     return lines
 
 
+def _render_prior_run_issues_section(planner) -> list[str]:
+    """Render prior-run issues (loaded from disk) under "do not redo" framing.
+
+    ISSUE-005: tells the planner that prior verified/implemented issues
+    represent committed work and should not be re-created. Without this, a
+    re-run on an already-aidlc'd repo regenerates the plan from scratch
+    (often rewriting working systems). Drops first under prompt-budget
+    pressure so it cannot starve the schema/instructions section.
+    """
+    prior = list(getattr(planner, "existing_issues", None) or [])
+    if not prior:
+        return []
+
+    # De-duplicate against the current run's issues so we don't render the
+    # same ID twice (the planner's ID-collision-avoidance keeps ID space
+    # consistent across runs but the same issue can appear in both lists
+    # right after a resume).
+    current_ids = {d.get("id") for d in (planner.state.issues or [])}
+
+    rendered: list[tuple[str, str, str, str]] = []
+    for entry in prior:
+        parsed = entry.get("parsed_issue") or {}
+        if not isinstance(parsed, dict):
+            continue
+        issue_id = parsed.get("id")
+        if not issue_id or issue_id in current_ids:
+            continue
+        title = (parsed.get("title") or "").strip()
+        if len(title) > 90:
+            title = f"{title[:87]}..."
+        status = parsed.get("status", "pending")
+        notes = (parsed.get("implementation_notes") or "").strip()
+        # Reduce notes to a single line for prompt density.
+        first_line = notes.splitlines()[0].strip() if notes else ""
+        if len(first_line) > 80:
+            first_line = f"{first_line[:77]}..."
+        rendered.append((issue_id, title, status, first_line))
+
+    if not rendered:
+        return []
+
+    rendered.sort(key=lambda row: _issue_number(row[0]))
+
+    lines = [
+        f"\n## Prior Run — Already Done (do not redo) [{len(rendered)} issues]\n",
+        "These issues exist on disk from prior aidlc runs. Verified or implemented "
+        "items are committed work. Do NOT recreate. Focus your planning on deltas: "
+        "real gaps in coverage, regressions, or follow-on work documented in their notes.\n",
+    ]
+    for issue_id, title, status, note_line in rendered:
+        suffix = f" — {note_line}" if note_line else ""
+        lines.append(f"- {issue_id} [{status}]: {title}{suffix}")
+    return lines
+
+
+def _render_foundation_docs_section(planner) -> list[str]:
+    """Render excerpts of ROADMAP / ARCHITECTURE / DESIGN under "committed" framing.
+
+    ISSUE-006: tells the planner that these docs are authoritative and
+    issues should fit inside their scope. The planning_index.md file already
+    points at them, but Claude needs the actual content in-prompt to plan
+    against it. Drops 3rd under budget pressure.
+    """
+    docs = list(getattr(planner, "doc_files", None) or [])
+    if not docs:
+        return []
+
+    # First ~2k chars per foundation doc.
+    excerpt_max = max(500, int(planner.config.get("planning_foundation_doc_excerpt_chars", 2000)))
+    foundation_names = ("roadmap.md", "architecture.md", "design.md")
+    by_name = {}
+    for doc in docs:
+        name = (doc.get("path") or "").split("/")[-1].lower()
+        if name in foundation_names and name not in by_name:
+            by_name[name] = doc
+
+    if not by_name:
+        return []
+
+    lines = [
+        "\n## Foundation Docs (committed — incremental changes only)\n",
+        "These docs are authoritative. Propose issues only inside their scope. "
+        "If a fundamental direction change is needed, propose a single "
+        "'Update foundation docs' issue rather than diverging silently. "
+        "Read the full files at the project root for complete context.\n",
+    ]
+    for name in foundation_names:
+        doc = by_name.get(name)
+        if not doc:
+            continue
+        content = (doc.get("content") or "").strip()
+        if not content:
+            continue
+        excerpt = content[:excerpt_max]
+        truncated_marker = (
+            f"\n... (truncated; full file at {doc.get('path')})" if len(content) > excerpt_max else ""
+        )
+        display_name = name.upper()
+        lines.append(f"\n### {display_name}\n```\n{excerpt}{truncated_marker}\n```")
+    return lines
+
+
 def _enforce_prompt_budget(prompt: str, planner) -> str:
-    """Shrink planning prompt to configured budget while preserving key instructions."""
+    """Shrink planning prompt to configured budget while preserving key instructions.
+
+    Drop priority (first to last):
+      1. ## Existing Issues (current-run)
+      2. ## Prior Run — Already Done (prior-run issues from disk, ISSUE-005)
+      3. ## Previous Cycle
+      4. ## Foundation Docs (ISSUE-006)
+    Schema, instructions, and Run State are never dropped.
+    """
     max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
     if len(prompt) <= max_chars:
         return prompt
@@ -150,8 +260,26 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
         return shrunk
 
     shrunk = re.sub(
+        r"\n## Prior Run[\s\S]*?(?=\n## |\Z)",
+        "\n## Prior Run — Already Done\nPrior issues exist on disk; read .aidlc/issues/*.md for the full set.",
+        shrunk,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    shrunk = re.sub(
         r"\n## Previous Cycle[\s\S]*?(?=\n## |\Z)",
         "\n## Previous Cycle\nSee prior cycle notes in this run's planning outputs.",
+        shrunk,
+        count=1,
+    )
+    if len(shrunk) <= max_chars:
+        return shrunk
+
+    shrunk = re.sub(
+        r"\n## Foundation Docs[\s\S]*?(?=\n## |\Z)",
+        "\n## Foundation Docs\nROADMAP/ARCHITECTURE/DESIGN exist at project root; read them directly.",
         shrunk,
         count=1,
     )
@@ -326,7 +454,13 @@ def build_prompt(planner, is_finalization: bool) -> str:
         volatile_parts.append("\n## Previous Cycle\n")
         volatile_parts.append(planner._last_cycle_notes[:max_prev_notes])
 
+    # Existing (current-run) issues: dropped first under budget pressure.
     volatile_parts.extend(_render_existing_issues_section(planner))
+    # Prior-run issues from disk: also dropped first under budget pressure
+    # (see _enforce_prompt_budget). ISSUE-005.
+    volatile_parts.extend(_render_prior_run_issues_section(planner))
+    # Foundation docs: dropped 3rd. ISSUE-006.
+    volatile_parts.extend(_render_foundation_docs_section(planner))
 
     if planner.doc_gaps:
         critical_gaps = [g for g in planner.doc_gaps if g.severity == "critical"]

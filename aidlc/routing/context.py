@@ -229,12 +229,49 @@ def resolve_model_for_phase(
     phase: str,
     complexity_level: str,
 ) -> str:
+    """Pick the model for a (provider, phase) pair using user-aware precedence.
+
+    Order — first non-empty wins:
+
+    1. user ``providers.<id>.phase_models[phase]``
+    2. user ``providers.<id>.default_model``
+    3. DEFAULT ``providers.<id>.phase_models[phase]``
+    4. DEFAULT ``providers.<id>.default_model``
+    5. adapter default
+
+    Step 2 is what makes a single ``default_model: "opus"`` in the user's
+    config take effect across all phases without forcing them to override
+    every entry in ``phase_models``. Without it, a DEFAULT
+    ``phase_models.planning: "sonnet"`` would always win and the user's
+    ``default_model`` would be silently dead config (ISSUE-003).
+    """
     effective_phase = phase
     if phase == "implementation" and complexity_level == "complex":
         effective_phase = "implementation_complex"
 
     provider_id = adapter.PROVIDER_ID
     providers_cfg = config.get("providers", {})
+    user_overrides = config.get("_user_provider_overrides", {})
+    user_provider_overrides = (
+        user_overrides.get(provider_id) if isinstance(user_overrides, dict) else None
+    )
+
+    # 1. user phase_models[phase]
+    if isinstance(user_provider_overrides, dict):
+        user_phase_models = user_provider_overrides.get("phase_models") or {}
+        if isinstance(user_phase_models, dict):
+            user_phase_model = user_phase_models.get(effective_phase) or user_phase_models.get(
+                "default"
+            )
+            if user_phase_model:
+                return str(user_phase_model)
+
+        # 2. user default_model
+        user_default = user_provider_overrides.get("default_model")
+        if user_default:
+            return str(user_default)
+
+    # 3. DEFAULT phase_models[phase]
     if isinstance(providers_cfg, dict) and provider_id in providers_cfg:
         phase_models = providers_cfg[provider_id].get("phase_models", {})
         if isinstance(phase_models, dict):
@@ -242,6 +279,12 @@ def resolve_model_for_phase(
             if model:
                 return str(model)
 
+        # 4. DEFAULT default_model
+        merged_default = providers_cfg[provider_id].get("default_model")
+        if merged_default:
+            return str(merged_default)
+
+    # 5. adapter default
     return adapter.get_default_model(effective_phase)
 
 

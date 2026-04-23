@@ -163,6 +163,15 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         default=None,
         help="Revert planning state to the start of a specific cycle number, then exit",
     )
+    run_parser.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help=(
+            "Reopen ALL failed issues to pending before resuming, regardless of "
+            "failure_cause. Without this flag, only transient failures "
+            "(token_exhausted, unknown) auto-reopen each cycle."
+        ),
+    )
 
     finalize_parser = subparsers.add_parser(
         "finalize",
@@ -183,6 +192,38 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         description="Display the status and issue breakdown of the most recent run.",
     )
     status_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+
+    reset_parser = subparsers.add_parser(
+        "reset",
+        help="Clear stale .aidlc/ state",
+        description=(
+            "Delete .aidlc/runs, reports, issues, session, and run artifacts. "
+            "Preserves config.json by default. Use --all to also delete config.json."
+        ),
+    )
+    reset_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    reset_parser.add_argument(
+        "--all",
+        dest="reset_all",
+        action="store_true",
+        help="Also delete .aidlc/config.json (you'll need to re-init and re-auth)",
+    )
+    reset_parser.add_argument(
+        "--keep-issues",
+        action="store_true",
+        help="Preserve .aidlc/issues/ (useful when resetting just runs)",
+    )
+    reset_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be deleted without deleting",
+    )
+    reset_parser.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Skip confirmation prompt",
+    )
 
     # --- accounts subcommand ---
     accounts_parser = subparsers.add_parser(

@@ -83,7 +83,15 @@ class Planner:
         # Diminishing returns tracking — tracks (new_issues, total_actions) per cycle
         recent_cycles = []  # list of (new_issue_count, total_action_count)
         diminishing_returns_window = self.config.get("diminishing_returns_window", 5)
-        diminishing_returns_threshold = self.config.get("diminishing_returns_threshold", 3)
+        # ISSUE-011: legacy fixed threshold is still respected when set, but the
+        # primary control is now the adaptive min/max. The effective threshold
+        # is recomputed each cycle from the current issue count.
+        legacy_threshold = self.config.get("diminishing_returns_threshold")
+        if legacy_threshold is not None:
+            self.logger.info(
+                "config: diminishing_returns_threshold is deprecated; use "
+                "planning_diminishing_returns_min_threshold / _max_threshold instead"
+            )
         self._pending_completion_reason = None
         self._offer_completion = False  # When True, prompt tells Claude it can declare done
 
@@ -164,21 +172,27 @@ class Planner:
                         "continuing to ensure repository scope is fully captured."
                     )
                     recent_cycles.append(0)
-                    # Check if we've had enough empty cycles to trigger winding down
+                    # Check if we've had enough empty cycles to trigger winding down.
+                    # ISSUE-011: threshold scales with issue count.
+                    threshold = self._adaptive_diminishing_threshold(legacy_threshold)
                     if (
-                        len(recent_cycles) >= diminishing_returns_threshold
+                        len(recent_cycles) >= threshold
                         and len(self.state.issues) > 0
                         and self._planning_foundation.get("ready", False)
-                        and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
+                        and all(n == 0 for n in recent_cycles[-threshold:])
                     ):
                         if not self._offer_completion:
                             self._offer_completion = True
                             self.logger.info(
-                                "Offering completion option after repeated empty cycles."
+                                f"Offering completion option after {threshold} empty cycles "
+                                f"(adaptive threshold for {len(self.state.issues)} issues)."
                             )
                         else:
                             self.state.stop_reason = "Planning frontier is clear"
-                            self.logger.info("Planning complete after repeated empty cycles.")
+                            self.logger.info(
+                                f"Planning complete after {threshold} empty cycles "
+                                f"(adaptive threshold)."
+                            )
                             break
             elif result is False:
                 consecutive_failures += 1
@@ -200,18 +214,21 @@ class Planner:
                     recent_cycles.pop(0)
 
                 # Check for winding down: last N cycles all had 0 new issues
+                # ISSUE-011: threshold scales with issue count, recomputed each cycle
+                threshold = self._adaptive_diminishing_threshold(legacy_threshold)
                 if (
-                    len(recent_cycles) >= diminishing_returns_threshold
+                    len(recent_cycles) >= threshold
                     and len(self.state.issues) > 0
                     and self._planning_foundation.get("ready", False)
-                    and all(n == 0 for n in recent_cycles[-diminishing_returns_threshold:])
+                    and all(n == 0 for n in recent_cycles[-threshold:])
                 ):
                     if not self._offer_completion:
                         # First detection: tell Claude it can declare done next cycle
                         self._offer_completion = True
                         self.logger.info(
-                            f"Winding down detected: {diminishing_returns_threshold} cycles "
-                            f"with no new issues. Offering completion option to Claude."
+                            f"Winding down detected: {threshold} cycles "
+                            f"with no new issues (adaptive threshold for "
+                            f"{len(self.state.issues)} issues). Offering completion to Claude."
                         )
                     elif self._pending_completion_reason:
                         # Claude accepted the offer — honor it
@@ -224,7 +241,7 @@ class Planner:
                         # Claude didn't declare complete but is still just updating
                         # Give it one more cycle, then force exit
                         tail_len = sum(1 for n in recent_cycles if n == 0)
-                        if tail_len >= diminishing_returns_threshold + 2:
+                        if tail_len >= threshold + 2:
                             self.state.stop_reason = (
                                 f"Planning complete — {tail_len} consecutive cycles "
                                 f"with no new issues"
@@ -433,6 +450,35 @@ class Planner:
 
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
+
+    def _adaptive_diminishing_threshold(self, legacy_threshold: int | None) -> int:
+        """Compute the diminishing-returns threshold for the current issue count.
+
+        ISSUE-011: scale the threshold with project size:
+            threshold = clamp(min, ceil(num_issues_so_far / 10), max)
+
+        - Small projects (≤30 issues) use the floor (default 3).
+        - Large projects (≥60 issues) use the ceiling (default 6).
+        - In between, the threshold steps up by one per ~10 issues so a stall
+          mid-planning on a big repo doesn't force-exit prematurely.
+
+        When the deprecated ``diminishing_returns_threshold`` is set, it is
+        used as the floor (so existing user customizations don't regress).
+        """
+        from math import ceil
+
+        floor_default = 3 if legacy_threshold is None else int(legacy_threshold)
+        floor_val = max(
+            1,
+            int(self.config.get("planning_diminishing_returns_min_threshold", floor_default)),
+        )
+        ceil_val = max(
+            floor_val,
+            int(self.config.get("planning_diminishing_returns_max_threshold", 6)),
+        )
+        n = len(self.state.issues or [])
+        adaptive = ceil(max(1, n) / 10)
+        return max(floor_val, min(adaptive, ceil_val))
 
     def _write_planning_index(self):
         return write_planning_index(self)

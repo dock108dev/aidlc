@@ -412,6 +412,12 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
         return
 
     state = load_state(run_dir)
+    # ISSUE-010: surface stale RUNNING/INTERRUPTED runs as ABANDONED
+    # so users see a yellow ABANDONED badge instead of stale RUNNING.
+    from .state_manager import mark_abandoned_if_stale
+
+    mark_abandoned_if_stale(state, run_dir)
+
     plan_h = state.plan_elapsed_seconds / 3600
     plan_budget_h = state.plan_budget_seconds / 3600
     elapsed_h = state.elapsed_seconds / 3600
@@ -426,6 +432,9 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
         status_str = _yellow(status_str)
     elif state.status.value == "running":
         status_str = _cyan(status_str)
+    elif state.status.value in ("interrupted", "abandoned"):
+        # Yellow signals "needs attention but recoverable" — same as paused.
+        status_str = _yellow(status_str.upper())
 
     print(f"  {_bold('Run:')}       {state.run_id}")
     print(f"  {_bold('Status:')}    {status_str}")
@@ -460,6 +469,111 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
             icon = icon_map.get(status, "?")
             title = issue.get("title", "untitled")
             print(f"    [{icon}] {issue['id']}: {title} {_dim(f'({status})')}")
+
+
+# ---------------------------------------------------------------------------
+# Reset (ISSUE-008)
+# ---------------------------------------------------------------------------
+
+
+def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> list[Path]:
+    """Return the list of paths inside .aidlc/ that ``aidlc reset`` would delete.
+
+    Default targets: runs/, reports/, session/, audit_result.json,
+    planning_index.md, CONFLICTS.md, run.lock — plus issues/ unless
+    ``keep_issues`` is set. With ``reset_all`` also includes config.json.
+    Files/dirs that don't exist are filtered out by the caller.
+    """
+    targets = [
+        aidlc_dir / "runs",
+        aidlc_dir / "reports",
+        aidlc_dir / "session",
+        aidlc_dir / "audit_result.json",
+        aidlc_dir / "planning_index.md",
+        aidlc_dir / "CONFLICTS.md",
+        aidlc_dir / "run.lock",
+    ]
+    if not keep_issues:
+        targets.append(aidlc_dir / "issues")
+    if reset_all:
+        targets.append(aidlc_dir / "config.json")
+    return targets
+
+
+def cmd_reset(args: argparse.Namespace, version: str) -> None:
+    """Clear stale .aidlc/ state (ISSUE-008)."""
+    project_root = Path(args.project or ".").resolve()
+    aidlc_dir = project_root / ".aidlc"
+    _print_banner(version)
+
+    if not aidlc_dir.exists():
+        print(f"{_yellow('!')} No .aidlc/ at {project_root}")
+        print(f"  Nothing to reset. Run {_cyan('aidlc init')} to start.")
+        return
+
+    keep_issues = bool(getattr(args, "keep_issues", False))
+    reset_all = bool(getattr(args, "reset_all", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+    auto_yes = bool(getattr(args, "yes", False))
+
+    candidates = _reset_targets(aidlc_dir, keep_issues=keep_issues, reset_all=reset_all)
+    existing = [p for p in candidates if p.exists()]
+
+    print(f"  {_bold('Project:')} {project_root}")
+    if reset_all:
+        print(
+            f"  {_red('!')} --all selected: config.json will be deleted; you'll need to re-init/re-auth."
+        )
+    if keep_issues:
+        print(f"  {_dim('Preserving:')} .aidlc/issues/")
+
+    print()
+    if not existing:
+        print(f"  {_green('Already clean')} — nothing matching reset targets.")
+        return
+
+    print(f"  {_bold('Will delete:')}")
+    for p in existing:
+        kind = "dir" if p.is_dir() else "file"
+        print(f"    {_red('-')} {p.relative_to(project_root)} ({kind})")
+
+    if dry_run:
+        print()
+        print(f"  {_cyan('Dry run')} — no changes made.")
+        return
+
+    print()
+    if not auto_yes:
+        try:
+            response = input(
+                f"  {_yellow('?')} Proceed with deletion? (y/N) [N]: "
+            ).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            response = ""
+        if response not in ("y", "yes"):
+            print(f"  {_dim('Aborted.')}")
+            return
+
+    deleted = 0
+    failed = []
+    for p in existing:
+        try:
+            if p.is_dir():
+                shutil.rmtree(p)
+            else:
+                p.unlink()
+            deleted += 1
+        except OSError as exc:
+            failed.append((p, exc))
+
+    print()
+    print(f"  {_green(str(deleted))} item(s) deleted.")
+    if failed:
+        print(f"  {_red(str(len(failed)))} failed:")
+        for p, exc in failed:
+            print(f"    {_red('x')} {p.relative_to(project_root)} — {exc}")
+    if not reset_all and (aidlc_dir / "config.json").exists():
+        print(f"  {_dim('Preserved:')} .aidlc/config.json")
 
 
 # ---------------------------------------------------------------------------

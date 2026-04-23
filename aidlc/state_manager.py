@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .models import RunState
+from .models import RunState, RunStatus
 
 
 def _chmod_owner_only(path: Path) -> None:
@@ -202,3 +202,48 @@ def find_latest_run(runs_dir: Path, config_name: str = "") -> Path | None:
         if state_path.exists():
             return d
     return None
+
+
+def is_run_abandoned(state: RunState, *, threshold_seconds: float = 3600.0) -> bool:
+    """ISSUE-010: True when a RUNNING/INTERRUPTED run is stale enough to count as abandoned.
+
+    Used at resume time so the user can tell crashed runs from live ones.
+    Threshold defaults to 1 hour; a run is abandoned when its status is in
+    ``{RUNNING, INTERRUPTED}`` AND ``last_updated`` is older than the threshold.
+    A missing ``last_updated`` (very old state) is treated as abandoned.
+    """
+    if state.status not in (RunStatus.RUNNING, RunStatus.INTERRUPTED):
+        return False
+    last = state.last_updated
+    if not last:
+        return True
+    try:
+        # last_updated is an ISO-format string written by save_state.
+        from datetime import datetime, timezone
+
+        ts = datetime.fromisoformat(last)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - ts).total_seconds()
+    except (ValueError, TypeError):
+        return True
+    return elapsed > threshold_seconds
+
+
+def mark_abandoned_if_stale(
+    state: RunState,
+    run_dir: Path,
+    *,
+    threshold_seconds: float = 3600.0,
+) -> bool:
+    """If the run looks abandoned, flip its status and persist. Returns True if marked.
+
+    Used by ``aidlc run --resume`` and ``aidlc status`` so users see ABANDONED
+    in the badge instead of an indistinguishable RUNNING.
+    """
+    if is_run_abandoned(state, threshold_seconds=threshold_seconds):
+        state.status = RunStatus.ABANDONED
+        state.stop_reason = state.stop_reason or "abandoned (stale running/interrupted state)"
+        save_state(state, run_dir)
+        return True
+    return False

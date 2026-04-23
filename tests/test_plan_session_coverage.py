@@ -212,8 +212,45 @@ def test_generate_docs_builds_drafts(tmp_path):
     )
     assert "ROADMAP.md" in drafts
     assert "draft body" in drafts["ARCHITECTURE.md"]
+    # ISSUE-002: doc-generation must use allow_edits=False so Claude
+    # returns the body as text instead of writing the file via Write
+    # (which would let _save_drafts overwrite it with stdout-summary).
     for call in ps.cli.execute_prompt.call_args_list:
-        assert call.kwargs.get("allow_edits") is True
+        assert call.kwargs.get("allow_edits") is False
+
+
+def test_save_drafts_writes_full_body_to_root(tmp_path):
+    """Regression for the doc-overwrite bug.
+
+    Before the ISSUE-002 fix, the wizard ran Claude with allow_edits=True;
+    Claude wrote the full body via Write and returned a chat-summary stdout,
+    which _save_drafts then wrote on top of the body. This test exercises the
+    end-to-end path with stdout containing the body (the new contract) and
+    asserts the project-root file equals that body.
+    """
+    body = (
+        "# ARCHITECTURE\n\n## Overview\n\n"
+        "This is the full architecture document body, > 200 chars long, "
+        "exactly the kind of payload Claude returns when allow_edits=False "
+        "forces it to emit the doc as text rather than wielding its Write "
+        "tool side-effects.\n"
+    )
+    ps = PlanSession(tmp_path, {}, MagicMock(), MagicMock())
+    ps.cli.execute_prompt.return_value = {"success": True, "output": body}
+    drafts = ps._generate_docs(
+        {
+            "brain_dump": "f",
+            "project_name": "Reg",
+            "tech_stack": "py",
+            "one_liner": "l",
+        }
+    )
+    ps._save_drafts(drafts)
+    assert (tmp_path / "ARCHITECTURE.md").read_text() == body.strip()
+    # The .generated audit copy must also contain the full body.
+    backup_dirs = [p for p in ps.session_dir.iterdir() if p.is_dir()]
+    assert backup_dirs
+    assert (backup_dirs[0] / "ARCHITECTURE.md.generated").read_text() == body.strip()
 
 
 def test_generate_docs_cli_failure_logs(tmp_path):

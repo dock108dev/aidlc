@@ -35,6 +35,10 @@ DEFAULTS = {
                 "finalization": "sonnet",
                 "audit": "sonnet",
             },
+            # Ordered list tried in sequence when a model returns "out of tokens"
+            # before the entire provider is excluded (ISSUE-004). Empty list = legacy
+            # behavior (provider excluded on first exhaustion).
+            "model_fallback_chain": ["sonnet", "opus", "haiku"],
         },
         "copilot": {
             "enabled": False,
@@ -48,6 +52,7 @@ DEFAULTS = {
                 "finalization": "",
                 "audit": "",
             },
+            "model_fallback_chain": [],
         },
         "openai": {
             "enabled": False,
@@ -61,6 +66,7 @@ DEFAULTS = {
                 "finalization": "gpt-5.4-mini",
                 "audit": "gpt-5.4-mini",
             },
+            "model_fallback_chain": ["gpt-5.4", "gpt-5.4-mini"],
         },
     },
     "plan_budget_hours": 4,
@@ -148,7 +154,11 @@ DEFAULTS = {
     "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
     "max_consecutive_failures": 3,
     "diminishing_returns_window": 5,  # track last N cycles for diminishing returns
-    "diminishing_returns_threshold": 2,  # exit after N consecutive cycles with no new issues
+    "diminishing_returns_threshold": 2,  # DEPRECATED — use planning_diminishing_returns_min/max
+    # ISSUE-011: adaptive threshold = clamp(min, ceil(num_issues_so_far/10), max).
+    # Floor (small projects use this), ceiling (very large projects).
+    "planning_diminishing_returns_min_threshold": 3,
+    "planning_diminishing_returns_max_threshold": 6,
     "finalization_budget_percent": 10,
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
@@ -244,6 +254,8 @@ DEFAULTS = {
     # Doc-gap detection
     "doc_gap_detection_enabled": True,
     "doc_gap_max_items": 50,  # cap gaps passed to planner prompt
+    # ISSUE-013: session dir pruning (oldest deleted at start of each `aidlc plan`).
+    "session_dir_max_keep": 10,
     # Resume (implementation-phase continuation)
     "resume_reconcile_enabled": True,  # git-grep heuristic when resuming past planning
     "planning_doc_min_chars": 800,  # minimum chars for "sufficient" planning docs
@@ -288,6 +300,11 @@ DEFAULTS = {
     "autosync_keep_claude_outputs": 200,
     # Stop run cleanly when router confirms token exhaustion across all models/providers
     "stop_on_all_models_token_exhausted": True,
+    # ISSUE-009: when implementation stops with work remaining, do NOT auto-run
+    # ssot/abend/cleanup finalization passes by default. Set to true to restore
+    # the prior behavior. The new default exits cleanly with a STOP REASON +
+    # RESUME WITH log so you can pick up after the underlying issue resolves.
+    "implementation_finalize_on_early_stop": False,
 }
 
 
@@ -299,7 +316,15 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
     default_model, phase_models).  This function merges top-level keys normally
     but deep-merges each per-provider dict so that only the user-specified keys
     are overwritten.
+
+    Side effect: stashes the user's raw per-provider keys at
+    ``config["_user_provider_overrides"][provider_id]`` so model-resolution
+    code (``routing.context.resolve_model_for_phase``) can tell user-set from
+    DEFAULT values. This is what makes a user-set ``default_model`` win over a
+    DEFAULT ``phase_models[phase]`` entry without forcing users to override
+    every phase explicitly (ISSUE-003).
     """
+    overrides = config.setdefault("_user_provider_overrides", {})
     for key, value in user_config.items():
         if (
             key == "providers"
@@ -310,6 +335,13 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
                 if isinstance(provider_cfg, dict) and isinstance(
                     config["providers"].get(provider_id), dict
                 ):
+                    # Record which fields the user explicitly set so later
+                    # precedence checks can prefer them over DEFAULTS without
+                    # forcing the user to redeclare every phase_models entry.
+                    overrides[provider_id] = {
+                        "default_model": provider_cfg.get("default_model"),
+                        "phase_models": dict(provider_cfg.get("phase_models") or {}),
+                    }
                     # Deep-merge: user values override defaults, but missing keys keep defaults
                     merged = dict(config["providers"][provider_id])
                     # Also deep-merge phase_models if both sides have it
@@ -325,6 +357,14 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
                     config["providers"][provider_id] = merged
                 else:
                     config["providers"][provider_id] = provider_cfg
+                    overrides[provider_id] = {
+                        "default_model": provider_cfg.get("default_model")
+                        if isinstance(provider_cfg, dict)
+                        else None,
+                        "phase_models": dict(provider_cfg.get("phase_models") or {})
+                        if isinstance(provider_cfg, dict)
+                        else {},
+                    }
         else:
             config[key] = value
 
@@ -414,6 +454,10 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
 def load_config(config_path: str | None = None, project_root: str | None = None) -> dict:
     """Load and validate config. Merges defaults with user config."""
     config = dict(DEFAULTS)
+    # Always present so consumers can do ``config["_user_provider_overrides"].get(pid)``
+    # without checking for the key first. Populated by ``_merge_user_config`` when a
+    # user config is loaded.
+    config["_user_provider_overrides"] = {}
     user_keys: set[str] = set()
 
     # Try loading config file

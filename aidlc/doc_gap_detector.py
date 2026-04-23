@@ -46,6 +46,33 @@ _EXCLUDE_DIRS = {
 }
 
 
+# ISSUE-013: in-process cache so repeated detect_doc_gaps calls in the same
+# Python process (e.g., runner + plan_session in the same invocation) skip the
+# rescan when no doc has changed. Keyed by (project_root, hash of all doc
+# (path, mtime, size) tuples). Cleared on process exit naturally.
+_DOC_GAP_CACHE: dict[tuple[str, str], list] = {}
+
+
+def _doc_state_key(project_root: Path, doc_paths: set[str]) -> str:
+    """Build a content-hash key reflecting current doc state on disk."""
+    import hashlib
+
+    parts = []
+    for rel in sorted(doc_paths):
+        full = project_root / rel
+        try:
+            stat = full.stat()
+            parts.append(f"{rel}|{stat.st_mtime_ns}|{stat.st_size}")
+        except OSError:
+            parts.append(f"{rel}|missing")
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def clear_doc_gap_cache() -> None:
+    """Clear the in-process doc-gap cache. Useful in tests."""
+    _DOC_GAP_CACHE.clear()
+
+
 def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
     """Scan documentation files for knowledge gaps and placeholders.
 
@@ -56,6 +83,11 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
     Returns:
         List of DocGap items sorted by severity (critical first),
         capped at config["doc_gap_max_items"].
+
+    ISSUE-013: results are cached in-process keyed on the doc-state hash so
+    repeated invocations within the same run skip the rescan unless docs
+    changed. Cache is process-local — subsequent runs always recompute, which
+    keeps results correct after external doc edits between runs.
     """
     scan_patterns = config.get("doc_scan_patterns", ["**/*.md"])
     exclude_patterns = config.get("doc_scan_exclude", [])
@@ -69,6 +101,12 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
                 rel = str(path.relative_to(project_root))
                 if not _is_excluded(rel, exclude_patterns):
                     doc_paths.add(rel)
+
+    # ISSUE-013: cache lookup keyed on (project_root, doc-state hash).
+    state_key = _doc_state_key(project_root, doc_paths)
+    cache_key = (str(project_root), state_key)
+    if cache_key in _DOC_GAP_CACHE:
+        return list(_DOC_GAP_CACHE[cache_key])
 
     # Scan each doc for gaps
     gaps = []
@@ -138,7 +176,9 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
             f"Doc gap detection skipped {skipped_docs} unreadable document(s)."
         )
 
-    return gaps[:max_items]
+    capped = gaps[:max_items]
+    _DOC_GAP_CACHE[cache_key] = list(capped)
+    return capped
 
 
 def _is_excluded(rel_path: str, exclude_patterns: list) -> bool:

@@ -13,6 +13,13 @@ class RunStatus(Enum):
     PAUSED = "paused"
     COMPLETE = "complete"
     FAILED = "failed"
+    # ISSUE-010: a run flipped to INTERRUPTED by atexit/SIGINT/SIGTERM handlers
+    # in runner.py when the process exits non-cleanly while status was RUNNING.
+    INTERRUPTED = "interrupted"
+    # A RUNNING/INTERRUPTED run whose last_updated is older than the abandonment
+    # threshold (default 1h) is surfaced as ABANDONED on resume so the user can
+    # tell crashed runs from live ones.
+    ABANDONED = "abandoned"
 
 
 class RunPhase(Enum):

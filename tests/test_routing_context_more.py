@@ -57,6 +57,83 @@ def test_resolve_model_for_phase_maps_implementation_complex():
     assert m == "gpt-99"
 
 
+def test_resolve_model_user_default_model_overrides_default_phase_models():
+    """ISSUE-003: user-set default_model wins over DEFAULT phase_models entry.
+
+    Reproduces the original bug: a user added
+    ``providers.claude.default_model: "opus"`` to .aidlc/config.json but
+    runs still pulled sonnet because DEFAULTS hard-coded
+    ``providers.claude.phase_models.planning: "sonnet"`` and the resolver
+    consulted phase_models first. After the fix, the user's default_model
+    is treated as a per-provider override of DEFAULT phase_models entries.
+    """
+    cfg = {
+        "providers": {
+            "claude": {
+                "default_model": "opus",
+                "phase_models": {
+                    "planning": "sonnet",  # the DEFAULT, NOT user-set
+                    "implementation": "sonnet",
+                },
+            }
+        },
+        # Simulates what _merge_user_config records: only default_model was
+        # actually present in the user's .aidlc/config.json.
+        "_user_provider_overrides": {
+            "claude": {"default_model": "opus", "phase_models": {}},
+        },
+    }
+    ad = _fake("claude", "haiku")
+    assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "opus"
+    assert context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+
+
+def test_resolve_model_user_phase_models_beats_user_default_model():
+    """User-set phase_models[phase] still wins over user-set default_model."""
+    cfg = {
+        "providers": {
+            "claude": {
+                "default_model": "opus",
+                "phase_models": {"planning": "haiku"},
+            }
+        },
+        "_user_provider_overrides": {
+            "claude": {
+                "default_model": "opus",
+                "phase_models": {"planning": "haiku"},
+            },
+        },
+    }
+    ad = _fake("claude", "fallback")
+    assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "haiku"
+    # implementation phase has no user override → falls through to DEFAULT
+    # phase_models → adapter default. With nothing in DEFAULTS for
+    # implementation in the test config, falls to user default_model = opus.
+    assert context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+
+
+def test_resolve_model_no_user_override_uses_default_phase_models():
+    """Backward compat: with no user override, behavior is unchanged."""
+    cfg = {
+        "providers": {
+            "claude": {
+                "default_model": "sonnet",
+                "phase_models": {"planning": "sonnet", "implementation_complex": "opus"},
+            }
+        },
+        "_user_provider_overrides": {},
+    }
+    ad = _fake("claude", "haiku")
+    assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "sonnet"
+    assert context.resolve_model_for_phase(cfg, ad, "implementation", "complex") == "opus"
+
+
+def test_resolve_model_falls_through_to_adapter_default():
+    cfg = {"providers": {}, "_user_provider_overrides": {}}
+    ad = _fake("claude", "haiku")
+    assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "haiku"
+
+
 def test_fallback_decision_no_adapters_instantiates_claude():
     logger = logging.getLogger("test.ctx.fallback")
     d = context.fallback_decision(

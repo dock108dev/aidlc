@@ -280,7 +280,12 @@ class PlanSession:
 
             print(f"  {_cyan('generating')} {doc_name}...")
             prompt = prompt_template.format(**template_vars)
-            result = self.cli.execute_prompt(prompt, self.project_root, allow_edits=True)
+            # allow_edits=False so Claude returns the doc body as text in
+            # result["output"] rather than writing the file via its Write
+            # tool. _save_drafts is the single writer; if Claude wrote
+            # the file directly *and* returned a chat-summary stub, the
+            # stub would overwrite the body when _save_drafts ran.
+            result = self.cli.execute_prompt(prompt, self.project_root, allow_edits=False)
 
             if result["success"] and result.get("output"):
                 drafts[doc_name] = result["output"].strip()
@@ -289,10 +294,44 @@ class PlanSession:
 
         return drafts
 
+    def _prune_old_session_dirs(self) -> int:
+        """ISSUE-013: keep only the most recent N session subdirs.
+
+        Without pruning, ``.aidlc/session/`` accumulates one timestamped
+        subdir per ``aidlc plan`` invocation forever — disk grows unbounded
+        and stale dirs carry confusing artifacts. Reads
+        ``session_dir_max_keep`` from config (default 10). Always keeps the
+        current run's dirs; only deletes those older than max_keep.
+        Returns count of dirs deleted.
+        """
+        max_keep = max(1, int(self.config.get("session_dir_max_keep", 10)))
+        if not self.session_dir.exists():
+            return 0
+        subdirs = [p for p in self.session_dir.iterdir() if p.is_dir()]
+        if len(subdirs) <= max_keep:
+            return 0
+        subdirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        to_delete = subdirs[max_keep:]
+        deleted = 0
+        for d in to_delete:
+            try:
+                shutil.rmtree(d)
+                deleted += 1
+            except OSError as exc:
+                self.logger.warning(f"Could not prune session dir {d}: {exc}")
+        if deleted:
+            self.logger.info(
+                f"Pruned {deleted} old session subdir(s) "
+                f"(keeping most recent {max_keep})"
+            )
+        return deleted
+
     def _save_drafts(self, drafts: dict[str, str]):
         """Write drafts to repo root with backups."""
         # Create backup directory
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        # ISSUE-013: prune old session dirs before creating a new one.
+        self._prune_old_session_dirs()
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         backup_dir = self.session_dir / timestamp
         backup_dir.mkdir(exist_ok=True)

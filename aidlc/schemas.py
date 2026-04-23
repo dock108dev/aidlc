@@ -264,6 +264,10 @@ class ImplementationResult:
     files_changed: list = field(default_factory=list)
     tests_passed: bool = False
     notes: str = ""
+    # ISSUE-007: optional list of `<file:line>` refs the agent inspected when
+    # editing a system that already has callers. Empty list = checked, none
+    # found. Absent = not declared (typically net-new code).
+    existing_callers_checked: list = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ImplementationResult":
@@ -274,6 +278,7 @@ class ImplementationResult:
             files_changed=data.get("files_changed", []),
             tests_passed=data.get("tests_passed", False),
             notes=data.get("notes", ""),
+            existing_callers_checked=data.get("existing_callers_checked", []) or [],
         )
 
 
@@ -359,6 +364,11 @@ After coding, output **only** a ```json``` block (minimal prose outside it).
 
 - `summary`: ≤500 chars — what changed and where.
 - `notes`: ≤400 chars — caveats/follow-ups (empty string if none).
+- `existing_callers_checked` (optional, ISSUE-007): list of `<file:line>` refs
+  for callers you inspected when modifying a system that already exists.
+  Populate when you edited a file that has callers; an empty list signals you
+  did the existing-callers check and there are none. Omit only when the issue
+  is net-new code with no callers possible.
 
 ```
 {
@@ -367,7 +377,8 @@ After coding, output **only** a ```json``` block (minimal prose outside it).
   "summary": "...",
   "files_changed": ["src/auth.py", "tests/test_auth.py"],
   "tests_passed": true,
-  "notes": ""
+  "notes": "",
+  "existing_callers_checked": ["src/api.py:42", "src/cli.py:117"]
 }
 ```
 """

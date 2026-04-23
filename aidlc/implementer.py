@@ -113,6 +113,41 @@ class Implementer:
             config.get("stop_on_all_models_token_exhausted", True)
         )
 
+    def _maybe_reopen_transient_failures(self, force_all: bool = False) -> int:
+        """ISSUE-012: reopen failed issues whose cause was transient.
+
+        Auto-runs at the start of each implementation cycle. Reopens issues with
+        ``failure_cause`` in ``{token_exhausted, unknown}`` (transient) to
+        ``pending`` so they get another shot. Issues with cause
+        ``dependency`` or ``test_regression`` stay failed for manual review.
+
+        With ``force_all=True`` (the ``--retry-failed`` flag), all failed issues
+        are reopened regardless of cause.
+
+        Returns the number of issues reopened.
+        """
+        from .issue_model import TRANSIENT_FAILURE_CAUSES
+
+        reopened = 0
+        for d in list(self.state.issues):
+            if d.get("status") != IssueStatus.FAILED.value:
+                continue
+            cause = d.get("failure_cause")
+            if not force_all and cause not in TRANSIENT_FAILURE_CAUSES:
+                continue
+            issue = Issue.from_dict(d)
+            self.logger.info(
+                f"Reopening {issue.id} (cause={cause or 'none'}) — "
+                f"{'forced via --retry-failed' if force_all else 'transient cause auto-reopen'}"
+            )
+            issue.status = IssueStatus.PENDING
+            issue.failure_cause = None
+            # attempt_count is preserved so max_attempts still bounds retries.
+            self.state.update_issue(issue)
+            self._sync_issue_markdown(issue)
+            reopened += 1
+        return reopened
+
     def _maybe_reopen_stale_verified_issues(self) -> bool:
         """Re-open verified issues that have no Verification Result body (planner/template noise).
 
@@ -189,6 +224,15 @@ class Implementer:
             self.logger.error(self.state.stop_reason)
             save_state(self.state, self.run_dir)
             return False
+
+        # ISSUE-012: auto-reopen transient failures (or all if --retry-failed).
+        force_retry = bool(self.config.get("_retry_failed_flag", False))
+        reopened = self._maybe_reopen_transient_failures(force_all=force_retry)
+        if reopened:
+            self.logger.info(
+                f"Reopened {reopened} previously-failed issue(s) for retry "
+                f"({'forced via --retry-failed' if force_retry else 'transient causes'})."
+            )
 
         if self._maybe_reopen_stale_verified_issues():
             if not self._sort_issues():
@@ -284,24 +328,47 @@ class Implementer:
                 last_checkpoint_time = time.time()
 
         if self.state.stop_reason and not self.state.all_issues_resolved():
-            self.logger.info(
-                "Implementation stopped early: running finalization passes (ssot, abend, cleanup) before exit."
+            # ISSUE-009: don't auto-run finalization on early stop unless the
+            # user opts in. The default-off prevents burning more budget at
+            # exactly the moment we want to stop cleanly (e.g., token
+            # exhaustion). Always log a single visually-distinct stop-reason
+            # line and resume hint so the user can see what happened without
+            # parsing the rest of the log.
+            remaining = sum(
+                1
+                for d in self.state.issues
+                if d.get("status") in ("pending", "in_progress", "blocked", "failed")
             )
-            # Run finalization passes for ssot, abend, cleanup
-            try:
-                from .finalizer import Finalizer
+            self.logger.error("=" * 60)
+            self.logger.error(f"STOP REASON: {self.state.stop_reason}")
+            self.logger.error(f"Issues remaining: {remaining}")
+            self.logger.error("RESUME WITH: aidlc run --resume")
+            self.logger.error("=" * 60)
 
-                finalizer = Finalizer(
-                    self.state,
-                    self.run_dir,
-                    self.config,
-                    self.cli,
-                    self.project_context,
-                    self.logger,
+            if self.config.get("implementation_finalize_on_early_stop", False):
+                self.logger.info(
+                    "implementation_finalize_on_early_stop=true: running finalization "
+                    "passes (ssot, abend, cleanup) before exit."
                 )
-                finalizer.run(passes=["ssot", "abend", "cleanup"])
-            except Exception as e:
-                self.logger.error(f"Finalization passes failed: {e}")
+                try:
+                    from .finalizer import Finalizer
+
+                    finalizer = Finalizer(
+                        self.state,
+                        self.run_dir,
+                        self.config,
+                        self.cli,
+                        self.project_context,
+                        self.logger,
+                    )
+                    finalizer.run(passes=["ssot", "abend", "cleanup"])
+                except Exception as e:
+                    self.logger.error(f"Finalization passes failed: {e}")
+            else:
+                self.logger.info(
+                    "Skipping early-stop finalization passes "
+                    "(set implementation_finalize_on_early_stop=true to opt back in)."
+                )
             save_state(self.state, self.run_dir)
             return False
 
@@ -352,6 +419,13 @@ class Implementer:
             sampled_error = sample_error_payload(result.get("error"))
             compact_error = compact_error_text(sampled_error)
             self.logger.error(f"Implementation of {issue.id} failed: {compact_error}")
+            # ISSUE-012: tag failure cause so the next cycle can decide whether
+            # to auto-reopen (transient) or leave for manual review (real blocker).
+            from .issue_model import (
+                FAILURE_CAUSE_TOKEN_EXHAUSTED,
+                FAILURE_CAUSE_UNKNOWN,
+            )
+
             if is_all_models_token_exhausted(result):
                 message = (
                     "All available models/providers appear out of tokens or quota; "
@@ -359,6 +433,7 @@ class Implementer:
                 )
                 self.state.stop_reason = message
                 self.logger.error(message)
+                issue.failure_cause = FAILURE_CAUSE_TOKEN_EXHAUSTED
             elif is_no_models_available(result):
                 message = (
                     "No models/providers are currently available; "
@@ -366,6 +441,9 @@ class Implementer:
                 )
                 self.state.stop_reason = message
                 self.logger.error(message)
+                issue.failure_cause = FAILURE_CAUSE_TOKEN_EXHAUSTED
+            else:
+                issue.failure_cause = FAILURE_CAUSE_UNKNOWN
             issue.status = IssueStatus.FAILED
             issue.implementation_notes += (
                 f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_error}"

@@ -58,11 +58,24 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
         run_dir = find_latest_run(runs_dir)
         if run_dir:
             state = load_state(run_dir)
-            if state.status in (RunStatus.COMPLETE, RunStatus.FAILED):
+            # ISSUE-010: surface stale RUNNING/INTERRUPTED runs as ABANDONED
+            # so the user can tell crashed runs from live ones.
+            from .state_manager import mark_abandoned_if_stale
+
+            if mark_abandoned_if_stale(state, run_dir):
+                print(
+                    f"Previous run {state.run_id} appears abandoned "
+                    f"(stale {state.phase.value}). Starting new run; "
+                    f"delete .aidlc/runs/{run_dir.name}/ to remove it."
+                )
+            elif state.status in (RunStatus.COMPLETE, RunStatus.FAILED, RunStatus.ABANDONED):
                 print(f"Previous run {state.run_id} is {state.status.value}. Starting new run.")
             else:
                 print(f"Resuming run {state.run_id} (phase: {state.phase.value})")
                 (run_dir / "claude_outputs").mkdir(exist_ok=True)
+                # Register interrupt handler so a Ctrl-C during this resume
+                # marks the run INTERRUPTED rather than leaving stale RUNNING.
+                _register_interrupt_handlers(state, run_dir)
                 return state, run_dir
         else:
             print("No previous run found. Starting new run.")
@@ -89,7 +102,56 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     except OSError:
         pass
 
+    _register_interrupt_handlers(state, run_dir)
     return state, run_dir
+
+
+# ISSUE-010: signal/atexit handlers flip RUNNING → INTERRUPTED so resume can
+# detect crashed sessions. Module-level state ensures we don't double-register.
+_HANDLERS_REGISTERED = False
+_HANDLER_STATE: tuple[RunState, Path] | None = None
+
+
+def _register_interrupt_handlers(state: RunState, run_dir: Path) -> None:
+    """Register atexit + SIGINT/SIGTERM hooks that mark a RUNNING run INTERRUPTED.
+
+    A run killed externally (Ctrl-C, OOM, SIGTERM) used to leave
+    ``status=running``, indistinguishable from a still-active run. The handler
+    flips it to INTERRUPTED only when the process exits while status is RUNNING
+    — clean exits leave the status set by the runner alone.
+    """
+    global _HANDLERS_REGISTERED, _HANDLER_STATE
+    _HANDLER_STATE = (state, run_dir)
+    if _HANDLERS_REGISTERED:
+        return
+
+    import atexit
+    import signal
+
+    def _on_exit():
+        if _HANDLER_STATE is None:
+            return
+        s, d = _HANDLER_STATE
+        if s.status == RunStatus.RUNNING:
+            s.status = RunStatus.INTERRUPTED
+            try:
+                save_state(s, d)
+            except Exception:
+                pass
+
+    def _on_signal(signum, frame):
+        # Mark and exit non-zero so the shell sees an interrupted run.
+        _on_exit()
+        sys.exit(130 if signum == signal.SIGINT else 143)
+
+    atexit.register(_on_exit)
+    try:
+        signal.signal(signal.SIGINT, _on_signal)
+        signal.signal(signal.SIGTERM, _on_signal)
+    except (ValueError, OSError):
+        # Non-main thread or restricted env: atexit alone is still useful.
+        pass
+    _HANDLERS_REGISTERED = True
 
 
 def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, dict]:

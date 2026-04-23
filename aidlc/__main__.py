@@ -34,6 +34,9 @@ from .cli_commands import (
     cmd_precheck as _cmd_precheck,
 )
 from .cli_commands import (
+    cmd_reset as _cmd_reset,
+)
+from .cli_commands import (
     cmd_status as _cmd_status,
 )
 from .cli_parser import build_parser
@@ -77,6 +80,10 @@ def cmd_finalize(args: argparse.Namespace) -> None:
 
 def cmd_status(args: argparse.Namespace) -> None:
     _cmd_status(args, __version__)
+
+
+def cmd_reset(args: argparse.Namespace) -> None:
+    _cmd_reset(args, __version__)
 
 
 def cmd_accounts(args: argparse.Namespace) -> None:
@@ -163,6 +170,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         config["max_planning_cycles"] = args.max_plan_cycles
     if args.max_impl_cycles is not None:
         config["max_implementation_cycles"] = args.max_impl_cycles
+    # ISSUE-012: --retry-failed forces reopen of every failed issue, not just
+    # the transient ones. Stashed on config under an internal key so the
+    # implementer can pick it up without changing the public function signature.
+    if getattr(args, "retry_failed", False):
+        config["_retry_failed_flag"] = True
 
     audit = getattr(args, "audit", None)
     skip_finalize = getattr(args, "skip_finalize", False)
@@ -212,6 +224,8 @@ def main() -> None:
         cmd_finalize(args)
     elif args.command == "status":
         cmd_status(args)
+    elif args.command == "reset":
+        cmd_reset(args)
     elif args.command == "accounts":
         cmd_accounts(args)
     elif args.command == "provider":

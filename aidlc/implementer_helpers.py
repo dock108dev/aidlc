@@ -72,16 +72,18 @@ def implementation_instructions(test_command: str | None) -> str:
     if test_command:
         test_line = f"\n- Tests: `{test_command}` — must pass before success."
 
-    return f"""## Instructions — Implementation (v2)
+    return f"""## Instructions — Implementation (v3)
 
 Ship production-ready code; post-run audits apply.
 
 **Must:** Match issue scope exactly; follow repo style; handle errors; add/update tests{test_line}
 **Must not:** Touch unrelated files; break existing behavior; leave dead code; bare `except`; hardcode secrets.
 
+**Preserve, don't rewrite (ISSUE-007):** If a file or system already exists and works (it has tests, it has callers), your default is to **modify in place** and preserve the public surface. Rewriting is a last resort and requires you to also update every caller in the same change. Before editing a system, list its existing tests in your output. Breaking a test outside this issue's acceptance criteria is a regression, not progress — fix it or revert your change.
+
 **Quality:** Files <500 lines where practical; single responsibility; DRY; validate external input; docstrings on public APIs; comments only for non-obvious *why*.
 
-Meet **all** acceptance criteria. End with **only** the JSON block (see schema below). If blocked, `success`: false and short `notes`."""
+Meet **all** acceptance criteria. End with **only** the JSON block (see schema below). If blocked, `success`: false and short `notes`. When you touch a system with existing callers, populate `existing_callers_checked` with the `<file:line>` references you actually inspected."""
 
 
 def build_implementation_prompt(impl, issue) -> str:

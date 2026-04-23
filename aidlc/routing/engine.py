@@ -195,11 +195,34 @@ class ProviderRouter:
                     return result
 
                 if result_signals.is_token_exhaustion_result(result):
+                    # ISSUE-004: try the next model in this provider's chain
+                    # before excluding the provider entirely. Without this,
+                    # single-provider users (only Claude enabled) get no
+                    # fallback at all when sonnet hits its quota — even if
+                    # they have opus/haiku capacity remaining.
+                    next_model = self._next_chain_model(
+                        decision.provider_id,
+                        decision.model,
+                        excluded_models,
+                    )
+                    excluded_models.add((decision.provider_id, decision.model))
+                    if next_model:
+                        self.logger.warning(
+                            f"[routing] {effective_phase}: token exhaustion on "
+                            f"{decision.provider_id}/{decision.model}; "
+                            f"trying next model in chain: {next_model}"
+                        )
+                        # Hand the next model to resolve() so the same provider
+                        # is reused with the new model.
+                        model_override = next_model
+                        attempts_remaining += 1  # this attempt isn't "spent"
+                        continue
                     excluded_providers.add(decision.provider_id)
                     exhausted_providers.append(decision.provider_id)
                     self.logger.warning(
                         f"[routing] {effective_phase}: token exhaustion on "
-                        f"{decision.provider_id}/{decision.model}; trying alternate provider"
+                        f"{decision.provider_id}/{decision.model}; "
+                        f"chain exhausted, trying alternate provider"
                     )
                     continue
 
@@ -250,12 +273,18 @@ class ProviderRouter:
 
             if exhausted_providers:
                 providers = ", ".join(dict.fromkeys(exhausted_providers))
+                attempted_chain = self._format_attempted_chain(excluded_models)
+                chain_suffix = f" (attempted: {attempted_chain})" if attempted_chain else ""
+                self.logger.warning(
+                    f"[routing] {effective_phase}: stopping — all providers exhausted: "
+                    f"{providers}{chain_suffix}"
+                )
                 return {
                     "success": False,
                     "output": None,
                     "error": (
                         "All available providers/models appear out of tokens or quota "
-                        f"for phase '{effective_phase}': {providers}"
+                        f"for phase '{effective_phase}': {providers}{chain_suffix}"
                     ),
                     "failure_type": "token_exhausted_all_models",
                     "duration_seconds": 0.0,
@@ -521,6 +550,63 @@ class ProviderRouter:
                 self.logger.warning(f"[routing] {decision.quality_note}")
             else:
                 self.logger.info(f"[routing] {decision.quality_note}")
+
+    def _next_chain_model(
+        self,
+        provider_id: str,
+        current_model: str,
+        excluded_models: set[tuple[str, str]],
+    ) -> str | None:
+        """Return the next model in this provider's fallback chain, or None.
+
+        ISSUE-004: walked when a model returns "out of tokens" so the engine
+        tries the next entry on the same provider before excluding the
+        provider. Skips entries already in ``excluded_models`` for this
+        provider. Returns None when the chain is empty, missing, or fully
+        consumed — at which point the caller falls through to the existing
+        provider-exclusion branch.
+        """
+        providers_cfg = self.config.get("providers", {})
+        provider_cfg = providers_cfg.get(provider_id) if isinstance(providers_cfg, dict) else None
+        if not isinstance(provider_cfg, dict):
+            return None
+        chain = provider_cfg.get("model_fallback_chain") or []
+        if not isinstance(chain, list) or not chain:
+            return None
+
+        # Find the current model in the chain. If it's not present (e.g., the
+        # phase resolved to a model outside the chain), start from the top.
+        try:
+            start_idx = chain.index(current_model) + 1
+        except ValueError:
+            start_idx = 0
+
+        for candidate in chain[start_idx:]:
+            if not isinstance(candidate, str) or not candidate:
+                continue
+            if candidate == current_model:
+                continue
+            if (provider_id, candidate) in excluded_models:
+                continue
+            return candidate
+        return None
+
+    def _format_attempted_chain(
+        self,
+        excluded_models: set[tuple[str, str]],
+    ) -> str:
+        """Format ``excluded_models`` grouped by provider for stop-reason logs.
+
+        Output looks like ``claude=[sonnet, opus, haiku]; openai=[gpt-5.4]``,
+        used in the all-providers-exhausted log line so users can see what was
+        tried before giving up (ISSUE-004).
+        """
+        by_provider: dict[str, list[str]] = {}
+        for provider_id, model in sorted(excluded_models):
+            by_provider.setdefault(provider_id, []).append(model)
+        return "; ".join(
+            f"{pid}=[{', '.join(models)}]" for pid, models in by_provider.items()
+        )
 
     def _provider_is_on_cooldown(self, provider_id: str, now: float | None = None) -> bool:
         """Return True when a provider is temporarily excluded after rate limiting."""

@@ -38,6 +38,43 @@ def is_token_exhaustion_result(result: dict) -> bool:
     return any(re.search(pat, message) for pat in patterns)
 
 
+# Model name patterns the engine recognizes as "this specific model is out".
+# Used by is_model_exhausted_result to distinguish per-model from per-provider
+# exhaustion when the provider's CLI names the model in its quota error.
+_MODEL_NAME_PATTERNS: tuple[str, ...] = (
+    r"\bclaude[-_]?(?:sonnet|opus|haiku)[-_\d.]*\b",
+    r"\bsonnet\b",
+    r"\bopus\b",
+    r"\bhaiku\b",
+    r"\bgpt[-_]?[345][-_.\dA-Za-z]*\b",
+)
+
+
+def is_model_exhausted_result(result: dict) -> bool:
+    """True when provider failure indicates THIS specific model is exhausted.
+
+    Distinguishes per-model exhaustion from per-provider/account exhaustion:
+    if the error text names a model (e.g., ``claude-sonnet-4-5 has reached
+    its quota``), it's per-model and the engine should walk the provider's
+    ``model_fallback_chain`` before excluding the entire provider (ISSUE-004).
+
+    A True return means: also-true for is_token_exhaustion_result, plus the
+    error message names a model. False means: either not exhausted at all, or
+    exhaustion is provider-wide (no model named).
+    """
+    if not is_token_exhaustion_result(result):
+        return False
+    message = "\n".join(
+        [
+            str(result.get("error") or ""),
+            str(result.get("output") or ""),
+        ]
+    ).lower()
+    if not message.strip():
+        return False
+    return any(re.search(pat, message) for pat in _MODEL_NAME_PATTERNS)
+
+
 # (label, regex) — labels appear in routing diagnostics when a heuristic fires.
 # Avoid substrings common in doc-gap / design prose (e.g. "rate limiting", "overloaded servers").
 RATE_LIMIT_HEURISTIC_PATTERNS: tuple[tuple[str, str], ...] = (
