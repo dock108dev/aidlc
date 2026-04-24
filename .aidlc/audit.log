@@ -1,5 +1,0 @@
-2026-04-08 18:26:54 | INFO     | Starting quick code audit...
-2026-04-08 18:26:54 | INFO     | Generated /Users/michaelfuscoletti/Desktop/aidlc/STATUS.md
-2026-04-08 18:26:54 | INFO     | Generated /Users/michaelfuscoletti/Desktop/aidlc/ARCHITECTURE.md
-2026-04-08 18:26:54 | INFO     | Saved audit result to /Users/michaelfuscoletti/Desktop/aidlc/.aidlc/audit_result.json
-2026-04-08 18:26:54 | INFO     | Audit complete: 2 modules, 0 frameworks, 2 entry points
