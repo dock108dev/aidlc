@@ -154,7 +154,6 @@ DEFAULTS = {
     "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
     "max_consecutive_failures": 3,
     "diminishing_returns_window": 5,  # track last N cycles for diminishing returns
-    "diminishing_returns_threshold": 2,  # DEPRECATED — use planning_diminishing_returns_min/max
     # ISSUE-011: adaptive threshold = clamp(min, ceil(num_issues_so_far/10), max).
     # Floor (small projects use this), ceiling (very large projects).
     "planning_diminishing_returns_min_threshold": 3,
