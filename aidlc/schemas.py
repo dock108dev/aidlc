@@ -23,7 +23,6 @@ PLANNING_ACTION_TYPES = {
 @dataclass
 class PlanningAction:
     action_type: str
-    rationale: str
 
     # For issue operations
     issue_id: Optional[str] = None
@@ -44,14 +43,6 @@ class PlanningAction:
     research_question: Optional[str] = None
     research_scope: list = field(default_factory=list)  # file paths to examine
 
-    @staticmethod
-    def _pick_value(payload: dict, keys: tuple[str, ...]):
-        """Pick the first present value from candidate keys."""
-        for key in keys:
-            if key in payload:
-                return payload.get(key)
-        return None
-
     def validate(
         self,
         is_finalization: bool = False,
@@ -67,8 +58,6 @@ class PlanningAction:
         errors = []
         if self.action_type not in PLANNING_ACTION_TYPES:
             errors.append(f"Unknown action_type: {self.action_type}")
-        if not self.rationale or not self.rationale.strip():
-            errors.append("rationale must not be empty")
 
         if is_finalization and self.action_type == "create_issue":
             if not self.critical_gap:
@@ -123,41 +112,8 @@ class PlanningAction:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PlanningAction":
-        doc_payload = data.get("document") if isinstance(data.get("document"), dict) else {}
-
-        action_type = cls._pick_value(data, ("action_type", "type")) or ""
-        rationale = cls._pick_value(data, ("rationale", "reason")) or ""
-
-        file_path = cls._pick_value(
-            data,
-            ("file_path", "path", "doc_path", "target_path", "filename"),
-        )
-        if file_path is None and doc_payload:
-            file_path = cls._pick_value(
-                doc_payload,
-                ("file_path", "path", "doc_path", "target_path", "filename"),
-            )
-
-        content = cls._pick_value(
-            data,
-            ("content", "body", "text", "markdown", "doc_content", "document_content"),
-        )
-        if content is None and doc_payload:
-            content = cls._pick_value(
-                doc_payload,
-                (
-                    "content",
-                    "body",
-                    "text",
-                    "markdown",
-                    "doc_content",
-                    "document_content",
-                ),
-            )
-
         return cls(
-            action_type=action_type,
-            rationale=rationale,
+            action_type=data.get("action_type", ""),
             issue_id=data.get("issue_id"),
             title=data.get("title"),
             description=data.get("description"),
@@ -166,10 +122,10 @@ class PlanningAction:
             labels=data.get("labels", []),
             dependencies=data.get("dependencies", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
-            file_path=file_path,
-            content=content,
-            research_topic=cls._pick_value(data, ("research_topic", "topic")),
-            research_question=cls._pick_value(data, ("research_question", "question")),
+            file_path=data.get("file_path"),
+            content=data.get("content"),
+            research_topic=data.get("research_topic"),
+            research_question=data.get("research_question"),
             research_scope=data.get("research_scope", []),
         )
 
@@ -200,7 +156,6 @@ class PlanningOutput:
                     completion_reason = (
                         raw_action.get("completion_reason")
                         or raw_action.get("reason")
-                        or raw_action.get("rationale")
                         or ""
                     )
                 continue
@@ -336,27 +291,45 @@ def parse_test_fix_outcome(raw_text: str) -> dict | None:
 PLANNING_SCHEMA_DESCRIPTION = """\
 Output **one** ```json``` block only (no extra prose outside JSON).
 
-Fields:
+Top-level:
 - `frontier_assessment`: ≤400 chars — what you checked and why these actions.
 - `cycle_notes`: ≤300 chars — notes for the next cycle.
-- `actions[]`: 1–15 items. Each needs `action_type`, `rationale` (≤200 chars).
-- `planning_complete` / `completion_reason`: top-level completion signal (not an action).
+- `actions[]`: 1–15 items; one of the shapes below. **Use the exact field names shown — no aliases.**
+- `planning_complete` / `completion_reason`: top-level completion signal. Do NOT emit `action_type: "set_planning_complete"`.
 
-`create_issue`: `issue_id` (ISSUE-NNN), `title`, `description`, `priority`, `labels`, `dependencies`, `acceptance_criteria` (testable bullets), `critical_gap` (finalization only).
-`update_issue` / `create_doc` / `update_doc` / `research`: per schema in examples below.
-Do not use `action_type: "set_planning_complete"`; set top-level `planning_complete` instead.
+Action shapes (canonical keys only — unknown keys are ignored, missing required keys fail validation):
 
 ```
-{
-  "frontier_assessment": "...",
-  "actions": [{"action_type": "create_issue", "rationale": "...", "issue_id": "ISSUE-001",
-    "title": "...", "description": "...", "priority": "high", "critical_gap": false,
-    "labels": [], "dependencies": [], "acceptance_criteria": ["..."]}],
-  "cycle_notes": "..."
-}
+{"action_type": "create_issue", "issue_id": "ISSUE-001",
+ "title": "...", "description": "...", "priority": "high",
+ "labels": [], "dependencies": [], "acceptance_criteria": ["..."],
+ "critical_gap": false}
+```
+```
+{"action_type": "update_issue", "issue_id": "ISSUE-001",
+ "description": "...", "priority": "medium",
+ "labels": [], "dependencies": [], "acceptance_criteria": ["..."]}
+```
+```
+{"action_type": "create_doc", "file_path": "docs/design.md",
+ "content": "# Full markdown body of the new file"}
+```
+```
+{"action_type": "update_doc", "file_path": "docs/architecture.md",
+ "content": "# Full replacement markdown body — not a diff, not a summary"}
+```
+```
+{"action_type": "research", "research_topic": "pricing-formula",
+ "research_question": "How should condition modifiers stack?",
+ "research_scope": ["game/systems/pricing.gd"]}
 ```
 
-Rules: ISSUE-NNN format; deps must exist; finalization `create_issue` only if `critical_gap`+`high`; `research` writes docs/research/ for later cycles; create_doc paths relative to repo root.
+Rules:
+- `file_path` is **`file_path`** (not `path`, `doc_path`, `filename`). Paths are relative to repo root.
+- `content` is **`content`** (not `new_content`, `body`, `text`, `markdown`). For `update_doc`, `content` is the **full replacement body** — the file is overwritten, not patched.
+- ISSUE-NNN format; deps must already exist (in backlog or same batch).
+- Finalization cycle: `create_issue` only if `critical_gap: true` and `priority: "high"`.
+- `research` writes `docs/research/<topic>.md` for later cycles to reference.
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\

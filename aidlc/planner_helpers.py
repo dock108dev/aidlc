@@ -186,26 +186,25 @@ def _render_prior_run_issues_section(planner) -> list[str]:
 
 
 def _render_foundation_docs_section(planner) -> list[str]:
-    """Render excerpts of BRAINDUMP / ROADMAP / ARCHITECTURE / DESIGN.
+    """Render BRAINDUMP in full plus short excerpts of ROADMAP / ARCHITECTURE / DESIGN.
 
-    ISSUE-006: tells the planner that these docs are authoritative and
-    issues should fit inside their scope. The planning_index.md file already
-    points at them, but Claude needs the actual content in-prompt to plan
-    against it. Drops 3rd under budget pressure.
+    BRAINDUMP.md is the **scope source**: it describes the end state the project
+    is trying to reach. Planning exists to cover it. It is rendered in full so
+    the model sees every concrete ask — truncating it is how we end up with
+    plans that chase the roadmap and ignore what the customer actually wants.
 
-    BRAINDUMP.md is rendered first as the **voice of the customer** — when the
-    brain dump asks for something the planner doesn't have concrete details on
-    (specific content, formulas, APIs), the planner should emit ``research``
-    actions in this cycle rather than guess in an issue spec.
+    ROADMAP / ARCHITECTURE / DESIGN are **support context** — they describe what
+    already exists, architectural constraints, and design rules the plan must
+    fit within. They render as short excerpts; the model reads the full files
+    on its own when it needs them.
     """
     docs = list(getattr(planner, "doc_files", None) or [])
     if not docs:
         return []
 
-    # First ~2k chars per foundation doc.
-    excerpt_max = max(500, int(planner.config.get("planning_foundation_doc_excerpt_chars", 2000)))
-    # BRAINDUMP first: it's the customer's voice and drives whether other
-    # foundation docs even need to exist yet.
+    support_excerpt_max = max(
+        500, int(planner.config.get("planning_foundation_doc_excerpt_chars", 2000))
+    )
     foundation_names = ("braindump.md", "roadmap.md", "architecture.md", "design.md")
     by_name = {}
     for doc in docs:
@@ -217,16 +216,23 @@ def _render_foundation_docs_section(planner) -> list[str]:
         return []
 
     lines = [
-        "\n## Foundation Docs (committed — incremental changes only)\n",
-        "BRAINDUMP.md is the **voice of the customer** — what they want built. "
-        "If it asks for something concrete (specific content, formulas, APIs, "
-        "external integrations) and you don't have details, emit a `research` "
-        "action this cycle so `docs/research/<topic>.md` lands before any issue "
-        "depends on it.\n\n"
-        "ROADMAP / ARCHITECTURE / DESIGN are committed scope. Propose issues "
-        "only inside their scope. If a fundamental direction change is needed, "
-        "propose a single 'Update foundation docs' issue rather than diverging "
-        "silently. Read the full files at the project root for complete context.\n",
+        "\n## Foundation Docs\n",
+        "**BRAINDUMP.md is the scope source.** It describes where this project "
+        "needs to end up. Planning means filing issues that get the project to "
+        "BRAINDUMP-complete. Every concrete ask in BRAINDUMP should be reflected "
+        "in the backlog — either as an issue already filed (check `## Existing "
+        "Issues` and `## Prior Run — Already Done`) or as a new issue this cycle. "
+        "When a BRAINDUMP ask needs details you don't have (specific content, "
+        "formulas, external APIs), emit a `research` action this cycle so "
+        "`docs/research/<topic>.md` lands before the dependent issue.\n\n"
+        "**ROADMAP / ARCHITECTURE / DESIGN are support context**, not scope. "
+        "They tell you what already exists, what architectural rules apply, and "
+        "how new work should fit. Use them to shape issues, not to set the "
+        "backlog's ceiling. If you notice gaps, regressions, or architectural "
+        "problems while reviewing these docs that would block BRAINDUMP work, "
+        "file issues for them too.\n\n"
+        "**Planning is complete when the BRAINDUMP agenda is covered** by "
+        "issues (filed or already done), not when a roadmap phase is checked off.\n",
     ]
     for name in foundation_names:
         doc = by_name.get(name)
@@ -235,14 +241,21 @@ def _render_foundation_docs_section(planner) -> list[str]:
         content = (doc.get("content") or "").strip()
         if not content:
             continue
-        excerpt = content[:excerpt_max]
-        truncated_marker = (
-            f"\n... (truncated; full file at {doc.get('path')})"
-            if len(content) > excerpt_max
-            else ""
-        )
         display_name = name.upper()
-        lines.append(f"\n### {display_name}\n```\n{excerpt}{truncated_marker}\n```")
+        if name == "braindump.md":
+            lines.append(
+                f"\n### {display_name} (scope source — full content)\n```\n{content}\n```"
+            )
+        else:
+            excerpt = content[:support_excerpt_max]
+            truncated_marker = (
+                f"\n... (truncated; full file at {doc.get('path')})"
+                if len(content) > support_excerpt_max
+                else ""
+            )
+            lines.append(
+                f"\n### {display_name} (support context)\n```\n{excerpt}{truncated_marker}\n```"
+            )
     return lines
 
 
@@ -293,7 +306,7 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
 
     shrunk = re.sub(
         r"\n## Foundation Docs[\s\S]*?(?=\n## |\Z)",
-        "\n## Foundation Docs\nROADMAP/ARCHITECTURE/DESIGN exist at project root; read them directly.",
+        "\n## Foundation Docs\nBRAINDUMP.md is the scope source; ROADMAP/ARCHITECTURE/DESIGN are support context. Read them at project root.",
         shrunk,
         count=1,
     )
@@ -544,7 +557,7 @@ def execute_research(planner, action) -> None:
         f"# Research: {action.research_topic}",
         "",
         "## Question",
-        action.research_question or action.rationale,
+        action.research_question,
         "",
     ]
     if scope_content:
@@ -615,7 +628,7 @@ def execute_research(planner, action) -> None:
         )
         retry_prompt = build_repair_prompt(
             action.research_topic,
-            action.research_question or action.rationale,
+            action.research_question,
             output,
         )
         retry_start = time.time()
@@ -669,16 +682,33 @@ def execute_research(planner, action) -> None:
 
 
 def assess_planning_foundation(planner) -> dict:
-    """Assess whether core planning docs are present and sufficiently detailed."""
+    """Assess whether core planning docs are present and sufficiently detailed.
+
+    Required docs are matched by basename (case-insensitive) anywhere in the
+    doc tree — `ARCHITECTURE.md`, `docs/architecture.md`, `Docs/Architecture.MD`
+    all satisfy the `ARCHITECTURE.md` requirement. If multiple files share a
+    basename, the longest non-empty one wins.
+    """
     required_docs = ("ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md")
-    by_lower = {d.get("path", "").lower(): d for d in planner.doc_files}
+    by_basename: dict[str, dict] = {}
+    for doc in planner.doc_files:
+        path = doc.get("path") or ""
+        basename = path.rsplit("/", 1)[-1].lower()
+        if not basename:
+            continue
+        existing = by_basename.get(basename)
+        if existing is None or len((doc.get("content") or "")) > len(
+            (existing.get("content") or "")
+        ):
+            by_basename[basename] = doc
+
     details = []
     missing = []
     thin = []
     min_chars = planner.planning_doc_min_chars
 
     for name in required_docs:
-        doc = by_lower.get(name.lower())
+        doc = by_basename.get(name.lower())
         if not doc:
             details.append(f"- {name}: missing")
             missing.append(name)

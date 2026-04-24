@@ -124,7 +124,6 @@ class TestPlanner:
 
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Test",
             issue_id="ISSUE-001",
             title="Test Issue",
             description="Test description",
@@ -153,7 +152,6 @@ class TestPlanner:
         # Create issue first (via planner so file exists)
         create_action = PlanningAction(
             action_type="create_issue",
-            rationale="Need",
             issue_id="ISSUE-001",
             title="Original",
             description="Orig",
@@ -163,7 +161,6 @@ class TestPlanner:
 
         action = PlanningAction(
             action_type="update_issue",
-            rationale="Refine",
             issue_id="ISSUE-001",
             description="Updated description",
         )
@@ -183,7 +180,6 @@ class TestPlanner:
         planner._apply_action(
             PlanningAction(
                 action_type="create_issue",
-                rationale="Need",
                 issue_id="ISSUE-001",
                 title="Primary",
                 description="Primary desc",
@@ -193,7 +189,6 @@ class TestPlanner:
         planner._apply_action(
             PlanningAction(
                 action_type="create_issue",
-                rationale="Need",
                 issue_id="ISSUE-002",
                 title="Dep",
                 description="Dep desc",
@@ -203,7 +198,6 @@ class TestPlanner:
         planner._apply_action(
             PlanningAction(
                 action_type="update_issue",
-                rationale="Wire dep",
                 issue_id="ISSUE-001",
                 dependencies=["ISSUE-002"],
             )
@@ -213,7 +207,6 @@ class TestPlanner:
         planner._apply_action(
             PlanningAction(
                 action_type="update_issue",
-                rationale="Clear deps",
                 issue_id="ISSUE-001",
                 dependencies=[],
             )
@@ -271,7 +264,6 @@ class TestPlanner:
 
         action = PlanningAction(
             action_type="create_doc",
-            rationale="Design",
             file_path="docs/design.md",
             content="# Design\nContent",
         )
@@ -373,7 +365,6 @@ class TestPlanner:
                 "actions": [
                     {
                         "action_type": "create_issue",
-                        "rationale": "Need this",
                         "issue_id": "ISSUE-001",
                         "title": "Real work",
                         "description": "Do stuff",
@@ -391,7 +382,6 @@ class TestPlanner:
                 "actions": [
                     {
                         "action_type": "update_issue",
-                        "rationale": "Polish",
                         "issue_id": "ISSUE-001",
                         "description": "Updated",
                     }
@@ -494,7 +484,6 @@ class TestPlanner:
                 "actions": [
                     {
                         "action_type": "update_issue",
-                        "rationale": "Polish",
                         "issue_id": "ISSUE-001",
                         "description": "Updated description",
                     }
@@ -565,7 +554,6 @@ class TestPlanner:
                 "actions": [
                     {
                         "action_type": "update_issue",
-                        "rationale": "Polish",
                         "issue_id": "ISSUE-001",
                         "description": "Updated description",
                     }

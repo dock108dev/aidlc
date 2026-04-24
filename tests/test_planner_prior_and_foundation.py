@@ -127,20 +127,19 @@ def test_foundation_docs_section_renders_present_docs(tmp_path):
     roadmap = "# Roadmap\n\nPhases."
     p = _planner(tmp_path, doc_files=[_doc("ARCHITECTURE.md", arch), _doc("ROADMAP.md", roadmap)])
     out = "\n".join(_render_foundation_docs_section(p))
-    assert "Foundation Docs (committed — incremental changes only)" in out
+    assert "## Foundation Docs" in out
     assert "ARCHITECTURE.MD" in out
     assert "ROADMAP.MD" in out
     assert "Architecture" in out
     assert "Roadmap" in out
 
 
-def test_foundation_docs_section_includes_braindump_with_research_framing(tmp_path):
-    """BRAINDUMP renders first as voice-of-customer with a research trigger.
+def test_foundation_docs_section_frames_braindump_as_scope_source(tmp_path):
+    """BRAINDUMP is the scope source — not a roadmap-adjacent doc.
 
-    When the brain dump asks for concrete content the planner doesn't have, it
-    should emit a `research` action that cycle. This is the wiring for that
-    framing — without BRAINDUMP being prominent in the prompt, the planner
-    treats it as one of many docs and silently omits research kickoff.
+    The framing must tell the model BRAINDUMP drives the backlog and support
+    docs do not. Without that, the model follows ROADMAP phases and silently
+    drops BRAINDUMP's actual asks.
     """
     brain = "# Brain Dump\n\nI want a 9-hole mini-golf course with named holes."
     arch = "# Architecture\n\nThree.js + Cannon-es."
@@ -150,13 +149,38 @@ def test_foundation_docs_section_includes_braindump_with_research_framing(tmp_pa
     )
     out = "\n".join(_render_foundation_docs_section(p))
     assert "BRAINDUMP.MD" in out
-    assert "voice of the customer" in out
-    assert "research" in out  # research trigger framing present
+    assert "scope source" in out  # primacy framing
+    assert "support context" in out  # other docs framed as non-scope
+    assert "research" in out  # research trigger preserved
     # BRAINDUMP rendered before ARCHITECTURE so its content lands first.
     assert out.index("BRAINDUMP.MD") < out.index("ARCHITECTURE.MD")
 
 
-def test_foundation_docs_section_truncates_long_doc(tmp_path):
+def test_foundation_docs_section_renders_braindump_in_full_ignoring_excerpt_cap(tmp_path):
+    """BRAINDUMP must bypass the excerpt cap — truncating it is how BRAINDUMP
+    asks stop reaching the planner.
+
+    Support docs keep the cap; only BRAINDUMP is rendered in full.
+    """
+    big_brain = "# Brain Dump\n\n" + "\n".join(
+        f"- Ask {i}: concrete requirement number {i}" for i in range(200)
+    )
+    long_arch = "# Architecture\n\n" + ("a" * 5000)
+    p = _planner(
+        tmp_path,
+        doc_files=[_doc("BRAINDUMP.md", big_brain), _doc("ARCHITECTURE.md", long_arch)],
+        config={"planning_foundation_doc_excerpt_chars": 1000},
+    )
+    out = "\n".join(_render_foundation_docs_section(p))
+    # Every BRAINDUMP ask is present — nothing is lost to truncation.
+    assert "Ask 0:" in out
+    assert "Ask 199:" in out
+    assert "(truncated; full file at BRAINDUMP.md)" not in out
+    # Support docs are still truncated per the cap.
+    assert "(truncated; full file at ARCHITECTURE.md)" in out
+
+
+def test_foundation_docs_section_truncates_support_doc(tmp_path):
     long_arch = "# Architecture\n\n" + ("a" * 5000)
     p = _planner(
         tmp_path,
@@ -168,7 +192,7 @@ def test_foundation_docs_section_truncates_long_doc(tmp_path):
 
 
 def test_foundation_docs_section_empty_when_no_foundation_docs(tmp_path):
-    # Other docs present but no ROADMAP/ARCHITECTURE/DESIGN.
+    # Other docs present but no BRAINDUMP/ROADMAP/ARCHITECTURE/DESIGN.
     p = _planner(tmp_path, doc_files=[_doc("README.md", "hi")])
     assert _render_foundation_docs_section(p) == []
 
@@ -204,7 +228,7 @@ def test_budget_drops_existing_first_then_prior_then_cycle_then_foundation(tmp_p
     # Previous Cycle section dropped THIRD.
     assert "prior cycle notes" in shrunk
     # Foundation Docs section dropped LAST.
-    assert "ROADMAP/ARCHITECTURE/DESIGN exist at project root" in shrunk
+    assert "BRAINDUMP.md is the scope source" in shrunk
     # Schema and Run State are never dropped.
     assert "## Schema" in shrunk
     assert "## Run State" in shrunk

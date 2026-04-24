@@ -51,7 +51,6 @@ class TestPlanningAction:
     def test_valid_create_issue(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Need this",
             issue_id="ISSUE-001",
             title="My Issue",
             description="Description",
@@ -64,7 +63,6 @@ class TestPlanningAction:
     def test_create_issue_missing_fields(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Need this",
         )
         errors = action.validate()
         assert any("issue_id" in e for e in errors)
@@ -75,7 +73,6 @@ class TestPlanningAction:
     def test_create_issue_blocked_during_finalization_without_critical_gap(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Need this",
             issue_id="ISSUE-001",
             title="T",
             description="D",
@@ -87,7 +84,6 @@ class TestPlanningAction:
     def test_create_issue_allowed_during_finalization_for_critical_gap(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Critical blocker discovered late",
             issue_id="ISSUE-001",
             title="Patch critical blocker",
             description="Fixes a blocker found during final review",
@@ -101,7 +97,6 @@ class TestPlanningAction:
     def test_create_issue_critical_gap_requires_high_priority(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Critical blocker discovered late",
             issue_id="ISSUE-001",
             title="Patch critical blocker",
             description="Fixes a blocker found during final review",
@@ -115,7 +110,6 @@ class TestPlanningAction:
     def test_create_issue_duplicate(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Need this",
             issue_id="ISSUE-001",
             title="T",
             description="D",
@@ -127,7 +121,6 @@ class TestPlanningAction:
     def test_create_issue_unknown_dependency(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="Need this",
             issue_id="ISSUE-002",
             title="T",
             description="D",
@@ -140,7 +133,6 @@ class TestPlanningAction:
     def test_valid_update_issue(self):
         action = PlanningAction(
             action_type="update_issue",
-            rationale="Refine",
             issue_id="ISSUE-001",
             description="Updated desc",
         )
@@ -150,7 +142,6 @@ class TestPlanningAction:
     def test_update_unknown_issue(self):
         action = PlanningAction(
             action_type="update_issue",
-            rationale="Refine",
             issue_id="ISSUE-999",
         )
         errors = action.validate(known_issue_ids={"ISSUE-001"})
@@ -159,7 +150,6 @@ class TestPlanningAction:
     def test_update_issue_requires_issue_id(self):
         action = PlanningAction(
             action_type="update_issue",
-            rationale="Refine",
             issue_id="",
             description="x",
         )
@@ -169,7 +159,6 @@ class TestPlanningAction:
     def test_valid_create_doc(self):
         action = PlanningAction(
             action_type="create_doc",
-            rationale="Design doc",
             file_path="docs/design.md",
             content="# Design\nContent here",
         )
@@ -179,38 +168,31 @@ class TestPlanningAction:
     def test_create_doc_missing_fields(self):
         action = PlanningAction(
             action_type="create_doc",
-            rationale="Design doc",
         )
         errors = action.validate()
         assert any("file_path" in e for e in errors)
         assert any("content" in e for e in errors)
 
     def test_update_doc_missing_fields(self):
-        action = PlanningAction(action_type="update_doc", rationale="r")
+        action = PlanningAction(action_type="update_doc")
         errors = action.validate()
         assert any("file_path" in e for e in errors)
         assert any("content" in e for e in errors)
 
     def test_research_missing_topic_and_question(self):
-        action = PlanningAction(action_type="research", rationale="explore")
+        action = PlanningAction(action_type="research")
         errors = action.validate()
         assert any("research_topic" in e for e in errors)
         assert any("research_question" in e for e in errors)
 
     def test_unknown_action_type(self):
-        action = PlanningAction(action_type="delete_issue", rationale="R")
+        action = PlanningAction(action_type="delete_issue")
         errors = action.validate()
         assert any("Unknown action_type" in e for e in errors)
-
-    def test_empty_rationale(self):
-        action = PlanningAction(action_type="create_issue", rationale="")
-        errors = action.validate()
-        assert any("rationale" in e for e in errors)
 
     def test_from_dict(self):
         data = {
             "action_type": "create_issue",
-            "rationale": "Need it",
             "issue_id": "ISSUE-001",
             "title": "Title",
             "description": "Desc",
@@ -228,7 +210,6 @@ class TestPlanningOutput:
     def test_validate_flags_issue_id_already_in_known_set(self):
         action = PlanningAction(
             action_type="create_issue",
-            rationale="dup",
             issue_id="ISSUE-NEW",
             title="T",
             description="D",
@@ -244,7 +225,6 @@ class TestPlanningOutput:
             actions=[
                 PlanningAction(
                     action_type="create_issue",
-                    rationale="Need",
                     issue_id="ISSUE-001",
                     title="T",
                     description="D",
@@ -261,7 +241,6 @@ class TestPlanningOutput:
             actions=[
                 PlanningAction(
                     action_type="create_issue",
-                    rationale="A",
                     issue_id="ISSUE-001",
                     title="T1",
                     description="D1",
@@ -269,7 +248,6 @@ class TestPlanningOutput:
                 ),
                 PlanningAction(
                     action_type="create_issue",
-                    rationale="B",
                     issue_id="ISSUE-001",
                     title="T2",
                     description="D2",
@@ -286,7 +264,6 @@ class TestPlanningOutput:
             "actions": [
                 {
                     "action_type": "create_issue",
-                    "rationale": "R",
                     "issue_id": "ISSUE-001",
                     "title": "T",
                     "description": "D",
@@ -305,7 +282,7 @@ class TestPlanningOutput:
             "actions": [
                 {
                     "action_type": "set_planning_complete",
-                    "rationale": "Repository scope appears fully covered.",
+                    "reason": "Repository scope appears fully covered.",
                 }
             ],
         }
@@ -322,7 +299,7 @@ class TestPlanningOutput:
             "actions": [
                 {
                     "action_type": "set_planning_complete",
-                    "rationale": "legacy reason",
+                    "reason": "legacy reason",
                 }
             ],
         }
@@ -361,7 +338,6 @@ class TestParsePlanningOutput:
   "actions": [
     {
       "action_type": "create_issue",
-      "rationale": "Foundation",
       "issue_id": "ISSUE-001",
       "title": "Setup",
       "description": "Initial setup",

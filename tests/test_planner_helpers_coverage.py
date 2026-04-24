@@ -206,7 +206,6 @@ def test_execute_research_deferred_when_cap(tmp_path):
     )
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Topic",
         research_question="Q?",
     )
@@ -223,7 +222,6 @@ def test_execute_research_skips_when_file_exists(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, MagicMock(), cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Topic One!",
         research_question="Q?",
     )
@@ -248,7 +246,6 @@ def test_execute_research_success_writes_files(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="why",
         research_topic="My Topic",
         research_question="What?",
         research_scope=[scope_rel],
@@ -276,7 +273,6 @@ def test_execute_research_truncates_scope_and_warns_missing(tmp_path, caplog):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Trunc",
         research_question="Q",
         research_scope=["a.txt", "missing.txt"],
@@ -304,7 +300,6 @@ def test_execute_research_scope_read_oserror(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="ErrRead",
         research_question="Q",
         research_scope=[scope_rel],
@@ -335,7 +330,6 @@ def test_execute_research_cli_fails(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="FailCli",
         research_question="Q",
     )
@@ -357,7 +351,6 @@ def test_execute_research_empty_output(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="EmptyOut",
         research_question="Q",
     )
@@ -377,7 +370,6 @@ def test_execute_research_permission_chatter_retry_then_ok(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Perm Retry",
         research_question="Q?",
     )
@@ -398,7 +390,6 @@ def test_execute_research_retry_still_fails(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Bad Retry",
         research_question="Q?",
     )
@@ -418,7 +409,6 @@ def test_execute_research_retry_still_chatter(tmp_path):
     planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
     action = PlanningAction(
         action_type="research",
-        rationale="r",
         research_topic="Chatter2",
         research_question="Q?",
     )
@@ -438,6 +428,29 @@ def test_assess_planning_foundation_missing_and_thin(logger, tmp_path):
     assert out["ready"] is False
     assert "ARCHITECTURE.md" in out["missing"] or "CLAUDE.md" in out["missing"]
     assert "DESIGN.md" in out["thin"]
+
+
+def test_assess_planning_foundation_matches_nested_lowercase_paths(logger, tmp_path):
+    """Docs at docs/architecture.md satisfy the ARCHITECTURE.md requirement.
+
+    Projects vary in casing and layout; a mallcore-style layout with
+    `docs/architecture.md` plus lowercase filenames must be detected so the
+    model isn't perpetually told the foundation is missing after it wrote
+    exactly what was asked for.
+    """
+    cfg, run_dir = _base_config(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    body = "x" * 6000  # well above min_chars and no placeholder tokens
+    docs = [
+        {"path": "docs/architecture.md", "content": body, "size": len(body), "priority": 1},
+        {"path": "docs/design.md", "content": body, "size": len(body), "priority": 1},
+        {"path": "CLAUDE.md", "content": body, "size": len(body), "priority": 1},
+    ]
+    planner = Planner(state, run_dir, cfg, MagicMock(), "ctx", logger, doc_files=docs)
+    out = assess_planning_foundation(planner)
+    assert out["ready"] is True
+    assert out["missing"] == []
+    assert out["thin"] == []
 
 
 def test_render_planning_foundation_ready(logger, tmp_path):

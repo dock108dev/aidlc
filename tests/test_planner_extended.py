@@ -45,7 +45,6 @@ class TestPlanningCycleWithRealOutput:
             actions=[
                 {
                     "action_type": "create_issue",
-                    "rationale": "Need auth",
                     "issue_id": "ISSUE-001",
                     "title": "Add authentication",
                     "description": "Implement auth module",
@@ -56,7 +55,6 @@ class TestPlanningCycleWithRealOutput:
                 },
                 {
                     "action_type": "create_issue",
-                    "rationale": "Need tests",
                     "issue_id": "ISSUE-002",
                     "title": "Add auth tests",
                     "description": "Test auth module",
@@ -181,7 +179,6 @@ class TestPlanningCycleWithRealOutput:
             actions=[
                 {
                     "action_type": "create_issue",
-                    "rationale": "Need auth",
                     "issue_id": "ISSUE-001",
                     "title": "Add authentication",
                     # Missing required description + acceptance_criteria
@@ -212,7 +209,6 @@ class TestPlanningCycleWithRealOutput:
             actions=[
                 {
                     "action_type": "create_issue",
-                    "rationale": "Need auth",
                     "issue_id": "ISSUE-001",
                     "title": "Add authentication",
                     "description": "desc",
@@ -392,7 +388,6 @@ class TestApplyActionEdgeCases:
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         action = PlanningAction(
             action_type="update_issue",
-            rationale="Refine",
             issue_id="ISSUE-999",
         )
         planner._apply_action(action)
@@ -411,7 +406,6 @@ class TestApplyActionEdgeCases:
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         action = PlanningAction(
             action_type="update_doc",
-            rationale="Update design",
             file_path="docs/design.md",
             content="# V2\nUpdated",
         )
@@ -429,7 +423,6 @@ class TestCheckpointDuringPlanning:
             actions=[
                 {
                     "action_type": "create_issue",
-                    "rationale": "Need it",
                     "issue_id": "ISSUE-001",
                     "title": "T",
                     "description": "D",
