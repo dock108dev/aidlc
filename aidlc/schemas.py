@@ -154,9 +154,7 @@ class PlanningOutput:
                 planning_complete = True
                 if not completion_reason:
                     completion_reason = (
-                        raw_action.get("completion_reason")
-                        or raw_action.get("reason")
-                        or ""
+                        raw_action.get("completion_reason") or raw_action.get("reason") or ""
                     )
                 continue
 

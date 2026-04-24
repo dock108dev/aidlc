@@ -243,9 +243,7 @@ def _render_foundation_docs_section(planner) -> list[str]:
             continue
         display_name = name.upper()
         if name == "braindump.md":
-            lines.append(
-                f"\n### {display_name} (scope source — full content)\n```\n{content}\n```"
-            )
+            lines.append(f"\n### {display_name} (scope source — full content)\n```\n{content}\n```")
         else:
             excerpt = content[:support_excerpt_max]
             truncated_marker = (
