@@ -274,7 +274,6 @@ class ClaudeCLI:
                 # stall_kill set > 0).
                 timed_out = False
                 timeout_forced = False
-                stall_killed = False
                 heartbeat_count = 0
                 next_heartbeat_at = start + warn_interval
 
@@ -312,7 +311,6 @@ class ClaudeCLI:
                         timed_out = True
                     elif stall_kill and idle >= stall_kill:
                         kill_reason = f"stall kill (no output for {idle:.0f}s)"
-                        stall_killed = True
                         timed_out = True
 
                     if kill_reason:

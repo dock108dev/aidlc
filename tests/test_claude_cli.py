@@ -438,7 +438,6 @@ class TestLivenessLoop:
     def test_hard_timeout_disabled_by_default(self, base_config, logger):
         # base_config has no claude_hard_timeout_seconds; default is 0.
         assert base_config.get("claude_hard_timeout_seconds") is None
-        cli = ClaudeCLI(base_config, logger)
         # The value is read inside execute_prompt; we just verify DEFAULTS wins.
         from aidlc.config import DEFAULTS
 

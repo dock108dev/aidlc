@@ -192,8 +192,8 @@ class TestPassPrompts:
     registered in the finalizer."""
 
     def test_all_five_passes_registered(self):
-        from aidlc.finalizer import PASS_PROMPTS
         from aidlc.finalize_prompts import PASS_DESCRIPTIONS, PASS_ORDER
+        from aidlc.finalizer import PASS_PROMPTS
 
         expected = {"ssot", "security", "abend", "cleanup", "docs"}
         assert set(PASS_PROMPTS.keys()) == expected
