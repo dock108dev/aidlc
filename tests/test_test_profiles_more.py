@@ -18,25 +18,19 @@ def test_playwright_config_sets_e2e(tmp_path):
 
 
 def test_package_json_test_unit_script(tmp_path):
-    (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"test:unit": "jest"}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test:unit": "jest"}}))
     p = detect_test_profile(tmp_path, "unknown-stack", {})
     assert p["unit"] == "npm run test:unit"
 
 
 def test_package_json_test_integration_script(tmp_path):
-    (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"test:integration": "jest -i"}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test:integration": "jest -i"}}))
     p = detect_test_profile(tmp_path, "unknown-stack", {})
     assert p["integration"] == "npm run test:integration"
 
 
 def test_package_json_test_e2e_script(tmp_path):
-    (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"test:e2e": "wdio"}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"test:e2e": "wdio"}}))
     p = detect_test_profile(tmp_path, "unknown-stack", {})
     assert p["e2e"] == "npm run test:e2e"
 

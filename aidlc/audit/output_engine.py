@@ -62,11 +62,7 @@ class AuditOutputEngine:
             lines.append("| Module | Path | Files | Lines | Role |")
             lines.append("|--------|------|-------|-------|------|")
             for module in result.modules:
-                mod = (
-                    module
-                    if isinstance(module, ModuleInfo)
-                    else ModuleInfo.from_dict(module)
-                )
+                mod = module if isinstance(module, ModuleInfo) else ModuleInfo.from_dict(module)
                 lines.append(
                     f"| {mod.name} | {mod.path} | {mod.file_count} | "
                     f"{mod.line_count:,} | {mod.role} |"
@@ -105,9 +101,7 @@ class AuditOutputEngine:
                 f"{'pass' if runtime.get('overall_passed') else 'fail'}"
             )
             if runtime.get("coverage_percent") is not None:
-                lines.append(
-                    f"- **Observed coverage**: {runtime.get('coverage_percent')}%"
-                )
+                lines.append(f"- **Observed coverage**: {runtime.get('coverage_percent')}%")
             for tier in tier_results:
                 lines.append(
                     f"- **{tier.get('tier')}**: "
@@ -128,11 +122,7 @@ class AuditOutputEngine:
             lines.append("")
             debt_by_type = {}
             for item in result.tech_debt:
-                td = (
-                    item
-                    if isinstance(item, TechDebtItem)
-                    else TechDebtItem.from_dict(item)
-                )
+                td = item if isinstance(item, TechDebtItem) else TechDebtItem.from_dict(item)
                 debt_by_type.setdefault(td.type, []).append(td)
             for dtype, items in sorted(debt_by_type.items()):
                 lines.append(f"### {dtype.upper()} ({len(items)})")
@@ -226,11 +216,7 @@ class AuditOutputEngine:
             user_docs_content = self.read_all_user_docs(generated_docs)
             if user_docs_content:
                 for module in result.modules:
-                    mod = (
-                        module
-                        if isinstance(module, ModuleInfo)
-                        else ModuleInfo.from_dict(module)
-                    )
+                    mod = module if isinstance(module, ModuleInfo) else ModuleInfo.from_dict(module)
                     if mod.file_count >= 5 and mod.role != "tests":
                         if mod.name.lower() not in user_docs_content.lower():
                             conflicts.append(

@@ -68,9 +68,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     providers_flag = getattr(args, "providers", False) is True
 
     if aidlc_existed and braindump_existed and not providers_flag:
-        print(
-            f"{_yellow('!')} .aidlc/ and BRAINDUMP.md already exist at {project_root}"
-        )
+        print(f"{_yellow('!')} .aidlc/ and BRAINDUMP.md already exist at {project_root}")
         print(f"  Use {_cyan('aidlc run')} to start, or delete .aidlc/ to re-init.")
         return
 
@@ -109,18 +107,14 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
         src = template_dir / "BRAINDUMP.md"
         if src.exists():
             shutil.copy2(src, braindump_path)
-            print(
-                f"  {_green('+')} BRAINDUMP.md (edit this — it's what AIDLC builds from)"
-            )
+            print(f"  {_green('+')} BRAINDUMP.md (edit this — it's what AIDLC builds from)")
         else:
             print(f"  {_red('x')} BRAINDUMP.md template missing at {src}")
             sys.exit(1)
 
     print()
     print("Next steps:")
-    print(
-        f"  1. Open {_cyan('BRAINDUMP.md')} and describe what this cycle should deliver"
-    )
+    print(f"  1. Open {_cyan('BRAINDUMP.md')} and describe what this cycle should deliver")
     print(
         f"  2. Run {_cyan('aidlc run')}  (use {_cyan('--audit')} so the planner sees current state)"
     )
@@ -226,9 +220,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     print(f"  {_bold('Status:')}    {status_str}")
     print(f"  {_bold('Phase:')}     {state.phase.value}")
     print(f"  {_bold('Planning:')}  {plan_h:.1f}h / {plan_budget_h:.0f}h budget")
-    print(
-        f"  {_bold('Time:')}      {elapsed_h:.1f}h Claude CLI, {console_h:.1f}h console"
-    )
+    print(f"  {_bold('Time:')}      {elapsed_h:.1f}h Claude CLI, {console_h:.1f}h console")
     print(
         f"  {_bold('Issues:')}    {state.total_issues} total, {state.issues_implemented} implemented, {state.issues_verified} verified, {state.issues_failed} failed"
     )
@@ -264,9 +256,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _reset_targets(
-    aidlc_dir: Path, *, keep_issues: bool, reset_all: bool
-) -> list[Path]:
+def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> list[Path]:
     """Return the list of paths inside .aidlc/ that ``aidlc reset`` would delete.
 
     Default targets: runs/, reports/, session/, audit_result.json,
@@ -335,11 +325,7 @@ def cmd_reset(args: argparse.Namespace, version: str) -> None:
     print()
     if not auto_yes:
         try:
-            response = (
-                input(f"  {_yellow('?')} Proceed with deletion? (y/N) [N]: ")
-                .strip()
-                .lower()
-            )
+            response = input(f"  {_yellow('?')} Proceed with deletion? (y/N) [N]: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             response = ""
         if response not in ("y", "yes"):

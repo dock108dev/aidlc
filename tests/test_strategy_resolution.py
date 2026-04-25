@@ -12,9 +12,7 @@ from aidlc.routing.types import RouteDecision
 class _FakeAdapter:
     """Minimal adapter surface used by strategy_resolution."""
 
-    def __init__(
-        self, provider_id: str, default_model: str = "default-m", available: bool = True
-    ):
+    def __init__(self, provider_id: str, default_model: str = "default-m", available: bool = True):
         self.PROVIDER_ID = provider_id
         self._default_model = default_model
         self._available = available
@@ -45,9 +43,7 @@ class _FakeRouter:
         self._resolve_model = resolve_model
         self._cooldown = cooldown or set()
 
-    def _tier_aware_provider_order(
-        self, phase: str, complexity_level: str
-    ) -> list[str]:
+    def _tier_aware_provider_order(self, phase: str, complexity_level: str) -> list[str]:
         return list(self._tier_order)
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
@@ -70,21 +66,15 @@ class _FakeRouter:
             return [cheap, low]
         if provider_id == "claude":
             return [cheap, low, hi]
-        return [
-            SimpleNamespace(account_id=f"{provider_id}-a", role_tags=[], tier_weight=1)
-        ]
+        return [SimpleNamespace(account_id=f"{provider_id}-a", role_tags=[], tier_weight=1)]
 
     def _select_account(self, accounts, provider_id: str, is_quality_phase: bool):
         return self._account_pick
 
-    def _resolve_model_for_phase(
-        self, adapter, phase: str, complexity_level: str
-    ) -> str:
+    def _resolve_model_for_phase(self, adapter, phase: str, complexity_level: str) -> str:
         return self._resolve_model
 
-    def _model_is_on_cooldown(
-        self, provider_id: str, model: str, now: float | None
-    ) -> bool:
+    def _model_is_on_cooldown(self, provider_id: str, model: str, now: float | None) -> bool:
         return (provider_id, model) in self._cooldown
 
     def _fallback_decision(
@@ -206,9 +196,7 @@ def test_resolve_balanced_premium_claude_quality_note():
             }
         },
     )
-    d = sr.resolve_balanced(
-        r, "implementation_complex", "normal", None, set(), set(), 0.0
-    )
+    d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "claude"
     assert d.quality_note and "implementation" in d.quality_note.lower()
 
@@ -219,9 +207,7 @@ def test_resolve_balanced_premium_non_claude_quality_note():
         tier_order=["openai"],
         resolve_model="gpt-5.4",
     )
-    d = sr.resolve_balanced(
-        r, "implementation_complex", "normal", None, set(), set(), 0.0
-    )
+    d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "openai"
     note = (d.quality_note or "").lower()
     assert "implementation" in note and "budget" in note
@@ -302,9 +288,7 @@ def test_resolve_best_quality_picks_highest_tier_account():
 
 def test_resolve_best_quality_skips_excluded_providers_in_scan():
     r = _FakeRouter(adapters={"openai": _FakeAdapter("openai", "gpt-5.4")})
-    d = sr.resolve_best_quality(
-        r, "planning", "normal", None, {"claude", "copilot"}, set(), 0.0
-    )
+    d = sr.resolve_best_quality(r, "planning", "normal", None, {"claude", "copilot"}, set(), 0.0)
     assert d.provider_id == "openai"
 
 
@@ -339,9 +323,7 @@ def test_resolve_best_quality_no_accounts_fallback():
 
     empty_router._get_accounts_for_provider = _no_accounts  # type: ignore[method-assign]
 
-    d = sr.resolve_best_quality(
-        empty_router, "planning", "normal", None, set(), set(), 0.0
-    )
+    d = sr.resolve_best_quality(empty_router, "planning", "normal", None, set(), set(), 0.0)
     assert d.fallback is True
 
 

@@ -175,9 +175,7 @@ class AuditResult:
     # Conflicts and output tracking
     conflicts: list = field(default_factory=list)  # list of AuditConflict
     generated_docs: list = field(default_factory=list)  # paths of generated docs
-    degraded_stats: dict = field(
-        default_factory=dict
-    )  # counters for skipped/failed reads
+    degraded_stats: dict = field(default_factory=dict)  # counters for skipped/failed reads
     runtime_checks: Optional[dict] = None  # build/unit/integration/e2e runtime results
 
     def to_dict(self) -> dict:
@@ -186,22 +184,16 @@ class AuditResult:
             "project_type": self.project_type,
             "frameworks": self.frameworks,
             "entry_points": self.entry_points,
-            "modules": [
-                m.to_dict() if isinstance(m, ModuleInfo) else m for m in self.modules
-            ],
+            "modules": [m.to_dict() if isinstance(m, ModuleInfo) else m for m in self.modules],
             "directory_tree": self.directory_tree,
             "source_stats": self.source_stats,
             "features": self.features,
-            "test_coverage": (
-                self.test_coverage.to_dict() if self.test_coverage else None
-            ),
+            "test_coverage": (self.test_coverage.to_dict() if self.test_coverage else None),
             "tech_debt": [
-                t.to_dict() if isinstance(t, TechDebtItem) else t
-                for t in (self.tech_debt or [])
+                t.to_dict() if isinstance(t, TechDebtItem) else t for t in (self.tech_debt or [])
             ],
             "conflicts": [
-                c.to_dict() if isinstance(c, AuditConflict) else c
-                for c in self.conflicts
+                c.to_dict() if isinstance(c, AuditConflict) else c for c in self.conflicts
             ],
             "generated_docs": self.generated_docs,
             "degraded_stats": self.degraded_stats,
@@ -223,14 +215,11 @@ class AuditResult:
             runtime_checks=data.get("runtime_checks"),
         )
         result.modules = [
-            ModuleInfo.from_dict(m) if isinstance(m, dict) else m
-            for m in data.get("modules", [])
+            ModuleInfo.from_dict(m) if isinstance(m, dict) else m for m in data.get("modules", [])
         ]
         tc = data.get("test_coverage")
         if tc:
-            result.test_coverage = (
-                CoverageInfo.from_dict(tc) if isinstance(tc, dict) else tc
-            )
+            result.test_coverage = CoverageInfo.from_dict(tc) if isinstance(tc, dict) else tc
         result.tech_debt = (
             [
                 TechDebtItem.from_dict(t) if isinstance(t, dict) else t

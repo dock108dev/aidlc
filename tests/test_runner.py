@@ -94,9 +94,7 @@ class TestScanProject:
         assert state.docs_scanned >= 1
 
     @patch("aidlc.runner.ProjectScanner")
-    def test_logs_when_doc_chars_exceed_threshold(
-        self, MockScanner, config, tmp_path, caplog
-    ):
+    def test_logs_when_doc_chars_exceed_threshold(self, MockScanner, config, tmp_path, caplog):
         (tmp_path / "README.md").write_text("# x")
         mock_inst = MagicMock()
         mock_inst.scan.return_value = {
@@ -291,9 +289,7 @@ class TestRunFull:
 
         with patch("aidlc.runner.Planner") as MockPlanner:
             MockPlanner.return_value.run = MagicMock()
-            run_full(
-                config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False
-            )
+            run_full(config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False)
 
         aud.run.assert_called_once_with(depth="quick")
         mock_cli.set_phase.assert_any_call("audit")

@@ -36,11 +36,7 @@ def _looks_like_pre_existing_unrelated_debt(text: str) -> bool:
         return True
     if "unrelated suite" in low:
         return True
-    if (
-        "gate" in low
-        and "blocked" in low
-        and ("unrelated" in low or "pre-existing" in low)
-    ):
+    if "gate" in low and "blocked" in low and ("unrelated" in low or "pre-existing" in low):
         return True
     if "broader" in low and "gate" in low and "blocked" in low:
         return True
@@ -58,10 +54,7 @@ def _resolve_follow_up_documentation(
 ) -> str:
     """Prefer JSON follow_up_documentation; else accept matching prose (models often skip JSON)."""
     doc = ""
-    if (
-        isinstance(parsed, dict)
-        and parsed.get("failures_are_pre_existing_unrelated") is True
-    ):
+    if isinstance(parsed, dict) and parsed.get("failures_are_pre_existing_unrelated") is True:
         doc = str(parsed.get("follow_up_documentation") or "").strip()
     if len(doc) >= min_chars:
         return doc
@@ -98,9 +91,7 @@ def build_implementation_prompt(impl, issue) -> str:
     previous_notes = issue.implementation_notes or ""
 
     completed = [
-        data
-        for data in impl.state.issues
-        if data.get("status") in ("implemented", "verified")
+        data for data in impl.state.issues if data.get("status") in ("implemented", "verified")
     ]
     cap_done = max(1, int(impl.config.get("implementation_completed_issues_max", 12)))
 
@@ -170,9 +161,7 @@ def build_implementation_prompt(impl, issue) -> str:
     if research_dir and research_dir.is_dir():
         research_files = sorted(p.name for p in research_dir.glob("*.md"))
         if research_files:
-            cap_research = max(
-                5, int(impl.config.get("implementation_research_index_max", 30))
-            )
+            cap_research = max(5, int(impl.config.get("implementation_research_index_max", 30)))
             shown = research_files[:cap_research]
             volatile_sections.append(
                 f"\n## Available Research ({len(research_files)} file(s) in `docs/research/`)\n"
@@ -194,12 +183,8 @@ def build_implementation_prompt(impl, issue) -> str:
 
 def detect_test_command(project_root: Path) -> str | None:
     """Auto-detect test command for project root."""
-    if (project_root / "pyproject.toml").exists() or (
-        project_root / "setup.py"
-    ).exists():
-        if (project_root / "pytest.ini").exists() or (
-            project_root / "conftest.py"
-        ).exists():
+    if (project_root / "pyproject.toml").exists() or (project_root / "setup.py").exists():
+        if (project_root / "pytest.ini").exists() or (project_root / "conftest.py").exists():
             return "python -m pytest"
         if (project_root / "tests").is_dir() or (project_root / "test").is_dir():
             return "python -m pytest"
@@ -294,9 +279,7 @@ def ensure_test_deps(
 
     for tool_name, install_cmd in install_commands.items():
         if install_cmd and tool_name in (test_command or ""):
-            check_cmd = (
-                f"which {tool_name.split()[0]} || npx {tool_name.split()[0]} --version"
-            )
+            check_cmd = f"which {tool_name.split()[0]} || npx {tool_name.split()[0]} --version"
             try:
                 t0 = time.time()
                 try:
@@ -325,9 +308,7 @@ def ensure_test_deps(
                         if state is not None:
                             add_console_time(state, t1)
             except (subprocess.TimeoutExpired, OSError):
-                logger.warning(
-                    f"Unable to verify/install test tool '{tool_name}' automatically."
-                )
+                logger.warning(f"Unable to verify/install test tool '{tool_name}' automatically.")
             break
 
 
@@ -384,9 +365,7 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
     if not cfg.get("implementation_accept_pre_existing_suite_failures", True):
         return FixTestsOutcome()
 
-    min_chars = max(
-        10, int(cfg.get("implementation_pre_existing_debt_min_chars", 40) or 40)
-    )
+    min_chars = max(10, int(cfg.get("implementation_pre_existing_debt_min_chars", 40) or 40))
     prose_ok = bool(cfg.get("implementation_pre_existing_prose_heuristic", True))
     doc = _resolve_follow_up_documentation(
         out,

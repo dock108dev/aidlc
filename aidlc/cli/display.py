@@ -68,9 +68,7 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
         print()
 
     if result.has_source_code:
-        print(
-            f"  {bold('Project:')} {result.project_type} {dim('(source code detected)')}"
-        )
+        print(f"  {bold('Project:')} {result.project_type} {dim('(source code detected)')}")
         print(
             f"    Tip: run {cyan('aidlc run --audit')} so the planner sees current state, "
             "not a stale snapshot"
@@ -94,6 +92,4 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
         print(f"  {bold('Status:')} {green('READY')} — BRAINDUMP.md present")
     else:
         print(f"  {bold('Status:')} {red('NOT READY')} — BRAINDUMP.md is required")
-        print(
-            f"    Create it (or run {cyan('aidlc init')}), then run {cyan('aidlc run')}."
-        )
+        print(f"    Create it (or run {cyan('aidlc init')}), then run {cyan('aidlc run')}.")

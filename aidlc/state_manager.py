@@ -39,16 +39,12 @@ class RunLock:
                         f"If this is stale, delete {self.lock_path}"
                     )
                 else:
-                    logging.getLogger("aidlc").warning(
-                        f"Cleaning up stale lock from PID {pid}"
-                    )
+                    logging.getLogger("aidlc").warning(f"Cleaning up stale lock from PID {pid}")
             except (ValueError, IndexError):
                 pass  # Corrupted lock file, overwrite it
 
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock_path.write_text(
-            f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}\n"
-        )
+        self.lock_path.write_text(f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}\n")
         _chmod_owner_only(self.lock_path)
 
     def release(self) -> None:
@@ -247,9 +243,7 @@ def mark_abandoned_if_stale(
     """
     if is_run_abandoned(state, threshold_seconds=threshold_seconds):
         state.status = RunStatus.ABANDONED
-        state.stop_reason = (
-            state.stop_reason or "abandoned (stale running/interrupted state)"
-        )
+        state.stop_reason = state.stop_reason or "abandoned (stale running/interrupted state)"
         save_state(state, run_dir)
         return True
     return False

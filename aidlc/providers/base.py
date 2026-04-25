@@ -120,9 +120,7 @@ class ProviderAdapter(ABC):
         while True:
             elapsed = time.time() - start
             remaining = max(0.0, timeout_limit - elapsed) if timeout_limit else None
-            wait_timeout = (
-                interval if remaining is None else min(interval, max(0.0, remaining))
-            )
+            wait_timeout = interval if remaining is None else min(interval, max(0.0, remaining))
 
             try:
                 stdout, stderr = proc.communicate(timeout=wait_timeout)

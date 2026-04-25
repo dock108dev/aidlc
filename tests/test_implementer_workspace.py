@@ -20,9 +20,7 @@ from aidlc.models import RunState
 
 
 def _git_init(repo: Path) -> None:
-    subprocess.run(
-        ["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True
-    )
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
         ["git", "config", "user.email", "t@example.com"],
         cwd=repo,
@@ -42,9 +40,7 @@ def git_repo(tmp_path: Path) -> Path:
     _git_init(tmp_path)
     (tmp_path / "README.md").write_text("init\n")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True
-    )
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
     return tmp_path
 
 
@@ -126,14 +122,10 @@ def test_git_commit_cycle_snapshot_with_changes(git_repo: Path):
     state = RunState(run_id="r1", config_name="default")
     logger = MagicMock()
     (git_repo / "x.txt").write_text("1")
-    assert (
-        git_commit_cycle_snapshot(git_repo, 2, logger, state, "cycle {cycle}") is True
-    )
+    assert git_commit_cycle_snapshot(git_repo, 2, logger, state, "cycle {cycle}") is True
 
 
-def test_git_commit_cycle_snapshot_nothing_to_commit_after_stage(
-    git_repo: Path, monkeypatch
-):
+def test_git_commit_cycle_snapshot_nothing_to_commit_after_stage(git_repo: Path, monkeypatch):
     state = RunState(run_id="r1", config_name="default")
     logger = MagicMock()
     (git_repo / "z.txt").write_text("1")
@@ -187,9 +179,7 @@ def test_prune_aidlc_data_removes_old_runs(git_repo: Path):
     (aidlc / "keep-me" / "f").write_text("a")
     (aidlc / "old-run" / "f").write_text("b")
     run_dir = aidlc / "keep-me"
-    prune_aidlc_data(
-        git_repo, run_dir, state, logger, runs_to_keep=1, keep_claude_outputs=5
-    )
+    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=1, keep_claude_outputs=5)
     assert (aidlc / "keep-me").exists()
     assert not (aidlc / "old-run").exists()
 
@@ -203,9 +193,7 @@ def test_prune_claude_outputs_trims_old_files(git_repo: Path):
         p = out / f"o{i}.txt"
         p.write_text(str(i))
     run_dir = git_repo / "run"
-    prune_aidlc_data(
-        git_repo, run_dir, state, logger, runs_to_keep=5, keep_claude_outputs=2
-    )
+    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=5, keep_claude_outputs=2)
     remaining = list(out.iterdir())
     assert len(remaining) <= 2
 

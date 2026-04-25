@@ -101,9 +101,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
         available = list_cycle_snapshots(run_dir)
         if not available:
-            print(
-                f"{_red('x')} No cycle snapshots found. Snapshots are created during planning."
-            )
+            print(f"{_red('x')} No cycle snapshots found. Snapshots are created during planning.")
             sys.exit(1)
 
         if revert_cycle not in available:
@@ -132,9 +130,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         _print_precheck(result, project_path, verbose=args.verbose)
         if not result.ready:
             print()
-            print(
-                f"  Fix the required items above, then run {_cyan('aidlc run')} again."
-            )
+            print(f"  Fix the required items above, then run {_cyan('aidlc run')} again.")
             sys.exit(1)
         print()
         print("  Starting lifecycle...")
@@ -160,14 +156,10 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     if config.get("runtime_profile") == "production":
         if skip_validation:
-            print(
-                f"{_red('x')} --skip-validation is disabled in runtime_profile=production."
-            )
+            print(f"{_red('x')} --skip-validation is disabled in runtime_profile=production.")
             sys.exit(1)
         if skip_finalize:
-            print(
-                f"{_red('x')} --skip-finalize is disabled in runtime_profile=production."
-            )
+            print(f"{_red('x')} --skip-finalize is disabled in runtime_profile=production.")
             sys.exit(1)
 
     run_full(

@@ -12,9 +12,7 @@ def test_detect_pytest_via_pytest_ini(tmp_path: Path):
 
 
 def test_detect_pytest_via_tests_dir(tmp_path: Path):
-    (tmp_path / "setup.py").write_text(
-        "from setuptools import setup\nsetup(name='x')\n"
-    )
+    (tmp_path / "setup.py").write_text("from setuptools import setup\nsetup(name='x')\n")
     d = tmp_path / "tests"
     d.mkdir()
     (d / "x.py").write_text("def test_x(): pass\n")

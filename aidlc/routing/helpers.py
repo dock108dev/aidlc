@@ -24,9 +24,7 @@ def get_claude_only_aliases() -> frozenset[str]:
     )
 
 
-def should_discard_model_override(
-    provider_id: str, model_override: Optional[str]
-) -> bool:
+def should_discard_model_override(provider_id: str, model_override: Optional[str]) -> bool:
     """Check if model_override should be discarded for this provider.
 
     Claude-specific aliases like 'sonnet' should not be passed to copilot/openai.

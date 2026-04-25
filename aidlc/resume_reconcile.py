@@ -7,9 +7,7 @@ from pathlib import Path
 
 from .models import Issue, IssueStatus, RunState
 
-_RECONCILE_NOTE = (
-    "[aidlc resume] Auto-implemented (issue id found in repo outside .aidlc/)."
-)
+_RECONCILE_NOTE = "[aidlc resume] Auto-implemented (issue id found in repo outside .aidlc/)."
 
 
 def _git_repo_root(project_root: Path) -> Path | None:

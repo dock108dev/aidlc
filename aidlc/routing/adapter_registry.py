@@ -10,9 +10,7 @@ from ..providers.copilot_adapter import CopilotAdapter
 from ..providers.openai_adapter import OpenAIAdapter
 
 
-def build_provider_adapters(
-    config: dict, logger: logging.Logger
-) -> dict[str, ProviderAdapter]:
+def build_provider_adapters(config: dict, logger: logging.Logger) -> dict[str, ProviderAdapter]:
     """Instantiate all configured provider adapters (respects ``enabled`` flags)."""
     providers_cfg = config.get("providers", {})
     adapters: dict[str, ProviderAdapter] = {}

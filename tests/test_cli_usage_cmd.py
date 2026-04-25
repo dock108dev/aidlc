@@ -104,9 +104,7 @@ def test_cmd_usage_invalid_since(tmp_path, monkeypatch):
     runs = tmp_path / ".aidlc" / "runs"
     runs.mkdir(parents=True)
     _write_run(tmp_path, "r5")
-    args = argparse.Namespace(
-        project=str(tmp_path), by="provider", last=1, since="not-a-date"
-    )
+    args = argparse.Namespace(project=str(tmp_path), by="provider", last=1, since="not-a-date")
     monkeypatch.setattr(sys, "exit", lambda c: (_ for _ in ()).throw(SystemExit(c)))
     with pytest.raises(SystemExit):
         cmd_usage(args, "0.0.0")
@@ -116,9 +114,7 @@ def test_cmd_usage_no_matching_runs_after_since(tmp_path, capsys):
     runs = tmp_path / ".aidlc" / "runs"
     runs.mkdir(parents=True)
     _write_run(tmp_path, "old")
-    args = argparse.Namespace(
-        project=str(tmp_path), by="provider", last=10, since="2099-01-01"
-    )
+    args = argparse.Namespace(project=str(tmp_path), by="provider", last=10, since="2099-01-01")
     cmd_usage(args, "0.0.0")
     assert "No matching" in capsys.readouterr().out
 
@@ -140,9 +136,7 @@ def test_accumulate_usage_creates_and_merges():
         "a",
         {"calls": 1, "calls_succeeded": 1, "input_tokens": 1, "output_tokens": 1},
     )
-    _accumulate_usage(
-        t, "a", {"calls": 1, "succeeded": 1, "input_tokens": 2, "output_tokens": 0}
-    )
+    _accumulate_usage(t, "a", {"calls": 1, "succeeded": 1, "input_tokens": 2, "output_tokens": 0})
     assert t["a"]["calls"] == 2
     assert t["a"]["input_tokens"] == 3
 

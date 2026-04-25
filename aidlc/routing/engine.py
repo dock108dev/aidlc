@@ -65,9 +65,7 @@ class ProviderRouter:
             self._rate_limit_buffer_base_seconds = max(0, int(_buf))
         self._rate_limit_backoff_step: dict[tuple[str, str], int] = {}
 
-        self._adapters: dict[str, ProviderAdapter] = build_provider_adapters(
-            config, logger
-        )
+        self._adapters: dict[str, ProviderAdapter] = build_provider_adapters(config, logger)
 
         # Import account manager lazily to avoid circular deps
         self._account_manager = None
@@ -84,9 +82,7 @@ class ProviderRouter:
         import time as _time
 
         _rng = _random.Random(int(_time.time() / 60))  # changes each minute
-        enabled_budget = [
-            p for p in helpers.get_budget_providers() if p in self._adapters
-        ]
+        enabled_budget = [p for p in helpers.get_budget_providers() if p in self._adapters]
         self._session_budget_provider: str | None = (
             _rng.choice(enabled_budget) if enabled_budget else None
         )
@@ -144,9 +140,7 @@ class ProviderRouter:
                 if decision.provider_id in excluded_providers:
                     break
 
-                if self._model_is_on_cooldown(
-                    decision.provider_id, decision.model, now
-                ):
+                if self._model_is_on_cooldown(decision.provider_id, decision.model, now):
                     excluded_models.add((decision.provider_id, decision.model))
                     excluded_providers.add(decision.provider_id)
                     rate_limited_models.append((decision.provider_id, decision.model))
@@ -184,12 +178,8 @@ class ProviderRouter:
                 }
 
                 # Track usage pressure for Balanced mode
-                tokens_used = (
-                    sum(result.get("usage", {}).values()) if result.get("usage") else 0
-                )
-                self._usage.record(
-                    decision.provider_id, decision.account_id, tokens_used
-                )
+                tokens_used = sum(result.get("usage", {}).values()) if result.get("usage") else 0
+                self._usage.record(decision.provider_id, decision.account_id, tokens_used)
 
                 # Update account last_used
                 if decision.account_id and self._account_manager:
@@ -200,12 +190,8 @@ class ProviderRouter:
 
                 if result.get("success"):
                     self._provider_cooldowns.pop(decision.provider_id, None)
-                    self._model_cooldowns.pop(
-                        (decision.provider_id, decision.model), None
-                    )
-                    self._rate_limit_backoff_step.pop(
-                        (decision.provider_id, decision.model), None
-                    )
+                    self._model_cooldowns.pop((decision.provider_id, decision.model), None)
+                    self._rate_limit_backoff_step.pop((decision.provider_id, decision.model), None)
                     return result
 
                 if result_signals.is_token_exhaustion_result(result):
@@ -266,9 +252,7 @@ class ProviderRouter:
                         )
                     if restore_at is not None:
                         self._provider_cooldowns[decision.provider_id] = restore_at
-                        self._model_cooldowns[
-                            (decision.provider_id, decision.model)
-                        ] = restore_at
+                        self._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
                         restore_text = datetime.fromtimestamp(restore_at).isoformat(
                             timespec="seconds"
                         )
@@ -290,9 +274,7 @@ class ProviderRouter:
             if exhausted_providers:
                 providers = ", ".join(dict.fromkeys(exhausted_providers))
                 attempted_chain = self._format_attempted_chain(excluded_models)
-                chain_suffix = (
-                    f" (attempted: {attempted_chain})" if attempted_chain else ""
-                )
+                chain_suffix = f" (attempted: {attempted_chain})" if attempted_chain else ""
                 self.logger.warning(
                     f"[routing] {effective_phase}: stopping — all providers exhausted: "
                     f"{providers}{chain_suffix}"
@@ -329,8 +311,7 @@ class ProviderRouter:
             if rate_limited_models:
                 unique_models = list(dict.fromkeys(rate_limited_models))
                 providers = ", ".join(
-                    f"{provider}/{model or 'default'}"
-                    for provider, model in unique_models
+                    f"{provider}/{model or 'default'}" for provider, model in unique_models
                 )
                 next_restore = self._next_model_restore_time()
                 if next_restore is not None:
@@ -484,9 +465,7 @@ class ProviderRouter:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _tier_aware_provider_order(
-        self, phase: str, complexity_level: str
-    ) -> list[str]:
+    def _tier_aware_provider_order(self, phase: str, complexity_level: str) -> list[str]:
         """Return provider IDs: implementation defaults to max-capacity first, with a
         configurable random chance to try budget CLIs first; other phases use weighted-fair.
         """
@@ -501,9 +480,7 @@ class ProviderRouter:
 
     def _budget_provider_order(self, enabled: set[str]) -> list[str]:
         """Order budget providers by within-run usage pressure."""
-        return context.budget_provider_order(
-            self._usage, self._session_budget_provider, enabled
-        )
+        return context.budget_provider_order(self._usage, self._session_budget_provider, enabled)
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
         """Return Account objects for a provider if AccountManager is available."""
@@ -516,9 +493,7 @@ class ProviderRouter:
         is_quality_phase: bool,
     ) -> tuple[str | None, str]:
         """Select the best account for a provider given current conditions."""
-        return context.select_account(
-            self._usage, accounts, provider_id, is_quality_phase
-        )
+        return context.select_account(self._usage, accounts, provider_id, is_quality_phase)
 
     def _resolve_model_for_phase(
         self,
@@ -527,9 +502,7 @@ class ProviderRouter:
         complexity_level: str,
     ) -> str:
         """Resolve model string for a given phase and complexity."""
-        return context.resolve_model_for_phase(
-            self.config, adapter, phase, complexity_level
-        )
+        return context.resolve_model_for_phase(self.config, adapter, phase, complexity_level)
 
     def _fallback_decision(
         self,
@@ -582,9 +555,7 @@ class ProviderRouter:
         if reported is not None:
             restore_at = reported + buf_seconds
         else:
-            restore_at = now + max(
-                buf_seconds, float(self._rate_limit_cooldown_seconds)
-            )
+            restore_at = now + max(buf_seconds, float(self._rate_limit_cooldown_seconds))
 
         if restore_at <= now:
             restore_at = now + 1.0
@@ -600,10 +571,7 @@ class ProviderRouter:
                 f"using {decision.provider_id}/{decision.model}"
             )
         elif decision.quality_note:
-            if (
-                "reduced" in decision.quality_note
-                or "unavailable" in decision.quality_note
-            ):
+            if "reduced" in decision.quality_note or "unavailable" in decision.quality_note:
                 self.logger.warning(f"[routing] {decision.quality_note}")
             else:
                 self.logger.info(f"[routing] {decision.quality_note}")
@@ -624,9 +592,7 @@ class ProviderRouter:
         provider-exclusion branch.
         """
         providers_cfg = self.config.get("providers", {})
-        provider_cfg = (
-            providers_cfg.get(provider_id) if isinstance(providers_cfg, dict) else None
-        )
+        provider_cfg = providers_cfg.get(provider_id) if isinstance(providers_cfg, dict) else None
         if not isinstance(provider_cfg, dict):
             return None
         chain = provider_cfg.get("model_fallback_chain") or []
@@ -663,13 +629,9 @@ class ProviderRouter:
         by_provider: dict[str, list[str]] = {}
         for provider_id, model in sorted(excluded_models):
             by_provider.setdefault(provider_id, []).append(model)
-        return "; ".join(
-            f"{pid}=[{', '.join(models)}]" for pid, models in by_provider.items()
-        )
+        return "; ".join(f"{pid}=[{', '.join(models)}]" for pid, models in by_provider.items())
 
-    def _provider_is_on_cooldown(
-        self, provider_id: str, now: float | None = None
-    ) -> bool:
+    def _provider_is_on_cooldown(self, provider_id: str, now: float | None = None) -> bool:
         """Return True when a provider is temporarily excluded after rate limiting."""
         expiry = self._provider_cooldowns.get(provider_id)
         if not expiry:
@@ -680,9 +642,7 @@ class ProviderRouter:
         self._provider_cooldowns.pop(provider_id, None)
         return False
 
-    def _model_is_on_cooldown(
-        self, provider_id: str, model: str, now: float | None = None
-    ) -> bool:
+    def _model_is_on_cooldown(self, provider_id: str, model: str, now: float | None = None) -> bool:
         """Return True when a model is temporarily excluded after rate limiting."""
         key = (provider_id, model)
         expiry = self._model_cooldowns.get(key)

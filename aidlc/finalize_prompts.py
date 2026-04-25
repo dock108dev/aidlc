@@ -95,9 +95,7 @@ Make the deletions in-place. Write the destruction log to
 - Sanity check: no dangling references to deleted symbols
 
 Do not commit.
-""" + ACTIONABILITY_CONTRACT.replace(
-    "{report_filename}", "ssot-report.md"
-)
+""" + ACTIONABILITY_CONTRACT.replace("{report_filename}", "ssot-report.md")
 
 
 SECURITY_PROMPT = """\
@@ -146,9 +144,7 @@ Make safe hardening changes in-place. Write the audit to
 - Remediation roadmap for the rest, prioritized by exposure
 
 Do not commit.
-""" + ACTIONABILITY_CONTRACT.replace(
-    "{report_filename}", "security-report.md"
-)
+""" + ACTIONABILITY_CONTRACT.replace("{report_filename}", "security-report.md")
 
 
 ABEND_PROMPT = """\
@@ -208,9 +204,7 @@ Make tightening changes in-place. Write the audit to
 - Final verdict: "Prod posture acceptable" or "Notable risk areas"
 
 Do not commit.
-""" + ACTIONABILITY_CONTRACT.replace(
-    "{report_filename}", "error-handling-report.md"
-)
+""" + ACTIONABILITY_CONTRACT.replace("{report_filename}", "error-handling-report.md")
 
 
 CLEANUP_PROMPT = """\
@@ -251,9 +245,7 @@ Make the cleanup changes in-place. Write the report to
 - Consistency changes made (one-line per file)
 
 Do not commit.
-""" + ACTIONABILITY_CONTRACT.replace(
-    "{report_filename}", "cleanup-report.md"
-)
+""" + ACTIONABILITY_CONTRACT.replace("{report_filename}", "cleanup-report.md")
 
 
 DOCS_PROMPT = """\
@@ -297,9 +289,7 @@ Rewrite docs in-place; delete obsolete docs. Write the change log to
 - Intentional doc gaps left for future work (with reason)
 
 Do not commit.
-""" + ACTIONABILITY_CONTRACT.replace(
-    "{report_filename}", "docs-consolidation.md"
-)
+""" + ACTIONABILITY_CONTRACT.replace("{report_filename}", "docs-consolidation.md")
 
 
 FUTURES_TEMPLATE = """\

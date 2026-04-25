@@ -235,8 +235,7 @@ class TestSortIssues:
         deps = {d["id"]: d.get("dependencies", []) for d in state.issues}
         # At least one edge must be removed to break the cycle.
         assert not (
-            "ISSUE-001" in deps.get("ISSUE-002", [])
-            and "ISSUE-002" in deps.get("ISSUE-001", [])
+            "ISSUE-001" in deps.get("ISSUE-002", []) and "ISSUE-002" in deps.get("ISSUE-001", [])
         )
 
 
@@ -330,9 +329,7 @@ class TestBuildImplementationPrompt:
         issue = Issue(id="ISSUE-001", title="T", description="D")
         prompt = impl._build_implementation_prompt(issue)
         # The context portion should be truncated to ~100 chars
-        assert (
-            prompt.count("x") <= 120
-        )  # Allow overhead from formatting + instruction text
+        assert prompt.count("x") <= 120  # Allow overhead from formatting + instruction text
 
 
 class TestGetChangedFiles:

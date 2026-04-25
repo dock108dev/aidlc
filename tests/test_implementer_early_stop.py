@@ -76,15 +76,11 @@ def _exhausted_cli():
 
 
 @patch("aidlc.finalizer.Finalizer")
-def test_default_does_not_auto_run_finalize_on_early_stop(
-    mock_finalizer_cls, logger, tmp_path
-):
+def test_default_does_not_auto_run_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path):
     """ISSUE-009: by default, hitting token exhaustion does NOT trigger
     finalization passes — burning more budget at the moment we want to stop
     cleanly is the wrong default."""
-    config = _config(
-        tmp_path
-    )  # default: implementation_finalize_on_early_stop is False
+    config = _config(tmp_path)  # default: implementation_finalize_on_early_stop is False
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
     run_dir.mkdir()

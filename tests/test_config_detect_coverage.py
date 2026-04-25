@@ -112,17 +112,13 @@ def test_describe_detected_all_lines():
 
 
 def test_detect_lint_from_package_json_lint_script(tmp_path):
-    (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"lint": "eslint ."}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"lint": "eslint ."}}))
     out = detect_config(tmp_path)
     assert out.get("lint_command") == "npm run lint"
 
 
 def test_detect_lint_lint_fix_when_no_lint(tmp_path):
-    (tmp_path / "package.json").write_text(
-        json.dumps({"scripts": {"lint:fix": "eslint --fix ."}})
-    )
+    (tmp_path / "package.json").write_text(json.dumps({"scripts": {"lint:fix": "eslint --fix ."}}))
     out = detect_config(tmp_path)
     assert out.get("lint_command") == "npm run lint:fix"
 

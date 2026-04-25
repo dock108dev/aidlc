@@ -167,10 +167,7 @@ Done already.
         scanner = ProjectScanner(project, config)
         result = scanner.scan()
         assert "python" in result["project_type"]
-        assert (
-            "javascript" in result["project_type"]
-            or "typescript" in result["project_type"]
-        )
+        assert "javascript" in result["project_type"] or "typescript" in result["project_type"]
 
     def test_unknown_project_type(self, tmp_path, config):
         (tmp_path / "README.md").write_text("# Unknown")

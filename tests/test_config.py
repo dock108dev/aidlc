@@ -67,9 +67,7 @@ class TestLoadConfig:
 
     def test_missing_config_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="Config not found"):
-            load_config(
-                config_path="/nonexistent/path.json", project_root=str(tmp_path)
-            )
+            load_config(config_path="/nonexistent/path.json", project_root=str(tmp_path))
 
     def test_defaults_include_new_keys(self):
         """Verify all expected config keys exist in DEFAULTS."""
@@ -183,9 +181,7 @@ class TestLoadConfig:
     def test_production_profile_applies_strict_defaults(self, tmp_path):
         aidlc_dir = tmp_path / ".aidlc"
         aidlc_dir.mkdir()
-        (aidlc_dir / "config.json").write_text(
-            json.dumps({"runtime_profile": "production"})
-        )
+        (aidlc_dir / "config.json").write_text(json.dumps({"runtime_profile": "production"}))
         config = load_config(project_root=str(tmp_path))
         assert config["strict_validation"] is True
         assert config["validation_allow_no_tests"] is False

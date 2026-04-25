@@ -168,9 +168,7 @@ class TestPlanner:
         updated = state.get_issue("ISSUE-001")
         assert updated.description == "Updated description"
 
-    def test_apply_update_issue_can_clear_dependencies(
-        self, state, config, cli, logger, tmp_path
-    ):
+    def test_apply_update_issue_can_clear_dependencies(self, state, config, cli, logger, tmp_path):
         from aidlc.schemas import PlanningAction
 
         run_dir = tmp_path / "run"
@@ -254,8 +252,7 @@ class TestPlanner:
         assert "ISSUE-999" not in deps["ISSUE-001"]
         assert deps["ISSUE-001"].count("ISSUE-002") <= 1
         assert not (
-            "ISSUE-002" in deps.get("ISSUE-001", [])
-            and "ISSUE-001" in deps.get("ISSUE-002", [])
+            "ISSUE-002" in deps.get("ISSUE-001", []) and "ISSUE-001" in deps.get("ISSUE-002", [])
         )
 
     def test_create_doc_action_type_rejected(self):
@@ -289,9 +286,7 @@ class TestPlanner:
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
 
-    def test_planning_complete_ignored_when_not_offered(
-        self, state, config, logger, tmp_path
-    ):
+    def test_planning_complete_ignored_when_not_offered(self, state, config, logger, tmp_path):
         """Claude's planning_complete is ignored until the system offers it."""
         cli = MagicMock()
         complete_response = json.dumps(
@@ -350,9 +345,7 @@ class TestPlanner:
                 "size": 1440,
             },
         ]
-        planner = Planner(
-            state, run_dir, config, cli, "context", logger, doc_files=doc_files
-        )
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should NOT exit on cycle 1 — completion not offered yet
         assert state.planning_cycles > 1
@@ -362,9 +355,7 @@ class TestPlanner:
         )
         assert "complete" in (state.stop_reason or "").lower()
 
-    def test_planning_complete_deferred_until_winding_down(
-        self, state, config, logger, tmp_path
-    ):
+    def test_planning_complete_deferred_until_winding_down(self, state, config, logger, tmp_path):
         """Claude's planning_complete is deferred — only honored after winding down confirmed."""
         cli = MagicMock()
         # Cycle 1: creates an issue (not winding down yet)
@@ -479,9 +470,7 @@ class TestPlanner:
                 "size": 1440,
             },
         ]
-        planner = Planner(
-            state, run_dir, config, cli, "context", logger, doc_files=doc_files
-        )
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # Should run: 1 create + 3 updates (triggers offer) + 1 complete = 5 cycles
         # But cycle 5 returns empty actions + planning_complete -> frontier clear
@@ -558,9 +547,7 @@ class TestPlanner:
                 "size": 1440,
             },
         ]
-        planner = Planner(
-            state, run_dir, config, cli, "context", logger, doc_files=doc_files
-        )
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         # 3 cycles to detect winding down + offer, then 2 more before force exit = 5
         assert state.planning_cycles == 5
@@ -634,9 +621,7 @@ class TestPlanner:
                 "size": 1440,
             },
         ]
-        planner = Planner(
-            state, run_dir, config, cli, "context", logger, doc_files=doc_files
-        )
+        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
         assert state.planning_cycles == 4
         assert "no new issues" in (state.stop_reason or "").lower()

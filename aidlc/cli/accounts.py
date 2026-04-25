@@ -40,9 +40,7 @@ def list_accounts(manager: AccountManager) -> None:
     if not accounts:
         print("  No accounts registered.")
         print()
-        print(
-            f"  Add one with: {cyan('aidlc accounts add --provider claude --id my-account')}"
-        )
+        print(f"  Add one with: {cyan('aidlc accounts add --provider claude --id my-account')}")
         return
 
     print(f"  {bold('Registered Accounts')} ({len(accounts)} total)")
@@ -53,15 +51,12 @@ def list_accounts(manager: AccountManager) -> None:
             if acc.health_status == "healthy"
             else (
                 yellow("●")
-                if acc.health_status
-                in ("limited", "rate_limited", "unknown", "unchecked")
+                if acc.health_status in ("limited", "rate_limited", "unknown", "unchecked")
                 else red("●")
             )
         )
         auth_label = (
-            acc.auth_state.value
-            if hasattr(acc.auth_state, "value")
-            else str(acc.auth_state)
+            acc.auth_state.value if hasattr(acc.auth_state, "value") else str(acc.auth_state)
         )
         enabled_label = green("enabled") if acc.enabled else dim("disabled")
         tier = (
@@ -73,9 +68,7 @@ def list_accounts(manager: AccountManager) -> None:
         print(f"  {health_icon} {bold(acc.account_id)}")
         print(f"     Provider:  {acc.provider_id}")
         print(f"     Name:      {acc.display_name or dim('(unnamed)')}")
-        print(
-            f"     Status:    {enabled_label}  auth={auth_label}  health={acc.health_status}"
-        )
+        print(f"     Status:    {enabled_label}  auth={auth_label}  health={acc.health_status}")
         print(f"     Tier:      {tier}")
         print(f"     Tags:      {tags}")
         if acc.last_validated:
@@ -99,11 +92,7 @@ def add_account(args: argparse.Namespace, manager: AccountManager) -> None:
         tier = MembershipTier.UNKNOWN
 
     tags_str = getattr(args, "tags", "") or ""
-    tags = (
-        [t.strip() for t in tags_str.split(",") if t.strip()]
-        if tags_str
-        else ["primary"]
-    )
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else ["primary"]
 
     account = Account(
         account_id=account_id,
@@ -115,12 +104,8 @@ def add_account(args: argparse.Namespace, manager: AccountManager) -> None:
     )
     try:
         manager.add(account)
-        print(
-            f"{green('+')} Account '{account_id}' added ({provider_id}, tier={tier_str})"
-        )
-        print(
-            f"  Run {cyan(f'aidlc accounts validate --id {account_id}')} to check health."
-        )
+        print(f"{green('+')} Account '{account_id}' added ({provider_id}, tier={tier_str})")
+        print(f"  Run {cyan(f'aidlc accounts validate --id {account_id}')} to check health.")
     except ValueError as e:
         print(f"{red('x')} {e}")
         sys.exit(1)
@@ -177,6 +162,4 @@ def validate_account(args: argparse.Namespace, manager: AccountManager) -> None:
             adapter = router._adapters.get(acc.provider_id)
             updated = manager.validate(acc.account_id, adapter=adapter)
             icon = green("v") if updated.health_status == "healthy" else yellow("!")
-            print(
-                f"  [{icon}] {acc.account_id} ({acc.provider_id}): {updated.health_status}"
-            )
+            print(f"  [{icon}] {acc.account_id} ({acc.provider_id}): {updated.health_status}")

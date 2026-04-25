@@ -28,9 +28,7 @@ class RuntimeAuditEngine:
 
     def run_runtime_checks(self, project_type: str) -> dict:
         """Execute build/unit/integration/e2e checks and summarize results."""
-        profile = detect_test_profile(
-            self.project_root, project_type or "unknown", self.config
-        )
+        profile = detect_test_profile(self.project_root, project_type or "unknown", self.config)
         timeout = int(self.config.get("audit_runtime_timeout_seconds", 600))
 
         tier_results = []
@@ -67,16 +65,10 @@ class RuntimeAuditEngine:
             if is_playwright:
                 playwright_passed = passed
 
-        overall_passed = (
-            all(item["passed"] for item in tier_results) if tier_results else True
-        )
-        build_result = next(
-            (item for item in tier_results if item["tier"] == "build"), None
-        )
+        overall_passed = all(item["passed"] for item in tier_results) if tier_results else True
+        build_result = next((item for item in tier_results if item["tier"] == "build"), None)
         build_health = (
-            "healthy"
-            if (build_result is None or build_result["passed"])
-            else "unhealthy"
+            "healthy" if (build_result is None or build_result["passed"]) else "unhealthy"
         )
 
         coverage_percent = max(coverage_values) if coverage_values else None
@@ -123,9 +115,7 @@ class RuntimeAuditEngine:
             output = (result.stdout or "") + "\n" + (result.stderr or "")
             return result.returncode == 0, output, time.time() - start
         except subprocess.TimeoutExpired:
-            self.logger.warning(
-                f"Runtime audit command timed out after {timeout}s: {command}"
-            )
+            self.logger.warning(f"Runtime audit command timed out after {timeout}s: {command}")
             return False, "Command timed out", time.time() - start
         except FileNotFoundError:
             self.logger.warning(f"Runtime audit command not found: {command}")

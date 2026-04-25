@@ -34,6 +34,13 @@ pipx install --editable '/path/to/aidlc/checkout[dev]'
 - **Python:** 3.11+
 - **Providers:** Configure Claude CLI, OpenAI Codex CLI, GitHub Copilot CLI, etc. per the **target repo’s** `.aidlc/config.json` (see [docs/configuration.md](docs/configuration.md)). Use `dry_run: true` or `--dry-run` to exercise flows without calling a provider.
 
+## Lint and format
+
+```bash
+make lint    # check-only: ruff lint + ruff format --check (same as CI)
+make format  # write formatting changes to aidlc/ and tests/
+```
+
 ## Documentation
 
 All guides and reference material (commands, config, auditing, coverage, deployment) are in **`[docs/](docs/README.md)`**. Start at the **[documentation index](docs/README.md)**.

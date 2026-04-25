@@ -218,12 +218,8 @@ class OpenAIAdapter(ProviderAdapter):
         account_id: str | None = None,
     ) -> dict:
         if self.dry_run:
-            self.logger.info(
-                f"[DRY RUN] OpenAI prompt ({len(prompt)} chars) in {working_dir}"
-            )
-            return self._dry_run_result(
-                model_override or self.default_model, account_id
-            )
+            self.logger.info(f"[DRY RUN] OpenAI prompt ({len(prompt)} chars) in {working_dir}")
+            return self._dry_run_result(model_override or self.default_model, account_id)
 
         model = model_override or self.default_model
 
@@ -287,9 +283,7 @@ class OpenAIAdapter(ProviderAdapter):
                     "account_id": account_id,
                 }
             else:
-                diagnostic = _extract_codex_failure_diagnostics(
-                    stderr or "", stdout or ""
-                )
+                diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
                 if not diagnostic:
                     diagnostic = "OpenAI CLI returned non-zero exit code"
                 failure_type = _classify_openai_cli_failure(diagnostic)

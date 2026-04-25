@@ -44,9 +44,7 @@ def _args(**kw):
 @patch("aidlc.precheck.run_precheck")
 @patch("aidlc.cli_commands._print_precheck")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_precheck_ready(
-    mock_banner, mock_pp, mock_rp, mock_exit, version, tmp_path, capsys
-):
+def test_cmd_precheck_ready(mock_banner, mock_pp, mock_rp, mock_exit, version, tmp_path, capsys):
     ready = MagicMock()
     ready.ready = True
     mock_rp.return_value = ready
@@ -71,9 +69,7 @@ def test_cmd_precheck_not_ready_exits(
 @patch("aidlc.cli_commands._get_template_dir")
 @patch("aidlc.cli_commands.write_default_config")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_init_scaffolds_braindump(
-    mock_banner, mock_wdc, mock_tpl, version, tmp_path
-):
+def test_cmd_init_scaffolds_braindump(mock_banner, mock_wdc, mock_tpl, version, tmp_path):
     """init scaffolds .aidlc/ + BRAINDUMP.md — the only required doc."""
     template_dir = tmp_path / "tpl"
     template_dir.mkdir()
@@ -176,9 +172,7 @@ def test_cmd_status_no_runs_dir(mock_banner, version, tmp_path, capsys):
 
 @patch("aidlc.cli_commands.find_latest_run")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_status_shows_issues_and_audit(
-    mock_banner, mock_find, version, tmp_path, capsys
-):
+def test_cmd_status_shows_issues_and_audit(mock_banner, mock_find, version, tmp_path, capsys):
     runs = tmp_path / ".aidlc" / "runs"
     run_dir = runs / "r2"
     run_dir.mkdir(parents=True)

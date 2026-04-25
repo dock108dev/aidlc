@@ -7,9 +7,7 @@ def is_all_models_token_exhausted(result: dict) -> bool:
     failure_type = str(result.get("failure_type") or "").lower()
     if failure_type == "token_exhausted_all_models":
         return True
-    message = "\n".join(
-        [str(result.get("error") or ""), str(result.get("output") or "")]
-    ).lower()
+    message = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).lower()
     return "all available providers/models" in message and "token" in message
 
 
@@ -23,9 +21,7 @@ def is_no_models_available(result: dict) -> bool:
         "no_models_available",
     }:
         return True
-    message = "\n".join(
-        [str(result.get("error") or ""), str(result.get("output") or "")]
-    ).lower()
+    message = "\n".join([str(result.get("error") or ""), str(result.get("output") or "")]).lower()
     return any(
         phrase in message
         for phrase in (

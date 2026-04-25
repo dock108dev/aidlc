@@ -135,8 +135,7 @@ def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
     ]
     cli = MagicMock()
     doc_files = [
-        {"path": f"extra{i}.md", "content": "c", "size": 1, "priority": 2}
-        for i in range(35)
+        {"path": f"extra{i}.md", "content": "c", "size": 1, "priority": 2} for i in range(35)
     ]
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_files=doc_files)
     path = write_planning_index(planner)
@@ -161,9 +160,7 @@ def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
     cli = MagicMock()
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_gaps=gaps)
     planner._offer_completion = True
-    with patch(
-        "aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"
-    ):
+    with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
         prompt = build_prompt(planner, is_finalization=False)
     assert "Critical Doc Gaps" in prompt
     assert "non-critical" in prompt

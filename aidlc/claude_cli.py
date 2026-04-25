@@ -200,13 +200,9 @@ class ClaudeCLI:
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
 
-        warn_interval = max(
-            1, int(self.config.get("claude_long_run_warn_seconds", 300))
-        )
+        warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
         hard_timeout_raw = self.config.get("claude_hard_timeout_seconds", 0)
-        hard_timeout = max(
-            0, int(hard_timeout_raw if hard_timeout_raw is not None else 0)
-        )
+        hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 0))
         stall_warn_raw = self.config.get("claude_stall_warn_seconds", 300)
         stall_warn = max(0, int(stall_warn_raw if stall_warn_raw is not None else 0))
         stall_kill_raw = self.config.get("claude_stall_kill_seconds", 0)
@@ -236,9 +232,7 @@ class ClaudeCLI:
                         f"{attempt} (elapsed={outage_elapsed:.0f}s, remaining={outage_remaining:.0f}s)"
                     )
                 else:
-                    self.logger.debug(
-                        f"Claude CLI attempt {attempt}/{self.max_retries + 1}"
-                    )
+                    self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
                 # Run without a default time-based timeout — let Claude finish.
                 # Background reader threads stamp last-activity on every stream
@@ -391,9 +385,7 @@ class ClaudeCLI:
                     last_failure_type = failure_type
                     stderr_snippet = _compact_text(stderr_text, 320)
                     stdout_snippet = _compact_text(stdout_text, 320)
-                    reason_snippet = (
-                        stderr_snippet or stdout_snippet or "no stderr/stdout captured"
-                    )
+                    reason_snippet = stderr_snippet or stdout_snippet or "no stderr/stdout captured"
                     last_error = reason_snippet[:500]
                     last_duration = duration
                     self.logger.warning(
@@ -421,9 +413,7 @@ class ClaudeCLI:
                                 f"({outage_max_wait:.0f}s)."
                             )
                             break
-                        delay = min(
-                            self._retry_delay(outage_retry_attempt), outage_remaining
-                        )
+                        delay = min(self._retry_delay(outage_retry_attempt), outage_remaining)
                         outage_retry_attempt += 1
                         self.logger.info(
                             "Retrying Claude CLI "
@@ -545,14 +535,10 @@ class ClaudeCLI:
                 "cache_creation_input_tokens": int(
                     parsed_usage.get("cache_creation_input_tokens", 0) or 0
                 ),
-                "cache_read_input_tokens": int(
-                    parsed_usage.get("cache_read_input_tokens", 0) or 0
-                ),
+                "cache_read_input_tokens": int(parsed_usage.get("cache_read_input_tokens", 0) or 0),
                 "web_search_requests": int(
                     (
-                        (parsed_usage.get("server_tool_use") or {}).get(
-                            "web_search_requests", 0
-                        )
+                        (parsed_usage.get("server_tool_use") or {}).get("web_search_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_search_requests", 0)
                     )
@@ -560,9 +546,7 @@ class ClaudeCLI:
                 ),
                 "web_fetch_requests": int(
                     (
-                        (parsed_usage.get("server_tool_use") or {}).get(
-                            "web_fetch_requests", 0
-                        )
+                        (parsed_usage.get("server_tool_use") or {}).get("web_fetch_requests", 0)
                         if isinstance(parsed_usage.get("server_tool_use"), dict)
                         else parsed_usage.get("web_fetch_requests", 0)
                     )

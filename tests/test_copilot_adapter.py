@@ -68,11 +68,7 @@ def test_passes_explicit_model_when_configured(mock_popen, tmp_path):
 
 def test_returns_empty_default_model_when_unset():
     adapter = CopilotAdapter(
-        {
-            "providers": {
-                "copilot": {"default_model": "", "phase_models": {"planning": ""}}
-            }
-        },
+        {"providers": {"copilot": {"default_model": "", "phase_models": {"planning": ""}}}},
         logging.getLogger("test.copilot"),
     )
 

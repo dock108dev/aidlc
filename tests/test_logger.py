@@ -30,8 +30,7 @@ class TestSetupLogger:
         console_handlers = [
             h
             for h in logger.handlers
-            if isinstance(h, logging.StreamHandler)
-            and not isinstance(h, logging.FileHandler)
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1
         assert console_handlers[0].level == logging.DEBUG
@@ -41,8 +40,7 @@ class TestSetupLogger:
         console_handlers = [
             h
             for h in logger.handlers
-            if isinstance(h, logging.StreamHandler)
-            and not isinstance(h, logging.FileHandler)
+            if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
         ]
         assert len(console_handlers) == 1
         assert console_handlers[0].level == logging.INFO

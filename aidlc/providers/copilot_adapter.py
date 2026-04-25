@@ -56,9 +56,7 @@ def _parse_copilot_usage_blob(blob: str) -> dict:
 
     # 3) Slash form: 1,000 in / 2,000 out
     if inp == 0 and out == 0:
-        m2 = re.search(
-            r"(?i)(\d[\d,_]*)\s*(?:input|in)\s*/\s*(\d[\d,_]*)\s*(?:output|out)", blob
-        )
+        m2 = re.search(r"(?i)(\d[\d,_]*)\s*(?:input|in)\s*/\s*(\d[\d,_]*)\s*(?:output|out)", blob)
         if m2:
             inp = _parse_int_loose(m2.group(1))
             out = _parse_int_loose(m2.group(2))
@@ -75,9 +73,7 @@ def _parse_copilot_usage_blob(blob: str) -> dict:
 
     # 5) Fallback: lines with "input/output/total" token labels
     if inp == 0 and out == 0:
-        nums = re.findall(
-            r"(?i)(?:input|output|total)\s*tokens?\s*[:=]\s*([\d,_]+)", blob
-        )
+        nums = re.findall(r"(?i)(?:input|output|total)\s*tokens?\s*[:=]\s*([\d,_]+)", blob)
         if len(nums) >= 2:
             inp = _parse_int_loose(nums[0])
             out = _parse_int_loose(nums[1])
@@ -127,9 +123,7 @@ class CopilotAdapter(ProviderAdapter):
         super().__init__(config, logger)
         provider_cfg = self._provider_config()
         self.cli_command = provider_cfg.get("cli_command", "copilot")
-        self.default_model = str(
-            provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL) or ""
-        )
+        self.default_model = str(provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL) or "")
         self.dry_run = config.get("dry_run", False)
         self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
         self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
@@ -149,12 +143,8 @@ class CopilotAdapter(ProviderAdapter):
         account_id: str | None = None,
     ) -> dict:
         if self.dry_run:
-            self.logger.info(
-                f"[DRY RUN] Copilot prompt ({len(prompt)} chars) in {working_dir}"
-            )
-            return self._dry_run_result(
-                model_override or self.default_model, account_id
-            )
+            self.logger.info(f"[DRY RUN] Copilot prompt ({len(prompt)} chars) in {working_dir}")
+            return self._dry_run_result(model_override or self.default_model, account_id)
 
         model = str(model_override or self.default_model or "")
 

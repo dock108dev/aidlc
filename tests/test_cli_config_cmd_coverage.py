@@ -157,9 +157,7 @@ def test_print_config_summary_phase_models_defaults(capsys):
 
 
 @patch("aidlc.cli.config_cmd.ProviderRouter")
-def test_print_effective_preview_providers_not_a_dict(
-    mock_router_cls, tmp_path, capsys
-):
+def test_print_effective_preview_providers_not_a_dict(mock_router_cls, tmp_path, capsys):
     config = {"routing_strategy": "balanced", "providers": None}
     router = MagicMock()
     router._adapters = {}

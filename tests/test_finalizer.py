@@ -168,9 +168,7 @@ class TestFinalizer:
 
         assert state.phase == RunPhase.FINALIZING
 
-    def test_second_run_replaces_completed_passes(
-        self, state, config, cli, logger, tmp_path
-    ):
+    def test_second_run_replaces_completed_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -208,9 +206,9 @@ class TestPassPrompts:
         from aidlc.finalizer import PASS_PROMPTS
 
         for name, prompt in PASS_PROMPTS.items():
-            assert (
-                "Actionability Contract" in prompt
-            ), f"Pass '{name}' is missing the actionability contract"
+            assert "Actionability Contract" in prompt, (
+                f"Pass '{name}' is missing the actionability contract"
+            )
             # Contract rejects bare TODOs by name.
             assert "TODO" in prompt
             # Contract names the report file the model must write into.
@@ -223,9 +221,9 @@ class TestPassPrompts:
         from aidlc.finalizer import DIFF_AWARE_PASSES, PASS_PROMPTS
 
         for name in DIFF_AWARE_PASSES:
-            assert (
-                "{diff_summary}" in PASS_PROMPTS[name]
-            ), f"diff-aware pass '{name}' missing {{diff_summary}} placeholder"
+            assert "{diff_summary}" in PASS_PROMPTS[name], (
+                f"diff-aware pass '{name}' missing {{diff_summary}} placeholder"
+            )
         assert "{diff_summary}" not in PASS_PROMPTS["docs"]
 
 

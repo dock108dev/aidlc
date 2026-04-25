@@ -158,9 +158,7 @@ class TestMain:
 
     @patch("aidlc.__main__.run_full")
     @patch("aidlc.__main__.load_config")
-    def test_production_profile_rejects_skip_validation(
-        self, mock_load_config, mock_run
-    ):
+    def test_production_profile_rejects_skip_validation(self, mock_load_config, mock_run):
         mock_load_config.return_value = {
             "_project_root": str(Path.cwd()),
             "_aidlc_dir": str(Path.cwd() / ".aidlc"),
@@ -170,9 +168,7 @@ class TestMain:
             "runtime_profile": "production",
             "dry_run": True,
         }
-        with patch(
-            "sys.argv", ["aidlc", "run", "--resume", "--dry-run", "--skip-validation"]
-        ):
+        with patch("sys.argv", ["aidlc", "run", "--resume", "--dry-run", "--skip-validation"]):
             with pytest.raises(SystemExit) as exc:
                 main()
         assert exc.value.code == 1

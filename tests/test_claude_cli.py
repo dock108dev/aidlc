@@ -169,9 +169,7 @@ class TestExecutePrompt:
         assert result["failure_type"] == "transient"
 
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_preserves_non_transient_failure_type(
-        self, mock_popen, base_config, logger, tmp_path
-    ):
+    def test_preserves_non_transient_failure_type(self, mock_popen, base_config, logger, tmp_path):
         mock_popen.return_value = _mock_popen_failure(1, "syntax error in prompt")
         cli = ClaudeCLI(base_config, logger)
         result = cli.execute_prompt("prompt", tmp_path)
@@ -201,9 +199,7 @@ class TestExecutePrompt:
         assert "--verbose" in cmd
 
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_extracts_cost_model_and_tool_usage(
-        self, mock_popen, base_config, logger, tmp_path
-    ):
+    def test_extracts_cost_model_and_tool_usage(self, mock_popen, base_config, logger, tmp_path):
         payload = {
             "result": "done",
             "model": "claude-sonnet-4-6",
@@ -246,9 +242,7 @@ class TestExecutePrompt:
     def test_service_outage_retries_until_window_expires(
         self, mock_popen, mock_time, mock_sleep, base_config, logger, tmp_path
     ):
-        mock_popen.return_value = _mock_popen_failure(
-            1, "HTTP 500 internal server error"
-        )
+        mock_popen.return_value = _mock_popen_failure(1, "HTTP 500 internal server error")
         base_config["retry_max_attempts"] = 0
         base_config["claude_service_outage_max_wait_seconds"] = 3
         clock = itertools.count(start=0.0, step=1.0)
@@ -388,9 +382,7 @@ class TestStreamJsonAssembly:
         assert model == "sonnet"
         assert src == "claude_cli_json"
 
-    def test_command_line_uses_stream_json_and_verbose(
-        self, base_config, logger, tmp_path
-    ):
+    def test_command_line_uses_stream_json_and_verbose(self, base_config, logger, tmp_path):
         with patch("aidlc.claude_cli.subprocess.Popen") as mock_popen:
             mock_popen.return_value = _mock_popen_success("{}")
             cli = ClaudeCLI(base_config, logger)
@@ -535,10 +527,7 @@ class TestClassifyFailure:
         assert ClaudeCLI._classify_failure(1, "rate limit exceeded") == "transient"
 
     def test_transient_503(self):
-        assert (
-            ClaudeCLI._classify_failure(1, "error 503 service unavailable")
-            == "transient"
-        )
+        assert ClaudeCLI._classify_failure(1, "error 503 service unavailable") == "transient"
 
     def test_transient_connection_error(self):
         assert ClaudeCLI._classify_failure(1, "connection refused") == "transient"
@@ -551,10 +540,7 @@ class TestClassifyFailure:
         assert ClaudeCLI._classify_failure(-9, "") == "transient"
 
     def test_service_outage_detection_from_500(self):
-        assert (
-            ClaudeCLI._is_service_outage(1, "HTTP 500 internal server error", "")
-            is True
-        )
+        assert ClaudeCLI._is_service_outage(1, "HTTP 500 internal server error", "") is True
 
     def test_service_outage_detection_from_network_message(self):
         assert ClaudeCLI._is_service_outage(1, "", "temporary DNS failure") is True
@@ -601,9 +587,7 @@ class TestExtractCliMetadataBranches:
             },
             "model": "m",
         }
-        text, usage, _, _, src = ClaudeCLI._extract_cli_metadata(
-            json.dumps(payload), "fb"
-        )
+        text, usage, _, _, src = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
         assert text == "ok"
         assert usage["web_search_requests"] == 2
         assert usage["web_fetch_requests"] == 3
@@ -611,9 +595,7 @@ class TestExtractCliMetadataBranches:
 
     def test_invalid_total_cost_and_model_ignored(self):
         payload = {"result": "x", "usage": {}, "total_cost_usd": "nope", "model": ""}
-        _, _, cost, model, _ = ClaudeCLI._extract_cli_metadata(
-            json.dumps(payload), "fb"
-        )
+        _, _, cost, model, _ = ClaudeCLI._extract_cli_metadata(json.dumps(payload), "fb")
         assert cost is None
         assert model == "fb"
 

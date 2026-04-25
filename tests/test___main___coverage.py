@@ -86,9 +86,7 @@ def test_main_dispatches_other_commands(argv_patch, target):
     mock_cmd.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    "removed_cmd", ["audit", "improve", "plan", "finalize", "validate"]
-)
+@pytest.mark.parametrize("removed_cmd", ["audit", "improve", "plan", "finalize", "validate"])
 def test_removed_commands_no_longer_parse(removed_cmd, capsys):
     """Commands removed in the core-focus audit must not silently re-parse.
 

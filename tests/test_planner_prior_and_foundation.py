@@ -19,9 +19,7 @@ from aidlc.planner_helpers import (
 )
 
 
-def _planner(
-    tmp_path, prior_issues=None, doc_files=None, state_issues=None, config=None
-):
+def _planner(tmp_path, prior_issues=None, doc_files=None, state_issues=None, config=None):
     """Build a minimal planner stub for the helpers under test."""
     issues_dir = tmp_path / ".aidlc" / "issues"
     issues_dir.mkdir(parents=True, exist_ok=True)
@@ -101,9 +99,7 @@ def test_prior_run_section_dedupes_against_current_state(tmp_path):
             _prior_entry("ISSUE-001", "verified", "Already in state"),
             _prior_entry("ISSUE-009", "implemented", "Only on disk"),
         ],
-        state_issues=[
-            {"id": "ISSUE-001", "title": "Already in state", "status": "verified"}
-        ],
+        state_issues=[{"id": "ISSUE-001", "title": "Already in state", "status": "verified"}],
     )
     out = "\n".join(_render_prior_run_issues_section(p))
     assert "ISSUE-001" not in out

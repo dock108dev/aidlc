@@ -172,13 +172,9 @@ def format_rate_limit_diagnostics(
     else:
         label, span = first_rate_limit_heuristic_match(combined_lower)
         if label:
-            lines.append(
-                f"classification=heuristic pattern={label!r} matched_span={span!r}"
-            )
+            lines.append(f"classification=heuristic pattern={label!r} matched_span={span!r}")
         else:
-            lines.append(
-                "classification=heuristic (unexpected: no pattern after positive check)"
-            )
+            lines.append("classification=heuristic (unexpected: no pattern after positive check)")
     preview = f"{err}\n{out}".strip()
     if len(preview) > 900:
         preview = preview[:450] + "\n… [truncated] …\n" + preview[-400:]
@@ -189,9 +185,7 @@ def format_rate_limit_diagnostics(
             f"{datetime.fromtimestamp(raw_restore_epoch).isoformat(timespec='seconds')}"
         )
     else:
-        lines.append(
-            "parsed_restore_epoch=None (no retry-after / try-again time in payload)"
-        )
+        lines.append("parsed_restore_epoch=None (no retry-after / try-again time in payload)")
     if cooldown_until_epoch is not None:
         lines.append(
             "cooldown_until_epoch="

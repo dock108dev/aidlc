@@ -48,9 +48,7 @@ def setup_logger(run_id: str, log_dir: Path, verbose: bool = False) -> logging.L
     return logger
 
 
-def _log_provider_account_usage(
-    logger: logging.Logger, provider_account_usage: object
-) -> None:
+def _log_provider_account_usage(logger: logging.Logger, provider_account_usage: object) -> None:
     """Log per-provider/account token and call stats from state.provider_account_usage."""
     if not isinstance(provider_account_usage, dict) or not provider_account_usage:
         logger.info("  Per provider: (no breakdown recorded)")
@@ -86,9 +84,7 @@ def log_checkpoint(logger: logging.Logger, state_dict: dict) -> None:
     logger.info(f"  Console (local) time: {console_h:.1f}h")
     logger.info(f"  Planning cycles: {state_dict.get('planning_cycles', 0)}")
     logger.info(f"  Issues created: {state_dict.get('issues_created', 0)}")
-    logger.info(
-        f"  Implementation cycles: {state_dict.get('implementation_cycles', 0)}"
-    )
+    logger.info(f"  Implementation cycles: {state_dict.get('implementation_cycles', 0)}")
     logger.info(f"  Issues implemented: {state_dict.get('issues_implemented', 0)}")
     logger.info(f"  Issues verified: {state_dict.get('issues_verified', 0)}")
     logger.info(

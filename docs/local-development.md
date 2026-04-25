@@ -75,11 +75,12 @@ Build metadata is defined in `pyproject.toml` (`setuptools.build_meta` backend).
 With dev dependencies installed (`pip install -e ".[dev]"`):
 
 ```bash
-ruff check aidlc tests
-ruff format --check aidlc tests
+make lint    # check-only; matches CI and should never modify files
+make format  # local fixer; writes formatting changes
 ```
 
-CI runs both. Settings live in `pyproject.toml` under `[tool.ruff]`. There is no required pre-commit hook in this repository.
+CI runs `make lint` only (check mode). If CI fails on formatting, run `make format`, commit those edits, and rerun.
+Settings live in `pyproject.toml` under `[tool.ruff]`. There is no required pre-commit hook in this repository.
 
 ## Coverage
 

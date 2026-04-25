@@ -361,9 +361,7 @@ class ProjectScanner:
         if deps_raw.strip().lower() == "none":
             dependencies: list[str] = []
         else:
-            dependencies = [
-                part.strip() for part in deps_raw.split(",") if part.strip()
-            ]
+            dependencies = [part.strip() for part in deps_raw.split(",") if part.strip()]
         status = self._extract_meta(content, "Status", fallback="pending").lower()
         description = self._extract_section(content, "Description")
         acceptance_criteria = self._extract_checklist(content, "Acceptance Criteria")
@@ -436,9 +434,7 @@ class ProjectScanner:
                 self._audit_load_errors += 1
         return None
 
-    def build_context_prompt(
-        self, scan_result: dict, mode: ContextMode = "planning"
-    ) -> str:
+    def build_context_prompt(self, scan_result: dict, mode: ContextMode = "planning") -> str:
         """Build a project context string from scan results for use in prompts.
 
         mode="planning" includes all docs, full audit, and the existing-issues
@@ -529,9 +525,7 @@ class ProjectScanner:
                     role = m.get("role", "unknown")
                     files = m.get("file_count", 0)
                     lines = m.get("line_count", 0)
-                    sections.append(
-                        f"- `{name}/` — {role} ({files} files, {lines:,} lines)"
-                    )
+                    sections.append(f"- `{name}/` — {role} ({files} files, {lines:,} lines)")
 
             stats = audit.get("source_stats", {})
             if stats and not is_impl:
@@ -567,18 +561,14 @@ class ProjectScanner:
         # curated "Recently completed" list from its own prompt, so skip this
         # block to avoid duplication.
         if scan_result["existing_issues"] and not is_impl:
-            sections.append(
-                f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n"
-            )
+            sections.append(f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n")
             max_issue_lines = 25
             shown = 0
             for issue in scan_result["existing_issues"]:
                 if shown >= max_issue_lines:
                     break
                 parsed = (
-                    issue.get("parsed_issue")
-                    if isinstance(issue.get("parsed_issue"), dict)
-                    else {}
+                    issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
                 )
                 issue_id = parsed.get("id") or Path(issue.get("path", "")).stem
                 title = (parsed.get("title") or "").strip()

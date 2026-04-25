@@ -34,9 +34,7 @@ def test_expand_same_directory_includes_siblings(tmp_path):
 
 def test_strip_gtest_argument():
     assert (
-        strip_gtest_argument(
-            "godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://x.gd"
-        )
+        strip_gtest_argument("godot --headless -s addons/gut/gut_cmdln.gd -gtest=res://x.gd")
         == "godot --headless -s addons/gut/gut_cmdln.gd"
     )
 
