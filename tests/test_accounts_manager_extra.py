@@ -57,7 +57,9 @@ def test_credential_store_keyring_write_falls_back(monkeypatch, tmp_path: Path):
     assert store.get("u", "api") == "sec"
 
 
-def test_credential_store_delete_keyring_error_still_clears_file(monkeypatch, tmp_path: Path):
+def test_credential_store_delete_keyring_error_still_clears_file(
+    monkeypatch, tmp_path: Path
+):
     kr = MagicMock()
     kr.set_password.side_effect = RuntimeError("no keychain")
     kr.get_password.return_value = None

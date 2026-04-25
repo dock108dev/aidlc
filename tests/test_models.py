@@ -226,13 +226,28 @@ class TestRunState:
         assert not state.all_issues_resolved()  # No issues = not resolved (need > 0)
 
         state.issues = [
-            {"id": "ISSUE-001", "status": "verified", "attempt_count": 1, "max_attempts": 3},
-            {"id": "ISSUE-002", "status": "implemented", "attempt_count": 1, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "status": "verified",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "status": "implemented",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
         ]
         assert not state.all_issues_resolved()
 
         state.issues = [
-            {"id": "ISSUE-001", "status": "verified", "attempt_count": 1, "max_attempts": 3},
+            {
+                "id": "ISSUE-001",
+                "status": "verified",
+                "attempt_count": 1,
+                "max_attempts": 3,
+            },
         ]
         assert state.all_issues_resolved()
 
@@ -395,7 +410,9 @@ class TestRunState:
         )
         assert state.claude_cost_usd_estimated > 0
 
-    def test_record_provider_result_auto_skips_estimate_when_telemetry_estimate_usd_false(self):
+    def test_record_provider_result_auto_skips_estimate_when_telemetry_estimate_usd_false(
+        self,
+    ):
         state = RunState(run_id="t", config_name="c")
         result = {
             "success": True,

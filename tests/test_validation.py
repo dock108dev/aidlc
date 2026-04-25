@@ -30,7 +30,8 @@ class TestTestProfiles:
         (tmp_path / "project.godot").write_text("[gd_scene]")
         profile = detect_test_profile(tmp_path, "unknown", {})
         assert (
-            "godot" in (profile["unit"] or "").lower() or "godot" in (profile["e2e"] or "").lower()
+            "godot" in (profile["unit"] or "").lower()
+            or "godot" in (profile["e2e"] or "").lower()
         )
 
     def test_detect_playwright_e2e(self, tmp_path):
@@ -40,7 +41,10 @@ class TestTestProfiles:
         assert "playwright" in profile["e2e"]
 
     def test_config_override(self, tmp_path):
-        config = {"run_tests_command": "custom test cmd", "e2e_test_command": "custom e2e"}
+        config = {
+            "run_tests_command": "custom test cmd",
+            "e2e_test_command": "custom e2e",
+        }
         profile = detect_test_profile(tmp_path, "python", config)
         assert profile["unit"] == "custom test cmd"
         assert profile["e2e"] == "custom e2e"
@@ -48,7 +52,9 @@ class TestTestProfiles:
     def test_package_json_scripts_detection(self, tmp_path):
         # No base "test" script — only specific tiers
         (tmp_path / "package.json").write_text(
-            json.dumps({"scripts": {"test:unit": "jest --unit", "test:e2e": "playwright test"}})
+            json.dumps(
+                {"scripts": {"test:unit": "jest --unit", "test:e2e": "playwright test"}}
+            )
         )
         profile = detect_test_profile(tmp_path, "javascript", {})
         # Base JS profile sets unit to "npm test", package.json overrides only happen
@@ -119,7 +125,10 @@ class TestValidationIssues:
     def test_create_fix_issues(self):
         failures = [
             FailureReport(
-                test_name="test_login", file="tests/test_auth.py", line=10, assertion="assert False"
+                test_name="test_login",
+                file="tests/test_auth.py",
+                line=10,
+                assertion="assert False",
             ),
             FailureReport(
                 test_name="test_signup",
@@ -185,7 +194,9 @@ class TestValidator:
         run_dir = tmp_path / "run"
         run_dir.mkdir()
 
-        validator = Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
+        validator = Validator(
+            state, run_dir, config, cli, "project type: unknown", MagicMock()
+        )
         result = validator.run()
         assert result is True  # No tests = skip = stable
         assert state.phase == RunPhase.VALIDATING
@@ -204,11 +215,15 @@ class TestValidator:
         run_dir = tmp_path / "run"
         run_dir.mkdir()
 
-        validator = Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
+        validator = Validator(
+            state, run_dir, config, cli, "project type: unknown", MagicMock()
+        )
         result = validator.run()
         assert result is False
 
-    def test_failed_tier_without_parseable_output_creates_synthetic_failure(self, tmp_path):
+    def test_failed_tier_without_parseable_output_creates_synthetic_failure(
+        self, tmp_path
+    ):
         state = RunState(run_id="test", config_name="default")
         config = {
             "_project_root": str(tmp_path),
@@ -221,7 +236,9 @@ class TestValidator:
         run_dir.mkdir()
         logger = MagicMock()
 
-        validator = Validator(state, run_dir, config, cli, "project type: unknown", logger)
+        validator = Validator(
+            state, run_dir, config, cli, "project type: unknown", logger
+        )
         validator.test_profile = {
             "build": "fake-build-cmd",
             "unit": None,
@@ -268,7 +285,12 @@ class TestValidatorInternals:
             "test_timeout_seconds": 10,
         }
         v = Validator(
-            state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock()
+            state,
+            tmp_path / "run",
+            config,
+            MagicMock(),
+            "project type: python",
+            MagicMock(),
         )
         issue = Issue(
             id="VFIX-009",
@@ -295,7 +317,9 @@ class TestValidatorInternals:
             "test_timeout_seconds": 10,
         }
         logger = MagicMock()
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", logger
+        )
         ok, out = v._run_command("any")
         assert ok is False
         assert "timed out" in out.lower()
@@ -312,7 +336,9 @@ class TestValidatorInternals:
             "test_timeout_seconds": 10,
         }
         logger = MagicMock()
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", logger
+        )
         ok, out = v._run_command("missing-binary-xyz")
         assert ok is False
         assert out == ""
@@ -327,7 +353,9 @@ class TestValidatorInternals:
             "test_timeout_seconds": 10,
         }
         logger = MagicMock()
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", logger
+        )
         v.test_profile = {"build": "x", "unit": None, "integration": None, "e2e": None}
         v._run_command = lambda _cmd: (False, "")
         _passed, failures, _tier_results = v._run_test_tiers()
@@ -343,7 +371,9 @@ class TestValidatorRunLoop:
 
     @patch("aidlc.validator.save_state")
     @patch("aidlc.implementer.Implementer")
-    def test_run_returns_true_after_fail_then_pass(self, mock_impl, mock_save, tmp_path):
+    def test_run_returns_true_after_fail_then_pass(
+        self, mock_impl, mock_save, tmp_path
+    ):
         self._python_project(tmp_path)
         state = RunState(run_id="vr1", config_name="default")
         state.issues = []
@@ -356,7 +386,9 @@ class TestValidatorRunLoop:
             "test_timeout_seconds": 30,
             "validation_batch_size": 10,
         }
-        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, run_dir, config, MagicMock(), "project type: python", MagicMock()
+        )
         mock_impl.return_value._implement_issue = MagicMock()
         n = {"c": 0}
 
@@ -388,7 +420,9 @@ class TestValidatorRunLoop:
             "test_timeout_seconds": 30,
             "validation_batch_size": 10,
         }
-        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, run_dir, config, MagicMock(), "project type: python", MagicMock()
+        )
         mock_impl.return_value._implement_issue = MagicMock()
         fails = [
             FailureReport(test_name="a", assertion="1"),
@@ -396,7 +430,11 @@ class TestValidatorRunLoop:
         ]
 
         def always_fail():
-            return (False, fails, [{"tier": "unit", "passed": False, "command": "pytest"}])
+            return (
+                False,
+                fails,
+                [{"tier": "unit", "passed": False, "command": "pytest"}],
+            )
 
         v._run_test_tiers = always_fail
         assert v.run() is False
@@ -414,7 +452,9 @@ class TestValidatorRunLoop:
             "validation_max_cycles": 3,
             "test_timeout_seconds": 30,
         }
-        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, run_dir, config, MagicMock(), "project type: python", MagicMock()
+        )
 
         def always_fail():
             return (
@@ -429,7 +469,9 @@ class TestValidatorRunLoop:
 
     @patch("aidlc.validator.save_state")
     @patch("aidlc.implementer.Implementer")
-    def test_run_final_check_passes_after_single_cycle(self, mock_impl, mock_save, tmp_path):
+    def test_run_final_check_passes_after_single_cycle(
+        self, mock_impl, mock_save, tmp_path
+    ):
         """Exit the for-loop without early True; final _run_test_tiers succeeds."""
         self._python_project(tmp_path)
         state = RunState(run_id="vr4", config_name="default")
@@ -443,7 +485,9 @@ class TestValidatorRunLoop:
             "test_timeout_seconds": 30,
             "validation_batch_size": 10,
         }
-        v = Validator(state, run_dir, config, MagicMock(), "project type: python", MagicMock())
+        v = Validator(
+            state, run_dir, config, MagicMock(), "project type: python", MagicMock()
+        )
         mock_impl.return_value._implement_issue = MagicMock()
         n = {"c": 0}
 
@@ -473,7 +517,9 @@ class TestValidatorTiersAndCommand:
             "test_timeout_seconds": 30,
         }
         logger = MagicMock()
-        v = Validator(state, tmp_path / "run", config, MagicMock(), "project type: python", logger)
+        v = Validator(
+            state, tmp_path / "run", config, MagicMock(), "project type: python", logger
+        )
         v.test_profile = {
             "build": None,
             "unit": "echo ok",
@@ -497,7 +543,12 @@ class TestValidatorTiersAndCommand:
             "test_timeout_seconds": 30,
         }
         v = Validator(
-            state, tmp_path / "run", config, MagicMock(), "project type: python", MagicMock()
+            state,
+            tmp_path / "run",
+            config,
+            MagicMock(),
+            "project type: python",
+            MagicMock(),
         )
         ok, out = v._run_command("echo x")
         assert ok is True

@@ -88,7 +88,9 @@ class Planner:
                 "planning_diminishing_returns_min_threshold / _max_threshold instead"
             )
         self._pending_completion_reason = None
-        self._offer_completion = False  # When True, prompt tells Claude it can declare done
+        self._offer_completion = (
+            False  # When True, prompt tells Claude it can declare done
+        )
 
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
@@ -140,7 +142,9 @@ class Planner:
                 break
 
             # Save cycle snapshot before running (for revert support)
-            save_cycle_snapshot(self.state, self.run_dir, self.state.planning_cycles + 1)
+            save_cycle_snapshot(
+                self.state, self.run_dir, self.state.planning_cycles + 1
+            )
 
             # Run one planning cycle
             issues_before = self.state.issues_created
@@ -152,7 +156,9 @@ class Planner:
                 # 2. We've been winding down (multiple empty/update-only cycles)
                 if self._pending_completion_reason:
                     self.state.stop_reason = self._pending_completion_reason
-                    self.logger.info("No more planning work identified (completion confirmed).")
+                    self.logger.info(
+                        "No more planning work identified (completion confirmed)."
+                    )
                     break
                 elif getattr(self, "_offer_completion", False):
                     self.state.stop_reason = "Planning frontier is clear"
@@ -193,7 +199,9 @@ class Planner:
                     self.state.stop_reason = (
                         f"{max_consecutive_failures} consecutive planning failures"
                     )
-                    self.logger.error("Too many consecutive failures. Stopping planning.")
+                    self.logger.error(
+                        "Too many consecutive failures. Stopping planning."
+                    )
                     break
                 continue
             else:
@@ -357,7 +365,9 @@ class Planner:
 
         # Only accept planning_complete if we've offered it.
         # (Claude sometimes adds this field unprompted — ignore it until invited)
-        if planning_output.planning_complete and getattr(self, "_offer_completion", False):
+        if planning_output.planning_complete and getattr(
+            self, "_offer_completion", False
+        ):
             reason = planning_output.completion_reason or "planning completed"
             self._pending_completion_reason = f"Planning complete — {reason}"
             self.logger.info(f"Model signaled planning_complete (accepted): {reason}")
@@ -370,7 +380,9 @@ class Planner:
             self.logger.info("No actions proposed — frontier may be clear")
             return None
 
-        self.logger.info(f"Cycle {cycle_num}: {len(planning_output.actions)} actions proposed")
+        self.logger.info(
+            f"Cycle {cycle_num}: {len(planning_output.actions)} actions proposed"
+        )
 
         # Apply actions
         applied = 0
@@ -398,12 +410,16 @@ class Planner:
                 action_errors.append(str(e))
 
         if action_errors and applied == 0:
-            self.logger.error(f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored")
+            self.logger.error(
+                f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored"
+            )
             return False
 
         if action_errors and total_actions:
             failure_ratio = len(action_errors) / total_actions
-            ratio_threshold = self.config.get("planning_action_failure_ratio_threshold", 0.6)
+            ratio_threshold = self.config.get(
+                "planning_action_failure_ratio_threshold", 0.6
+            )
             if failure_ratio >= ratio_threshold:
                 self.logger.error(
                     f"Cycle {cycle_num} failed: action failure ratio {failure_ratio:.0%} "
@@ -445,7 +461,11 @@ class Planner:
         floor_default = 3 if legacy_threshold is None else int(legacy_threshold)
         floor_val = max(
             1,
-            int(self.config.get("planning_diminishing_returns_min_threshold", floor_default)),
+            int(
+                self.config.get(
+                    "planning_diminishing_returns_min_threshold", floor_default
+                )
+            ),
         )
         ceil_val = max(
             floor_val,
@@ -568,7 +588,9 @@ class Planner:
                 if not isinstance(dep, str):
                     total_changes += 1
                     touched.add(issue_id)
-                    self.logger.warning(f"Dropped non-string dependency on {issue_id}: {dep!r}")
+                    self.logger.warning(
+                        f"Dropped non-string dependency on {issue_id}: {dep!r}"
+                    )
                     continue
                 dep_norm = dep.strip().upper()
                 if not dep_norm:
@@ -579,7 +601,9 @@ class Planner:
                 if dep_norm == issue_id:
                     total_changes += 1
                     touched.add(issue_id)
-                    self.logger.warning(f"Removed self-dependency: {issue_id} -> {dep_norm}")
+                    self.logger.warning(
+                        f"Removed self-dependency: {issue_id} -> {dep_norm}"
+                    )
                     continue
                 if dep_norm not in issue_ids:
                     total_changes += 1
@@ -591,7 +615,9 @@ class Planner:
                 if dep_norm in seen:
                     total_changes += 1
                     touched.add(issue_id)
-                    self.logger.warning(f"Removed duplicate dependency: {issue_id} -> {dep_norm}")
+                    self.logger.warning(
+                        f"Removed duplicate dependency: {issue_id} -> {dep_norm}"
+                    )
                     continue
                 seen.add(dep_norm)
                 cleaned.append(dep_norm)
@@ -636,12 +662,16 @@ class Planner:
                 if not core:
                     continue
                 cycle_str = " -> ".join(cycle)
-                self.logger.warning(f"Circular dependency detected during planning: {cycle_str}")
+                self.logger.warning(
+                    f"Circular dependency detected during planning: {cycle_str}"
+                )
 
                 candidate = max(
                     core,
                     key=lambda iid: (
-                        priority_order.get(id_to_issue.get(iid, {}).get("priority", "medium"), 1),
+                        priority_order.get(
+                            id_to_issue.get(iid, {}).get("priority", "medium"), 1
+                        ),
                         len(id_to_issue.get(iid, {}).get("dependencies", [])),
                         iid,
                     ),

@@ -63,17 +63,26 @@ class Implementer:
         self.test_command = config.get("run_tests_command")
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
-        self.max_impl_context_chars = config.get("max_implementation_context_chars", 9000)
+        self.max_impl_context_chars = config.get(
+            "max_implementation_context_chars", 9000
+        )
         self.escalate_on_retry = config.get("implementation_escalate_on_retry", True)
         self.complexity_ac_threshold = max(
-            1, int(config.get("implementation_complexity_acceptance_criteria_threshold", 6))
+            1,
+            int(
+                config.get("implementation_complexity_acceptance_criteria_threshold", 6)
+            ),
         )
         self.complexity_dep_threshold = max(
             1, int(config.get("implementation_complexity_dependencies_threshold", 3))
         )
         self.complexity_description_threshold = max(
             200,
-            int(config.get("implementation_complexity_description_chars_threshold", 2500)),
+            int(
+                config.get(
+                    "implementation_complexity_description_chars_threshold", 2500
+                )
+            ),
         )
         default_labels = [
             "architecture",
@@ -87,7 +96,9 @@ class Implementer:
             default_labels,
         )
         self.complexity_labels = {
-            str(label).strip().lower() for label in raw_complexity_labels if str(label).strip()
+            str(label).strip().lower()
+            for label in raw_complexity_labels
+            if str(label).strip()
         }
         self.issues_dir = Path(config["_issues_dir"])
 
@@ -95,9 +106,13 @@ class Implementer:
         self.autosync_every_cycles = max(
             1, int(config.get("autosync_every_implementation_cycles", 25) or 25)
         )
-        self.autosync_finalize_before_push = bool(config.get("autosync_finalize_before_push", True))
+        self.autosync_finalize_before_push = bool(
+            config.get("autosync_finalize_before_push", True)
+        )
         self.autosync_push_remote = bool(config.get("autosync_push_remote", True))
-        self.autosync_issue_status_sync = bool(config.get("autosync_issue_status_sync", True))
+        self.autosync_issue_status_sync = bool(
+            config.get("autosync_issue_status_sync", True)
+        )
         self.autosync_commit_message_template = str(
             config.get(
                 "autosync_commit_message_template",
@@ -105,7 +120,9 @@ class Implementer:
             )
         )
         self.autosync_prune_enabled = bool(config.get("autosync_prune_enabled", True))
-        self.autosync_runs_to_keep = max(1, int(config.get("autosync_runs_to_keep", 5) or 5))
+        self.autosync_runs_to_keep = max(
+            1, int(config.get("autosync_runs_to_keep", 5) or 5)
+        )
         self.autosync_keep_claude_outputs = max(
             1, int(config.get("autosync_keep_claude_outputs", 200) or 200)
         )
@@ -115,7 +132,9 @@ class Implementer:
         self.cleanup_passes_every_cycles = max(
             0, int(config.get("cleanup_passes_every_cycles", 10) or 0)
         )
-        raw_periodic_passes = config.get("cleanup_passes_periodic", ["abend", "cleanup"])
+        raw_periodic_passes = config.get(
+            "cleanup_passes_periodic", ["abend", "cleanup"]
+        )
         self.cleanup_passes_periodic = [
             str(p).strip().lower() for p in raw_periodic_passes if str(p).strip()
         ]
@@ -166,7 +185,9 @@ class Implementer:
         """
         if not self.config.get("implementation_reopen_verified_without_result", True):
             return False
-        non_skip = [d for d in self.state.issues if d.get("status") != IssueStatus.SKIPPED.value]
+        non_skip = [
+            d for d in self.state.issues if d.get("status") != IssueStatus.SKIPPED.value
+        ]
         if not non_skip:
             return False
         for d in non_skip:
@@ -220,7 +241,9 @@ class Implementer:
             self._ensure_test_deps()
 
         if self.state.phase == RunPhase.VERIFYING:
-            self.logger.info("Resuming final verification (skipping implementation loop)")
+            self.logger.info(
+                "Resuming final verification (skipping implementation loop)"
+            )
             verification_ok = self._verification_pass()
             save_state(self.state, self.run_dir)
             return verification_ok
@@ -402,7 +425,9 @@ class Implementer:
 
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
-        self.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
+        self.logger.info(
+            f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)"
+        )
         is_complex = self._is_complex_issue(issue)
         # Signal complexity to router so it can apply phase-aware model selection
         if hasattr(self.cli, "set_complexity"):
@@ -426,7 +451,9 @@ class Implementer:
         if output_text:
             output_dir = self.run_dir / "claude_outputs"
             output_dir.mkdir(exist_ok=True)
-            (output_dir / f"impl_{issue.id}_{issue.attempt_count:02d}.md").write_text(output_text)
+            (output_dir / f"impl_{issue.id}_{issue.attempt_count:02d}.md").write_text(
+                output_text
+            )
 
         if not result["success"]:
             sampled_error = sample_error_payload(result.get("error"))
@@ -534,7 +561,10 @@ class Implementer:
                     impl_result.tests_passed = True
                     # Model JSON often has success=false while tests were red; we verified green.
                     impl_result.success = True
-                elif fix_outcome.accepted_pre_existing_debt and fix_outcome.follow_up_documentation:
+                elif (
+                    fix_outcome.accepted_pre_existing_debt
+                    and fix_outcome.follow_up_documentation
+                ):
                     impl_result.tests_passed = False
                     # Same: JSON may say success=false because the full command failed; we explicitly accept.
                     impl_result.success = True
@@ -564,7 +594,9 @@ class Implementer:
                         f"{issue.id}: strict change detection enabled and git verification failed."
                     )
                     impl_result.success = False
-                    impl_result.notes = "Strict change detection failed (git unavailable/timed out)"
+                    impl_result.notes = (
+                        "Strict change detection failed (git unavailable/timed out)"
+                    )
                 else:
                     self.logger.warning(
                         f"{issue.id}: unable to verify file changes (git unavailable/timed out)."
@@ -575,7 +607,9 @@ class Implementer:
                         f"{issue.id}: strict change detection enabled and no files changed."
                     )
                     impl_result.success = False
-                    impl_result.notes = "Strict change detection failed (no files changed)"
+                    impl_result.notes = (
+                        "Strict change detection failed (no files changed)"
+                    )
                 else:
                     self.logger.warning(
                         f"{issue.id}: marked success but no files changed in working tree. "
@@ -585,7 +619,9 @@ class Implementer:
         if impl_result.success:
             issue.status = IssueStatus.IMPLEMENTED
             issue.files_changed = impl_result.files_changed
-            issue.implementation_notes += f"\nAttempt {issue.attempt_count}: {impl_result.summary}"
+            issue.implementation_notes += (
+                f"\nAttempt {issue.attempt_count}: {impl_result.summary}"
+            )
             self.state.issues_implemented += 1
             self.logger.info(
                 f"Successfully implemented {issue.id} ({len(issue.files_changed)} files changed)"
@@ -641,7 +677,10 @@ class Implementer:
             is_complex = True
             reasons.append("dependencies")
 
-        if len((issue.description or "").strip()) >= self.complexity_description_threshold:
+        if (
+            len((issue.description or "").strip())
+            >= self.complexity_description_threshold
+        ):
             is_complex = True
             reasons.append("description_size")
 
@@ -685,7 +724,9 @@ class Implementer:
                 )
 
     def _ensure_test_deps(self):
-        ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
+        ensure_test_deps(
+            self.project_root, self.test_command, self.logger, state=self.state
+        )
 
     def _run_tests(
         self,
@@ -770,7 +811,9 @@ class Implementer:
                 self.logger.error("Final test suite has failures.")
                 self.state.validation_results.append("Final test suite has failures")
                 if self.config.get("fail_on_final_test_failure"):
-                    self.state.stop_reason = "Final verification failed: test suite has failures"
+                    self.state.stop_reason = (
+                        "Final verification failed: test suite has failures"
+                    )
                     return False
         return True
 
@@ -780,9 +823,13 @@ class Implementer:
             self.state, self.logger, self._sync_all_issue_markdown
         )
 
-    def _get_changed_files(self, with_status: bool = False) -> list[str] | tuple[list[str], bool]:
+    def _get_changed_files(
+        self, with_status: bool = False
+    ) -> list[str] | tuple[list[str], bool]:
         """Get list of files changed in the working tree (unstaged + staged) via git."""
-        return get_changed_files(self.project_root, self.state, self.logger, with_status)
+        return get_changed_files(
+            self.project_root, self.state, self.logger, with_status
+        )
 
     def _detect_test_command(self) -> str | None:
         return detect_test_command(self.project_root)

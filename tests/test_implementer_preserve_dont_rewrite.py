@@ -50,7 +50,9 @@ def test_implementer_prompt_lists_research_files_when_present(tmp_path):
     impl.max_impl_context_chars = 12000
     impl.project_context = "ctx"
     impl.state.issues = []
-    issue = Issue(id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"])
+    issue = Issue(
+        id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"]
+    )
 
     prompt = build_implementation_prompt(impl, issue)
     assert "## Available Research" in prompt
@@ -76,7 +78,9 @@ def test_implementer_prompt_omits_research_section_when_empty(tmp_path):
     impl.max_impl_context_chars = 12000
     impl.project_context = "ctx"
     impl.state.issues = []
-    issue = Issue(id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"])
+    issue = Issue(
+        id="ISSUE-001", title="t", description="d", acceptance_criteria=["AC"]
+    )
 
     prompt = build_implementation_prompt(impl, issue)
     assert "## Available Research" not in prompt

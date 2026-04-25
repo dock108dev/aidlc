@@ -35,14 +35,19 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
 
     if since_str:
         try:
-            since_dt = datetime.strptime(since_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            since_dt = datetime.strptime(since_str, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
             run_dirs = [
                 d
                 for d in run_dirs
-                if datetime.fromtimestamp(d.stat().st_mtime, tz=timezone.utc) >= since_dt
+                if datetime.fromtimestamp(d.stat().st_mtime, tz=timezone.utc)
+                >= since_dt
             ]
         except ValueError:
-            print(f"  {yellow('!')} Invalid --since date '{since_str}'. Use YYYY-MM-DD.")
+            print(
+                f"  {yellow('!')} Invalid --since date '{since_str}'. Use YYYY-MM-DD."
+            )
             sys.exit(1)
 
     if not run_dirs:

@@ -243,7 +243,9 @@ class QuickAuditEngine:
                     entry_points.append(f"package.json:main → {main}")
                 scripts = data.get("scripts", {})
                 if "start" in scripts:
-                    entry_points.append(f"package.json:scripts.start → {scripts['start']}")
+                    entry_points.append(
+                        f"package.json:scripts.start → {scripts['start']}"
+                    )
             except (OSError, json.JSONDecodeError):
                 self.auditor._mark_degraded("dependency_parse_errors")
 
@@ -261,7 +263,9 @@ class QuickAuditEngine:
             source_files = []
             total_lines = 0
             for root, dirs, files in os.walk(entry):
-                dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+                dirs[:] = [
+                    d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")
+                ]
                 for filename in files:
                     ext = os.path.splitext(filename)[1]
                     if ext in self.source_extensions:
@@ -296,7 +300,9 @@ class QuickAuditEngine:
         self._tree_walk(self.project_root, "", 0, max_depth, lines)
         return "\n".join(lines)
 
-    def _tree_walk(self, path: Path, prefix: str, depth: int, max_depth: int, lines: list) -> None:
+    def _tree_walk(
+        self, path: Path, prefix: str, depth: int, max_depth: int, lines: list
+    ) -> None:
         if depth > max_depth:
             return
 
@@ -326,7 +332,9 @@ class QuickAuditEngine:
         total_lines = 0
 
         for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+            dirs[:] = [
+                d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")
+            ]
             for filename in files:
                 ext = os.path.splitext(filename)[1]
                 if ext in self.source_extensions:
@@ -334,7 +342,10 @@ class QuickAuditEngine:
                     by_ext[ext] = by_ext.get(ext, 0) + 1
                     try:
                         total_lines += sum(
-                            1 for _ in open(os.path.join(root, filename), errors="replace")
+                            1
+                            for _ in open(
+                                os.path.join(root, filename), errors="replace"
+                            )
                         )
                     except OSError:
                         self.auditor._mark_degraded("line_count_errors")
@@ -349,7 +360,9 @@ class QuickAuditEngine:
         """Find TODO, FIXME, HACK, etc. in source files."""
         items = []
         for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+            dirs[:] = [
+                d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")
+            ]
             for filename in files:
                 ext = os.path.splitext(filename)[1]
                 if ext not in self.source_extensions:
@@ -357,7 +370,9 @@ class QuickAuditEngine:
                 full_path = os.path.join(root, filename)
                 rel_path = os.path.relpath(full_path, self.project_root)
                 try:
-                    for line_num, line in enumerate(open(full_path, errors="replace"), 1):
+                    for line_num, line in enumerate(
+                        open(full_path, errors="replace"), 1
+                    ):
                         match = TECH_DEBT_PATTERNS.search(line)
                         if match:
                             items.append(
@@ -373,7 +388,9 @@ class QuickAuditEngine:
                     continue
 
         for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+            dirs[:] = [
+                d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")
+            ]
             for filename in files:
                 ext = os.path.splitext(filename)[1]
                 if ext not in self.source_extensions:
@@ -397,7 +414,9 @@ class QuickAuditEngine:
 
         return items
 
-    def assess_test_coverage_quick(self, modules: list[ModuleInfo], stats: dict) -> CoverageInfo:
+    def assess_test_coverage_quick(
+        self, modules: list[ModuleInfo], stats: dict
+    ) -> CoverageInfo:
         """Quick heuristic test coverage assessment."""
         test_files = 0
         test_functions = 0
@@ -405,7 +424,9 @@ class QuickAuditEngine:
         source_files = stats.get("total_files", 0)
 
         for root, dirs, files in os.walk(self.project_root):
-            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")]
+            dirs[:] = [
+                d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith(".")
+            ]
             for filename in files:
                 ext = os.path.splitext(filename)[1]
                 if ext not in self.source_extensions:
@@ -422,7 +443,9 @@ class QuickAuditEngine:
                     try:
                         content = open(full_path, errors="replace").read()
                         test_functions += len(
-                            re.findall(r"(?:def test_|it\(|test\(|describe\(|@Test)", content)
+                            re.findall(
+                                r"(?:def test_|it\(|test\(|describe\(|@Test)", content
+                            )
                         )
                     except OSError:
                         self.auditor._mark_degraded("source_read_errors")

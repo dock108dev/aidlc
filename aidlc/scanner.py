@@ -246,7 +246,13 @@ class ProjectScanner:
         lower = rel_path.lower()
 
         # Top priority: root-level project docs
-        if lower in ("readme.md", "architecture.md", "roadmap.md", "design.md", "claude.md"):
+        if lower in (
+            "readme.md",
+            "architecture.md",
+            "roadmap.md",
+            "design.md",
+            "claude.md",
+        ):
             return 0
 
         # High: planning/design directories
@@ -292,7 +298,14 @@ class ProjectScanner:
             name = entry.name
             if name.startswith(".") and name not in (".github",):
                 continue
-            if name in ("node_modules", "__pycache__", "venv", ".venv", "dist", "build"):
+            if name in (
+                "node_modules",
+                "__pycache__",
+                "venv",
+                ".venv",
+                "dist",
+                "build",
+            ):
                 continue
 
             if entry.is_dir():
@@ -322,7 +335,11 @@ class ProjectScanner:
                         rel = str(path.relative_to(self.project_root))
                         parsed_issue = self._parse_issue_markdown(path, content)
                         issues.append(
-                            {"path": rel, "content": content, "parsed_issue": parsed_issue}
+                            {
+                                "path": rel,
+                                "content": content,
+                                "parsed_issue": parsed_issue,
+                            }
                         )
                     except (OSError, UnicodeDecodeError):
                         self._skipped_issue_reads += 1
@@ -344,7 +361,9 @@ class ProjectScanner:
         if deps_raw.strip().lower() == "none":
             dependencies: list[str] = []
         else:
-            dependencies = [part.strip() for part in deps_raw.split(",") if part.strip()]
+            dependencies = [
+                part.strip() for part in deps_raw.split(",") if part.strip()
+            ]
         status = self._extract_meta(content, "Status", fallback="pending").lower()
         description = self._extract_section(content, "Description")
         acceptance_criteria = self._extract_checklist(content, "Acceptance Criteria")
@@ -510,7 +529,9 @@ class ProjectScanner:
                     role = m.get("role", "unknown")
                     files = m.get("file_count", 0)
                     lines = m.get("line_count", 0)
-                    sections.append(f"- `{name}/` — {role} ({files} files, {lines:,} lines)")
+                    sections.append(
+                        f"- `{name}/` — {role} ({files} files, {lines:,} lines)"
+                    )
 
             stats = audit.get("source_stats", {})
             if stats and not is_impl:
@@ -546,14 +567,18 @@ class ProjectScanner:
         # curated "Recently completed" list from its own prompt, so skip this
         # block to avoid duplication.
         if scan_result["existing_issues"] and not is_impl:
-            sections.append(f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n")
+            sections.append(
+                f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n"
+            )
             max_issue_lines = 25
             shown = 0
             for issue in scan_result["existing_issues"]:
                 if shown >= max_issue_lines:
                     break
                 parsed = (
-                    issue.get("parsed_issue") if isinstance(issue.get("parsed_issue"), dict) else {}
+                    issue.get("parsed_issue")
+                    if isinstance(issue.get("parsed_issue"), dict)
+                    else {}
                 )
                 issue_id = parsed.get("id") or Path(issue.get("path", "")).stem
                 title = (parsed.get("title") or "").strip()

@@ -71,7 +71,17 @@ def run_precheck(project_root: Path, auto_init: bool = True) -> PrecheckResult:
     result.project_type = detect_project_type(project_root)
 
     # Check for source code
-    source_extensions = {".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".rb"}
+    source_extensions = {
+        ".py",
+        ".js",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".rb",
+    }
     for entry in project_root.iterdir():
         if (
             entry.is_dir()

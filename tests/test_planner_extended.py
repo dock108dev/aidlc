@@ -108,17 +108,29 @@ class TestPlanningCycleWithRealOutput:
         (run_dir / "claude_outputs").mkdir()
         from aidlc.models import Issue
 
-        issue = Issue(id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"])
+        issue = Issue(
+            id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"]
+        )
         state.update_issue(issue)
         doc_files = [
-            {"path": "ROADMAP.md", "content": "Phase 1\n- A\n- B", "priority": 0, "size": 16},
+            {
+                "path": "ROADMAP.md",
+                "content": "Phase 1\n- A\n- B",
+                "priority": 0,
+                "size": 16,
+            },
             {
                 "path": "ARCHITECTURE.md",
                 "content": "Components and flow",
                 "priority": 0,
                 "size": 19,
             },
-            {"path": "DESIGN.md", "content": "Patterns and conventions", "priority": 0, "size": 24},
+            {
+                "path": "DESIGN.md",
+                "content": "Patterns and conventions",
+                "priority": 0,
+                "size": 24,
+            },
             {
                 "path": "CLAUDE.md",
                 "content": "Agent rules and constraints",
@@ -126,7 +138,9 @@ class TestPlanningCycleWithRealOutput:
                 "size": 27,
             },
         ]
-        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
+        planner = Planner(
+            state, run_dir, config, cli, "context", logger, doc_files=doc_files
+        )
         planner.run()
         assert state.planning_cycles > 1
         assert "clear" in (state.stop_reason or "").lower()
@@ -241,7 +255,9 @@ class TestBuildPrompt:
         ]
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        planner = Planner(state, run_dir, config, MagicMock(), "project context", logger)
+        planner = Planner(
+            state, run_dir, config, MagicMock(), "project context", logger
+        )
         prompt = planner._build_prompt(is_finalization=False)
         assert "ISSUE-001" in prompt
         assert "Existing" in prompt

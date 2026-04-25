@@ -31,7 +31,9 @@ def detect_config(project_root: Path) -> dict:
     if (project_root / "project.godot").exists():
         project_types.append("godot")
     # Unity detection
-    if (project_root / "Assets").is_dir() and (project_root / "ProjectSettings").is_dir():
+    if (project_root / "Assets").is_dir() and (
+        project_root / "ProjectSettings"
+    ).is_dir():
         project_types.append("unity")
 
     project_type = ", ".join(sorted(set(project_types))) if project_types else "unknown"
@@ -64,11 +66,19 @@ def detect_config(project_root: Path) -> dict:
     # Detect package manager
     if (project_root / "pnpm-lock.yaml").exists():
         # Adjust npm commands to pnpm
-        for key in ("run_tests_command", "e2e_test_command", "build_validation_command"):
+        for key in (
+            "run_tests_command",
+            "e2e_test_command",
+            "build_validation_command",
+        ):
             if key in detected and detected[key] and detected[key].startswith("npm"):
                 detected[key] = detected[key].replace("npm", "pnpm", 1)
     elif (project_root / "yarn.lock").exists():
-        for key in ("run_tests_command", "e2e_test_command", "build_validation_command"):
+        for key in (
+            "run_tests_command",
+            "e2e_test_command",
+            "build_validation_command",
+        ):
             if key in detected and detected[key] and detected[key].startswith("npm"):
                 detected[key] = detected[key].replace("npm", "yarn", 1)
 
@@ -93,7 +103,9 @@ def update_config_file(project_root: Path, detected: dict, logger=None) -> dict:
                 logger.error(f"Failed reading config for auto-detect merge: {exc}")
             raise
         except json.JSONDecodeError as exc:
-            backup_path = config_path.with_suffix(f".corrupt-{int(time.time())}.json.bak")
+            backup_path = config_path.with_suffix(
+                f".corrupt-{int(time.time())}.json.bak"
+            )
             try:
                 backup_path.write_text(raw if "raw" in locals() else "")
             except OSError:
@@ -190,7 +202,9 @@ def _detect_lint_command(project_root: Path, project_type: str) -> str | None:
 
     # Godot
     if "godot" in project_type:
-        if (project_root / ".gdlintrc").exists() or (project_root / "gdlint.cfg").exists():
+        if (project_root / ".gdlintrc").exists() or (
+            project_root / "gdlint.cfg"
+        ).exists():
             return "gdlint ."
 
     return None

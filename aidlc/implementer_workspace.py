@@ -143,7 +143,11 @@ def git_commit_cycle_snapshot(
 
         logger.info(f"Autosync commit created at cycle {cycle_num}.")
         return True
-    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
+    except (
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+    ) as e:
         logger.warning(f"Autosync commit error: {e}")
         return False
     finally:

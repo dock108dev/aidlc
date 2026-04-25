@@ -83,7 +83,10 @@ class Account:
 
     @property
     def is_usable(self) -> bool:
-        return self.enabled and self.auth_state in (AuthState.CONNECTED, AuthState.UNKNOWN)
+        return self.enabled and self.auth_state in (
+            AuthState.CONNECTED,
+            AuthState.UNKNOWN,
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -114,7 +117,9 @@ class Account:
             account.auth_state = AuthState.UNKNOWN
         account.health_status = data.get("health_status", "unknown")
         try:
-            account.membership_tier = MembershipTier(data.get("membership_tier", "unknown"))
+            account.membership_tier = MembershipTier(
+                data.get("membership_tier", "unknown")
+            )
         except ValueError:
             account.membership_tier = MembershipTier.UNKNOWN
         account.role_tags = data.get("role_tags", [])

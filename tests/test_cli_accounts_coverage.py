@@ -145,7 +145,9 @@ def test_accounts_validate_single_and_all(
                 version,
             )
 
-    acc = Account(account_id="a1", provider_id="claude", membership_tier=MembershipTier.STANDARD)
+    acc = Account(
+        account_id="a1", provider_id="claude", membership_tier=MembershipTier.STANDARD
+    )
     mgr.get.return_value = acc
     updated = Account(
         account_id="a1",
@@ -158,7 +160,9 @@ def test_accounts_validate_single_and_all(
     cmd_accounts(_ns(accounts_cmd="validate", id="a1", project=str(tmp_path)), version)
 
     mgr.list.return_value = [
-        Account(account_id="b1", provider_id="openai", membership_tier=MembershipTier.API),
+        Account(
+            account_id="b1", provider_id="openai", membership_tier=MembershipTier.API
+        ),
     ]
     mgr.validate.return_value = Account(
         account_id="b1",

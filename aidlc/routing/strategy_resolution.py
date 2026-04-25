@@ -71,7 +71,8 @@ def resolve_balanced(
         explore_p = 0.05
         try:
             explore_p = float(
-                router.config.get("routing_impl_budget_explore_probability", 0.05) or 0.0
+                router.config.get("routing_impl_budget_explore_probability", 0.05)
+                or 0.0
             )
         except (TypeError, ValueError):
             explore_p = 0.05
@@ -96,11 +97,11 @@ def resolve_balanced(
                     "set providers.<id>.max_capacity for premium-first ordering"
                 )
         elif is_legacy_premium and provider_id == "claude":
-            quality_note = f"legacy Claude-first phase ({phase}) → {provider_id}/{model}"
-        elif is_legacy_premium and provider_id != "claude":
             quality_note = (
-                f"Claude unavailable for {phase} (legacy phase), fallback {provider_id}/{model}"
+                f"legacy Claude-first phase ({phase}) → {provider_id}/{model}"
             )
+        elif is_legacy_premium and provider_id != "claude":
+            quality_note = f"Claude unavailable for {phase} (legacy phase), fallback {provider_id}/{model}"
         elif max_cap and not is_impl:
             w = provider_max_capacity_weight(router.config, provider_id)
             quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}×)"
@@ -162,7 +163,11 @@ def resolve_cheapest(
         if effective_override:
             model = effective_override
         else:
-            cheapest_models = {"claude": "haiku", "copilot": "", "openai": "gpt-5.4-nano"}
+            cheapest_models = {
+                "claude": "haiku",
+                "copilot": "",
+                "openai": "gpt-5.4-nano",
+            }
             model = cheapest_models.get(provider_id, adapter.get_default_model(phase))
 
         if (provider_id, model) in excluded_models or router._model_is_on_cooldown(
@@ -281,7 +286,11 @@ def resolve_custom(
     custom_model = phase_cfg.get("model")
 
     adapter = router._adapters.get(provider_id)
-    if provider_id in excluded_providers or adapter is None or not adapter.check_available():
+    if (
+        provider_id in excluded_providers
+        or adapter is None
+        or not adapter.check_available()
+    ):
         router.logger.warning(
             f"Custom routing: provider '{provider_id}' for phase '{phase}' "
             "unavailable, falling back to balanced."

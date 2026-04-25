@@ -68,7 +68,9 @@ def sort_issues_for_implementation(
             candidate = max(
                 core,
                 key=lambda issue_id: (
-                    priority_order.get(id_to_issue.get(issue_id, {}).get("priority", "medium"), 1),
+                    priority_order.get(
+                        id_to_issue.get(issue_id, {}).get("priority", "medium"), 1
+                    ),
                     len(id_to_issue.get(issue_id, {}).get("dependencies", [])),
                     issue_id,
                 ),
@@ -92,14 +94,18 @@ def sort_issues_for_implementation(
             if removed:
                 id_to_issue[candidate]["dependencies"] = deps
                 removed_edges.append((candidate, successor))
-                logger.warning(f"Removed circular dependency edge: {candidate} -> {successor}")
+                logger.warning(
+                    f"Removed circular dependency edge: {candidate} -> {successor}"
+                )
             else:
                 logger.error(
                     f"Could not auto-resolve cycle edge for {candidate}; manual fix required."
                 )
                 return False
     else:
-        logger.error("Dependency cycle resolution exceeded max passes; manual fix required.")
+        logger.error(
+            "Dependency cycle resolution exceeded max passes; manual fix required."
+        )
         return False
 
     if removed_edges:
@@ -109,7 +115,9 @@ def sort_issues_for_implementation(
             if not issue_data:
                 continue
             state.update_issue(Issue.from_dict(issue_data))
-            logger.info(f"Updated issue dependencies after cycle resolution: {issue_id}")
+            logger.info(
+                f"Updated issue dependencies after cycle resolution: {issue_id}"
+            )
         sync_all_issue_markdown()
 
     sorted_ids: list[str] = []

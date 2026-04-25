@@ -22,7 +22,9 @@ def build_doc_manifest(doc_files: list[dict], max_summary_len: int = 120) -> str
     don't fit in the context budget. ~50 chars per doc = 2k for 40 docs.
     """
     lines = ["## Document Manifest\n"]
-    lines.append("All project documentation files (use 'research' action to read any you need):\n")
+    lines.append(
+        "All project documentation files (use 'research' action to read any you need):\n"
+    )
 
     for doc in doc_files:
         path = doc["path"]
@@ -75,19 +77,25 @@ def build_project_brief(
 
     # For single batch, ask for the full brief directly
     if len(batches) == 1:
-        brief = _generate_brief_single(batches[0], cli, project_root, logger, max_brief_chars)
+        brief = _generate_brief_single(
+            batches[0], cli, project_root, logger, max_brief_chars
+        )
     else:
         # Multiple batches: summarize each, then combine
         batch_summaries = []
         for i, batch in enumerate(batches):
             logger.info(f"Summarizing doc batch {i + 1}/{len(batches)}...")
-            summary = _summarize_batch(batch, i + 1, len(batches), cli, project_root, logger)
+            summary = _summarize_batch(
+                batch, i + 1, len(batches), cli, project_root, logger
+            )
             if summary:
                 batch_summaries.append(summary)
 
         if batch_summaries:
             combined = "\n\n---\n\n".join(batch_summaries)
-            brief = _generate_brief_single(combined, cli, project_root, logger, max_brief_chars)
+            brief = _generate_brief_single(
+                combined, cli, project_root, logger, max_brief_chars
+            )
         else:
             brief = None
 
@@ -102,7 +110,12 @@ def _extract_summary(content: str, max_len: int) -> str:
     for line in content.split("\n"):
         line = line.strip()
         # Skip empty lines, headers, frontmatter, comments
-        if not line or line.startswith("#") or line.startswith("---") or line.startswith("<!--"):
+        if (
+            not line
+            or line.startswith("#")
+            or line.startswith("---")
+            or line.startswith("<!--")
+        ):
             continue
         # Skip very short lines
         if len(line) < 10:

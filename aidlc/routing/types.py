@@ -45,11 +45,19 @@ class UsagePressure:
     def record(self, provider_id: str, account_id: str | None, tokens: int) -> None:
         self.total_calls += 1
         self.total_tokens += tokens
-        self.calls_by_provider[provider_id] = self.calls_by_provider.get(provider_id, 0) + 1
-        self.tokens_by_provider[provider_id] = self.tokens_by_provider.get(provider_id, 0) + tokens
+        self.calls_by_provider[provider_id] = (
+            self.calls_by_provider.get(provider_id, 0) + 1
+        )
+        self.tokens_by_provider[provider_id] = (
+            self.tokens_by_provider.get(provider_id, 0) + tokens
+        )
         if account_id:
-            self.calls_by_account[account_id] = self.calls_by_account.get(account_id, 0) + 1
-            self.tokens_by_account[account_id] = self.tokens_by_account.get(account_id, 0) + tokens
+            self.calls_by_account[account_id] = (
+                self.calls_by_account.get(account_id, 0) + 1
+            )
+            self.tokens_by_account[account_id] = (
+                self.tokens_by_account.get(account_id, 0) + tokens
+            )
 
     def account_call_share(self, account_id: str) -> float:
         if self.total_calls == 0:

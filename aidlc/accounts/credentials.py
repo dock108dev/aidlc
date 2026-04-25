@@ -50,7 +50,9 @@ class CredentialStore:
         """Store a credential securely."""
         if self._keyring:
             try:
-                self._keyring.set_password(_KEYRING_SERVICE, f"{account_id}:{key}", value)
+                self._keyring.set_password(
+                    _KEYRING_SERVICE, f"{account_id}:{key}", value
+                )
                 return
             except Exception as e:
                 logger.debug(f"Keyring write failed ({e}), falling back to file store.")
@@ -64,7 +66,9 @@ class CredentialStore:
         """Retrieve a stored credential. Returns None if not found."""
         if self._keyring:
             try:
-                value = self._keyring.get_password(_KEYRING_SERVICE, f"{account_id}:{key}")
+                value = self._keyring.get_password(
+                    _KEYRING_SERVICE, f"{account_id}:{key}"
+                )
                 if value is not None:
                     return value
             except Exception as e:
@@ -79,13 +83,17 @@ class CredentialStore:
         if self._keyring:
             try:
                 if key:
-                    self._keyring.delete_password(_KEYRING_SERVICE, f"{account_id}:{key}")
+                    self._keyring.delete_password(
+                        _KEYRING_SERVICE, f"{account_id}:{key}"
+                    )
                 else:
                     # Delete all known keys for this account from fallback to discover keys
                     data = self._load_fallback()
                     for k in list(data.get(account_id, {}).keys()):
                         try:
-                            self._keyring.delete_password(_KEYRING_SERVICE, f"{account_id}:{k}")
+                            self._keyring.delete_password(
+                                _KEYRING_SERVICE, f"{account_id}:{k}"
+                            )
                         except Exception:
                             pass
             except Exception as e:

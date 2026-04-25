@@ -112,7 +112,9 @@ def test_full_audit_module_analyze_parse_warning(tmp_path: Path):
     (app / "f.py").write_text("x=1\n")
 
     cli = MagicMock()
-    cli.execute_prompt = MagicMock(return_value={"success": True, "output": "no json here {{{{"})
+    cli.execute_prompt = MagicMock(
+        return_value={"success": True, "output": "no json here {{{{"}
+    )
 
     eng = FullAuditEngine(_auditor(tmp_path, cli=cli))
     mod = ModuleInfo(name="a", path="a", role="api")
@@ -218,7 +220,10 @@ def test_runtime_playwright_headless_injected(mock_run, mock_profile, tmp_path: 
 
     aud = MagicMock()
     aud.project_root = tmp_path
-    aud.config = {"audit_runtime_timeout_seconds": 30, "audit_playwright_headless": True}
+    aud.config = {
+        "audit_runtime_timeout_seconds": 30,
+        "audit_playwright_headless": True,
+    }
     aud.logger = MagicMock()
 
     eng = RuntimeAuditEngine(aud)

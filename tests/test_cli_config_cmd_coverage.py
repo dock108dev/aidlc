@@ -35,7 +35,11 @@ def test_cmd_config_show_summary(mock_load, mock_banner, version, tmp_path, caps
         "plan_budget_hours": 4,
         "dry_run": False,
         "providers": {
-            "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"},
+            "claude": {
+                "enabled": True,
+                "cli_command": "claude",
+                "default_model": "sonnet",
+            },
             "bad": "skip-me",
         },
     }
@@ -123,7 +127,11 @@ def test_print_config_summary_skips_non_dict_provider_entries(capsys):
         {
             "providers": {
                 "bad": "not-a-dict",
-                "claude": {"enabled": False, "cli_command": "claude", "default_model": "sonnet"},
+                "claude": {
+                    "enabled": False,
+                    "cli_command": "claude",
+                    "default_model": "sonnet",
+                },
             }
         }
     )
@@ -149,7 +157,9 @@ def test_print_config_summary_phase_models_defaults(capsys):
 
 
 @patch("aidlc.cli.config_cmd.ProviderRouter")
-def test_print_effective_preview_providers_not_a_dict(mock_router_cls, tmp_path, capsys):
+def test_print_effective_preview_providers_not_a_dict(
+    mock_router_cls, tmp_path, capsys
+):
     config = {"routing_strategy": "balanced", "providers": None}
     router = MagicMock()
     router._adapters = {}
@@ -186,7 +196,11 @@ def test_run_config_wizard_no_changes_all_eof(tmp_path):
         "plan_budget_hours": 4,
         "providers": {
             "claude": {"enabled": True, "cli_command": "claude", "default_model": ""},
-            "copilot": {"enabled": False, "cli_command": "copilot", "default_model": ""},
+            "copilot": {
+                "enabled": False,
+                "cli_command": "copilot",
+                "default_model": "",
+            },
             "openai": {"enabled": False, "cli_command": "codex", "default_model": ""},
         },
     }
@@ -204,7 +218,11 @@ def test_run_config_wizard_invalid_strategy_choice_and_abort_save(tmp_path, caps
         "plan_budget_hours": 4,
         "providers": {
             "claude": {"enabled": True, "cli_command": "claude", "default_model": ""},
-            "copilot": {"enabled": False, "cli_command": "copilot", "default_model": ""},
+            "copilot": {
+                "enabled": False,
+                "cli_command": "copilot",
+                "default_model": "",
+            },
             "openai": {"enabled": False, "cli_command": "codex", "default_model": ""},
         },
     }
@@ -225,7 +243,11 @@ def test_run_config_wizard_saves_plan_budget(tmp_path, capsys):
         "plan_budget_hours": 4,
         "providers": {
             "claude": {"enabled": True, "cli_command": "claude", "default_model": ""},
-            "copilot": {"enabled": False, "cli_command": "copilot", "default_model": ""},
+            "copilot": {
+                "enabled": False,
+                "cli_command": "copilot",
+                "default_model": "",
+            },
             "openai": {"enabled": False, "cli_command": "codex", "default_model": ""},
         },
     }

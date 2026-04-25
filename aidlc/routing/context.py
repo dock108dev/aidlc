@@ -115,19 +115,29 @@ def tier_aware_provider_order(
             budget_enabled = [x for x in helpers.get_budget_providers() if x in enabled]
             if budget_enabled and explore_p > 0.0 and random.random() < explore_p:
                 budget_set = set(budget_enabled)
-                budget_ordered = budget_provider_order(usage, session_budget_provider, budget_set)
+                budget_ordered = budget_provider_order(
+                    usage, session_budget_provider, budget_set
+                )
                 used = set(budget_ordered)
                 max_cap_rest = [
-                    p for p in _reference_ordered_subset(max_cap_ids, ref) if p not in used
+                    p
+                    for p in _reference_ordered_subset(max_cap_ids, ref)
+                    if p not in used
                 ]
                 tail = enabled - used - set(max_cap_rest)
-                return list(budget_ordered) + max_cap_rest + _reference_ordered_subset(tail, ref)
+                return (
+                    list(budget_ordered)
+                    + max_cap_rest
+                    + _reference_ordered_subset(tail, ref)
+                )
             rest = enabled - max_cap_ids
-            return _reference_ordered_subset(max_cap_ids, ref) + _reference_ordered_subset(
-                rest, ref
-            )
+            return _reference_ordered_subset(
+                max_cap_ids, ref
+            ) + _reference_ordered_subset(rest, ref)
         # No max_capacity providers — same fairness as other phases
-        return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
+        return _weighted_fair_provider_order(
+            config, enabled, usage, session_budget_provider
+        )
 
     # Legacy: complex implementation previously mapped to implementation_complex phase only.
     legacy_premium_first = phase in helpers.get_premium_phases() or (
@@ -137,7 +147,9 @@ def tier_aware_provider_order(
         rest = enabled - {"claude"}
         return ["claude"] + _reference_ordered_subset(rest, ref)
 
-    return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
+    return _weighted_fair_provider_order(
+        config, enabled, usage, session_budget_provider
+    )
 
 
 def _weighted_fair_provider_order(
@@ -260,9 +272,9 @@ def resolve_model_for_phase(
     if isinstance(user_provider_overrides, dict):
         user_phase_models = user_provider_overrides.get("phase_models") or {}
         if isinstance(user_phase_models, dict):
-            user_phase_model = user_phase_models.get(effective_phase) or user_phase_models.get(
-                "default"
-            )
+            user_phase_model = user_phase_models.get(
+                effective_phase
+            ) or user_phase_models.get("default")
             if user_phase_model:
                 return str(user_phase_model)
 

@@ -76,7 +76,8 @@ def test_build_context_truncates_when_over_char_budget(tmp_path: Path):
 def test_build_context_audit_sections_and_tech_debt_overflow(tmp_path: Path):
     s = ProjectScanner(tmp_path, {})
     tech_debt = [
-        {"file": f"f{i}.py", "line": i, "type": "todo", "text": "fixme"} for i in range(15)
+        {"file": f"f{i}.py", "line": i, "type": "todo", "text": "fixme"}
+        for i in range(15)
     ]
     scan = {
         "project_type": "python",
@@ -89,9 +90,15 @@ def test_build_context_audit_sections_and_tech_debt_overflow(tmp_path: Path):
             "depth": "deep",
             "frameworks": ["django"],
             "entry_points": ["manage.py"],
-            "modules": [{"name": "app", "role": "web", "file_count": 2, "line_count": 500}],
+            "modules": [
+                {"name": "app", "role": "web", "file_count": 2, "line_count": 500}
+            ],
             "source_stats": {"total_files": 10, "total_lines": 2000},
-            "test_coverage": {"estimated_coverage": "40%", "test_files": 1, "test_functions": 3},
+            "test_coverage": {
+                "estimated_coverage": "40%",
+                "test_files": 1,
+                "test_functions": 3,
+            },
             "features": ["auth"],
             "tech_debt": tech_debt,
         },

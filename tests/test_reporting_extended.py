@@ -60,7 +60,12 @@ def test_run_report_skips_non_dict_provider_and_phase_rows(tmp_path):
             },
         },
         phase_usage={
-            "planning": {"provider_id": "p", "account_id": "a", "model": "m", "calls": 1},
+            "planning": {
+                "provider_id": "p",
+                "account_id": "a",
+                "model": "m",
+                "calls": 1,
+            },
             "bad_phase": [],
         },
     )
@@ -108,7 +113,10 @@ def test_run_report_validation_and_finalization(tmp_path):
 def test_run_report_notes_and_non_dict_artifact(tmp_path):
     s = _minimal_state(
         notes="Ship it",
-        created_artifacts=[{"path": "a.md", "type": "doc", "action": "create"}, "raw-string"],
+        created_artifacts=[
+            {"path": "a.md", "type": "doc", "action": "create"},
+            "raw-string",
+        ],
     )
     body = generate_run_report(s, tmp_path).read_text()
     assert "## Notes" in body

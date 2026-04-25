@@ -20,7 +20,9 @@ def _normalize_res_path(project_root: Path, f: str) -> str:
     return "res://" + rel
 
 
-def collect_gut_paths_from_changes(project_root: Path, files_changed: list[str]) -> list[str]:
+def collect_gut_paths_from_changes(
+    project_root: Path, files_changed: list[str]
+) -> list[str]:
     """Pick Godot/GUT-style test paths from files touched in this issue."""
     seen: dict[str, None] = {}
     for raw in files_changed or []:
@@ -36,7 +38,9 @@ def collect_gut_paths_from_changes(project_root: Path, files_changed: list[str])
     return list(seen.keys())
 
 
-def expand_same_directory_gut_tests(project_root: Path, gut_paths: list[str]) -> list[str]:
+def expand_same_directory_gut_tests(
+    project_root: Path, gut_paths: list[str]
+) -> list[str]:
     """Add sibling `test_*.gd` in the same directory as any listed path (lightweight deps)."""
     out: dict[str, None] = {p: None for p in gut_paths}
     for res in gut_paths:
@@ -97,7 +101,9 @@ def effective_implementation_test_command(
         return ""
     if not project_wide_tests_unstable:
         return base
-    if not bool(config.get("implementation_use_targeted_tests_when_suite_unstable", True)):
+    if not bool(
+        config.get("implementation_use_targeted_tests_when_suite_unstable", True)
+    ):
         return base
 
     tmpl = config.get("implementation_targeted_test_command")
@@ -112,5 +118,7 @@ def effective_implementation_test_command(
         except (KeyError, ValueError):
             return base
 
-    auto = build_automatic_targeted_command(project_root, base, list(files_changed or []))
+    auto = build_automatic_targeted_command(
+        project_root, base, list(files_changed or [])
+    )
     return auto if auto else base

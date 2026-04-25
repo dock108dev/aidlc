@@ -72,7 +72,9 @@ class Finalizer:
     def _project_context_for_finalize(self) -> str:
         """Cap project_context for finalize prompts (avoids CLI 'Prompt is too long')."""
         raw = self.project_context
-        max_c = max(4000, int(self.config.get("finalize_project_context_max_chars", 22000)))
+        max_c = max(
+            4000, int(self.config.get("finalize_project_context_max_chars", 22000))
+        )
         if len(raw) <= max_c:
             return raw
         head = int(max_c * 0.65)
@@ -165,7 +167,9 @@ class Finalizer:
             self.state.finalize_passes_completed.append(pass_name)
             self.logger.info(f"Pass {pass_name} complete ({duration:.0f}s)")
         else:
-            self.logger.error(f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)")
+            self.logger.error(
+                f"Pass {pass_name} failed: {result.get('error')} ({duration:.0f}s)"
+            )
 
     def _refresh_config(self):
         """Re-detect project config after finalization (codebase may have changed)."""
@@ -174,7 +178,9 @@ class Finalizer:
 
             detected = detect_config(self.project_root)
             if any(v for k, v in detected.items() if not k.startswith("_")):
-                self.logger.info("Refreshing config with post-finalization detection...")
+                self.logger.info(
+                    "Refreshing config with post-finalization detection..."
+                )
                 update_config_file(self.project_root, detected, self.logger)
         except Exception as e:
             self.logger.warning(f"Config refresh failed: {e}")
@@ -208,7 +214,9 @@ class Finalizer:
                         )
                     finally:
                         add_console_time(self.state, t1)
-                    diff_text = full_diff.stdout[:30000] if full_diff.returncode == 0 else ""
+                    diff_text = (
+                        full_diff.stdout[:30000] if full_diff.returncode == 0 else ""
+                    )
                     return f"### Diff Stats\n```\n{result.stdout}\n```\n\n### Diff Detail\n```\n{diff_text}\n```"
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
@@ -248,7 +256,9 @@ class Finalizer:
         if "project_type" in self.project_context.lower():
             for line in self.project_context.split("\n"):
                 if "project type" in line.lower():
-                    project_type = line.split(":")[-1].strip() if ":" in line else "unknown"
+                    project_type = (
+                        line.split(":")[-1].strip() if ":" in line else "unknown"
+                    )
                     break
 
         content = FUTURES_TEMPLATE.format(

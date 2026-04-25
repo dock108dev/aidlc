@@ -9,7 +9,10 @@ from aidlc.routing.engine import ProviderRouter
 def test_invalid_routing_strategy_logs_and_falls_back_to_balanced(caplog):
     caplog.set_level(logging.WARNING)
     router = ProviderRouter(
-        {"routing_strategy": "not-a-real-strategy", "providers": {"claude": {"enabled": False}}},
+        {
+            "routing_strategy": "not-a-real-strategy",
+            "providers": {"claude": {"enabled": False}},
+        },
         logging.getLogger("r.init"),
     )
     assert router._strategy.name == "BALANCED"

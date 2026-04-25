@@ -37,7 +37,9 @@ FAILURE_CAUSE_UNKNOWN = "failed_unknown"
 
 # Causes considered transient — auto-reopened to PENDING on a fresh
 # implementation cycle (or always with --retry-failed).
-TRANSIENT_FAILURE_CAUSES = frozenset({FAILURE_CAUSE_TOKEN_EXHAUSTED, FAILURE_CAUSE_UNKNOWN})
+TRANSIENT_FAILURE_CAUSES = frozenset(
+    {FAILURE_CAUSE_TOKEN_EXHAUSTED, FAILURE_CAUSE_UNKNOWN}
+)
 
 
 @dataclass

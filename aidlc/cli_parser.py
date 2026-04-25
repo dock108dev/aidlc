@@ -25,7 +25,8 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "Drop into any repo, write BRAINDUMP.md, run the lifecycle."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""\
+        epilog=textwrap.dedent(
+            """\
             Quick start:
               aidlc init                Set up .aidlc/ and scaffold BRAINDUMP.md
               aidlc precheck            Check what docs/config are in place
@@ -36,7 +37,8 @@ def build_parser(version: str) -> argparse.ArgumentParser:
               aidlc run --audit         Run a code audit before planning
 
             More info: https://github.com/highlyprofitable108/aidlc
-        """),
+        """
+        ),
     )
     parser.add_argument("--version", "-V", action="version", version=f"aidlc {version}")
 
@@ -50,9 +52,14 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "Auto-creates .aidlc/ with defaults if missing."
         ),
     )
-    precheck_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
     precheck_parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show suggestions for all missing docs"
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
+    precheck_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show suggestions for all missing docs",
     )
 
     init_parser = subparsers.add_parser(
@@ -63,7 +70,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "BRAINDUMP.md is the only required doc — describe what this cycle should deliver."
         ),
     )
-    init_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    init_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     init_parser.add_argument(
         "--providers",
         action="store_true",
@@ -75,24 +84,40 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Run AIDLC lifecycle",
         description="Run scan -> plan -> implement -> validate -> finalize -> report lifecycle.",
     )
-    run_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    run_parser.add_argument("--config", "-c", help="Config file path")
-    run_parser.add_argument("--plan-budget", help="Planning time budget (e.g., 4h, 30m)")
-    run_parser.add_argument("--plan-only", action="store_true", help="Stop after planning")
     run_parser.add_argument(
-        "--implement-only", action="store_true", help="Skip planning, implement existing issues"
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
+    run_parser.add_argument("--config", "-c", help="Config file path")
+    run_parser.add_argument(
+        "--plan-budget", help="Planning time budget (e.g., 4h, 30m)"
+    )
+    run_parser.add_argument(
+        "--plan-only", action="store_true", help="Stop after planning"
+    )
+    run_parser.add_argument(
+        "--implement-only",
+        action="store_true",
+        help="Skip planning, implement existing issues",
     )
     run_parser.add_argument("--resume", action="store_true", help="Resume latest run")
     run_parser.add_argument(
         "--dry-run", action="store_true", help="No provider calls (cycles capped at 3)"
     )
     run_parser.add_argument(
-        "--max-plan-cycles", type=int, default=None, help="Max planning cycles (0=unlimited)"
+        "--max-plan-cycles",
+        type=int,
+        default=None,
+        help="Max planning cycles (0=unlimited)",
     )
     run_parser.add_argument(
-        "--max-impl-cycles", type=int, default=None, help="Max implementation cycles (0=unlimited)"
+        "--max-impl-cycles",
+        type=int,
+        default=None,
+        help="Max implementation cycles (0=unlimited)",
     )
-    run_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
+    run_parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Debug logging"
+    )
     run_parser.add_argument(
         "--audit",
         nargs="?",
@@ -106,7 +131,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Skip the validation test-and-fix loop after implementation",
     )
     run_parser.add_argument(
-        "--skip-finalize", action="store_true", help="Skip finalization passes after implementation"
+        "--skip-finalize",
+        action="store_true",
+        help="Skip finalization passes after implementation",
     )
     run_parser.add_argument(
         "--passes",
@@ -133,7 +160,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Show latest run status",
         description="Display the status and issue breakdown of the most recent run.",
     )
-    status_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    status_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
 
     reset_parser = subparsers.add_parser(
         "reset",
@@ -143,7 +172,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "Preserves config.json by default. Use --all to also delete config.json."
         ),
     )
-    reset_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    reset_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     reset_parser.add_argument(
         "--all",
         dest="reset_all",
@@ -173,7 +204,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Manage provider accounts",
         description="Connect, list, validate, and remove provider accounts (Claude, Copilot, OpenAI).",
     )
-    accounts_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    accounts_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     accounts_subparsers = accounts_parser.add_subparsers(
         dest="accounts_cmd", help="Accounts action"
     )
@@ -185,10 +218,14 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     accounts_add.add_argument("--id", required=True, help="Unique account identifier")
     accounts_add.add_argument("--name", help="Display name")
     accounts_add.add_argument(
-        "--tier", default="unknown", help="Membership tier: free | standard | pro | premium | api"
+        "--tier",
+        default="unknown",
+        help="Membership tier: free | standard | pro | premium | api",
     )
     accounts_add.add_argument(
-        "--tags", default="", help="Comma-separated role tags: primary,backup,premium,reserve,cheap"
+        "--tags",
+        default="",
+        help="Comma-separated role tags: primary,backup,premium,reserve,cheap",
     )
     accounts_remove = accounts_subparsers.add_parser("remove", help="Remove an account")
     accounts_remove.add_argument("--id", required=True, help="Account ID to remove")
@@ -203,15 +240,23 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Enable or disable AI providers",
         description="Enable or disable AI providers (claude, copilot, openai) in the project config.",
     )
-    provider_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    provider_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     provider_subparsers = provider_parser.add_subparsers(
         dest="provider_cmd", help="Provider action"
     )
     provider_subparsers.add_parser("list", help="Show provider enable/disable status")
     provider_enable = provider_subparsers.add_parser("enable", help="Enable a provider")
-    provider_enable.add_argument("name", help="Provider name: claude | copilot | openai")
-    provider_disable = provider_subparsers.add_parser("disable", help="Disable a provider")
-    provider_disable.add_argument("name", help="Provider name: claude | copilot | openai")
+    provider_enable.add_argument(
+        "name", help="Provider name: claude | copilot | openai"
+    )
+    provider_disable = provider_subparsers.add_parser(
+        "disable", help="Disable a provider"
+    )
+    provider_disable.add_argument(
+        "name", help="Provider name: claude | copilot | openai"
+    )
     provider_auth = provider_subparsers.add_parser(
         "auth",
         help="Authenticate a provider (runs vendor login flow)",
@@ -228,7 +273,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Show token and cost usage across runs",
         description="Display token/cost usage table by provider, phase, model, or account.",
     )
-    usage_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    usage_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     usage_parser.add_argument(
         "--last",
         type=int,
@@ -254,9 +301,13 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Show and manage configuration",
         description="Inspect active configuration and view effective runtime routing preview.",
     )
-    config_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    config_parser.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     config_parser.add_argument("--config", "-c", help="Config file path")
-    config_subparsers = config_parser.add_subparsers(dest="config_cmd", help="Config action")
+    config_subparsers = config_parser.add_subparsers(
+        dest="config_cmd", help="Config action"
+    )
     config_show = config_subparsers.add_parser(
         "show", help="Show active config and routing preview"
     )
@@ -265,7 +316,9 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         action="store_true",
         help="Show full effective runtime preview (provider health, per-phase routing)",
     )
-    config_show.add_argument("--project", "-p", help="Project root directory (default: cwd)")
+    config_show.add_argument(
+        "--project", "-p", help="Project root directory (default: cwd)"
+    )
     config_show.add_argument("--config", "-c", help="Config file path")
     config_subparsers.add_parser("edit", help="Open config file in $EDITOR")
     config_subparsers.add_parser(

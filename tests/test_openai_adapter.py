@@ -32,7 +32,9 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
     logger = MagicMock()
     adapter = OpenAIAdapter(
         {
-            "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
+            "providers": {
+                "openai": {"cli_command": "codex", "default_model": "gpt-5.4"}
+            },
             "claude_long_run_warn_seconds": 1,
             "claude_hard_timeout_seconds": 10,
         },
@@ -46,7 +48,9 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
 
 
 def test_extract_codex_failure_diagnostics_prefers_stderr_then_jsonl():
-    j = json.dumps({"type": "error", "message": "Rate limit exceeded — try again in 60s"})
+    j = json.dumps(
+        {"type": "error", "message": "Rate limit exceeded — try again in 60s"}
+    )
     assert "Rate limit" in _extract_codex_failure_diagnostics("", f"{j}\n")
     combined = _extract_codex_failure_diagnostics("outerr", j)
     assert "outerr" in combined
@@ -105,7 +109,10 @@ def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
 def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_path):
     err_line = json.dumps(
-        {"type": "error", "message": "Rate limit reached for gpt-5.4 in organization org-x"}
+        {
+            "type": "error",
+            "message": "Rate limit reached for gpt-5.4 in organization org-x",
+        }
     )
     proc = MagicMock()
     proc.communicate.return_value = (f"{err_line}\n", "")
@@ -113,7 +120,9 @@ def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_pa
     mock_popen.return_value = proc
     adapter = OpenAIAdapter(
         {
-            "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
+            "providers": {
+                "openai": {"cli_command": "codex", "default_model": "gpt-5.4"}
+            },
             "claude_hard_timeout_seconds": 30,
         },
         MagicMock(),
@@ -138,7 +147,9 @@ again at 5:41 PM.
     mock_popen.return_value = proc
     adapter = OpenAIAdapter(
         {
-            "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
+            "providers": {
+                "openai": {"cli_command": "codex", "default_model": "gpt-5.4"}
+            },
             "claude_hard_timeout_seconds": 30,
         },
         MagicMock(),
@@ -150,7 +161,9 @@ again at 5:41 PM.
 
 
 def test_codex_exit_zero_blocker_helper_negative():
-    ok, _ = _codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
+    ok, _ = _codex_exit_zero_is_quota_blocker(
+        '{"type":"turn.completed","usage":{}}\n', "", ""
+    )
     assert ok is False
 
 

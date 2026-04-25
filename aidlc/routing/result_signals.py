@@ -12,7 +12,11 @@ def is_token_exhaustion_result(result: dict) -> bool:
     if not isinstance(result, dict):
         return False
     failure_type = str(result.get("failure_type") or "").lower()
-    if failure_type in {"token_exhausted", "quota_exceeded", "token_exhausted_all_models"}:
+    if failure_type in {
+        "token_exhausted",
+        "quota_exceeded",
+        "token_exhausted_all_models",
+    }:
         return True
 
     message = "\n".join(
@@ -103,7 +107,10 @@ RATE_LIMIT_HEURISTIC_PATTERNS: tuple[tuple[str, str], ...] = (
     ("request_limit_hit", r"request\s+limit\s*(?:exceeded|reached|hit)"),
     ("throttle", r"throttl"),
     ("resource_exhausted", r"resource.?exhausted"),
-    ("capacity_exceeded", r"(?:overloaded|at)\s+capacity|capacity\s+(?:exceeded|reached|limit)"),
+    (
+        "capacity_exceeded",
+        r"(?:overloaded|at)\s+capacity|capacity\s+(?:exceeded|reached|limit)",
+    ),
     ("server_overloaded", r"(?:server|service|endpoint|upstream)\s+overloaded"),
     ("overloaded_error", r"overloaded\s+(?:error|exception|503|502|504)"),
     ("rpm_tpm_limits", r"(?:requests|tokens).{0,12}per.{0,8}minute"),
@@ -112,7 +119,9 @@ RATE_LIMIT_HEURISTIC_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 
 
-def first_rate_limit_heuristic_match(message_lower: str) -> tuple[str | None, str | None]:
+def first_rate_limit_heuristic_match(
+    message_lower: str,
+) -> tuple[str | None, str | None]:
     """Return (pattern_label, matched_text) for the first heuristic hit, or (None, None)."""
     if not message_lower.strip():
         return None, None
@@ -163,9 +172,13 @@ def format_rate_limit_diagnostics(
     else:
         label, span = first_rate_limit_heuristic_match(combined_lower)
         if label:
-            lines.append(f"classification=heuristic pattern={label!r} matched_span={span!r}")
+            lines.append(
+                f"classification=heuristic pattern={label!r} matched_span={span!r}"
+            )
         else:
-            lines.append("classification=heuristic (unexpected: no pattern after positive check)")
+            lines.append(
+                "classification=heuristic (unexpected: no pattern after positive check)"
+            )
     preview = f"{err}\n{out}".strip()
     if len(preview) > 900:
         preview = preview[:450] + "\n… [truncated] …\n" + preview[-400:]
@@ -176,7 +189,9 @@ def format_rate_limit_diagnostics(
             f"{datetime.fromtimestamp(raw_restore_epoch).isoformat(timespec='seconds')}"
         )
     else:
-        lines.append("parsed_restore_epoch=None (no retry-after / try-again time in payload)")
+        lines.append(
+            "parsed_restore_epoch=None (no retry-after / try-again time in payload)"
+        )
     if cooldown_until_epoch is not None:
         lines.append(
             "cooldown_until_epoch="

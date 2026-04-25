@@ -59,7 +59,9 @@ class CodeAuditor:
 
         if depth == "full" and self.config.get("audit_runtime_enabled", True):
             self.logger.info("Running runtime audit checks (build/test/e2e)...")
-            result.runtime_checks = self._runtime.run_runtime_checks(result.project_type)
+            result.runtime_checks = self._runtime.run_runtime_checks(
+                result.project_type
+            )
 
         self._output.generate_docs(result)
         result.conflicts = self._output.detect_conflicts(result)
@@ -81,6 +83,8 @@ class CodeAuditor:
                 f"Audit completed with degraded reads: {degraded_total} ({result.degraded_stats})"
             )
         if result.conflicts:
-            self.logger.warning(f"Found {len(result.conflicts)} conflict(s) with existing docs")
+            self.logger.warning(
+                f"Found {len(result.conflicts)} conflict(s) with existing docs"
+            )
 
         return result

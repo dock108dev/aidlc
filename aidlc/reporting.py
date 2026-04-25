@@ -269,7 +269,9 @@ def generate_checkpoint_summary(state: RunState, report_dir: Path) -> Path:
 - **Provider cost (USD)**: exact={state.claude_cost_usd_exact:.4f}, estimated={state.claude_cost_usd_estimated:.4f}
 """
     content = header + _checkpoint_provider_markdown(
-        state.provider_account_usage if isinstance(state.provider_account_usage, dict) else {}
+        state.provider_account_usage
+        if isinstance(state.provider_account_usage, dict)
+        else {}
     )
     cp_path.write_text(content)
     return cp_path

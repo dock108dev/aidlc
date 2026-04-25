@@ -54,7 +54,9 @@ def cmd_config_show(args: argparse.Namespace, version: str) -> None:
 def cmd_config_edit(config_path: Path) -> None:
     """Open .aidlc/config.json in $EDITOR."""
     if not config_path.exists():
-        print(f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first.")
+        print(
+            f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first."
+        )
         sys.exit(1)
 
     editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
@@ -66,13 +68,17 @@ def cmd_config_edit(config_path: Path) -> None:
 def run_config_wizard(config_path: Path) -> None:
     """Interactive config wizard — prompts for key settings, writes back to config.json."""
     if not config_path.exists():
-        print(f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first.")
+        print(
+            f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first."
+        )
         sys.exit(1)
 
     with open(config_path) as f:
         config = json.load(f)
 
-    print(f"  {bold('Config Wizard')} — press Enter to keep the current value, Ctrl-C to abort.")
+    print(
+        f"  {bold('Config Wizard')} — press Enter to keep the current value, Ctrl-C to abort."
+    )
     print()
 
     changes: dict = {}
@@ -104,7 +110,9 @@ def run_config_wizard(config_path: Path) -> None:
         config.get("routing_strategy", "balanced"),
     )
 
-    _prompt("Plan budget (hours)", "plan_budget_hours", config.get("plan_budget_hours", 4))
+    _prompt(
+        "Plan budget (hours)", "plan_budget_hours", config.get("plan_budget_hours", 4)
+    )
 
     print()
     print(f"  {bold('Providers')}")
@@ -120,7 +128,11 @@ def run_config_wizard(config_path: Path) -> None:
 
         new_enabled = enabled
         try:
-            raw = input(f"    Enable {pname}? (y/n) [{'y' if enabled else 'n'}]: ").strip().lower()
+            raw = (
+                input(f"    Enable {pname}? (y/n) [{'y' if enabled else 'n'}]: ")
+                .strip()
+                .lower()
+            )
         except EOFError:
             raw = ""
         if raw in ("y", "yes"):
@@ -159,7 +171,9 @@ def run_config_wizard(config_path: Path) -> None:
     had_changes = False
     if changes:
         for k, v in changes.items():
-            print(f"    {cyan(k)}: {dim(str(config.get(k, '(not set)')))} → {green(str(v))}")
+            print(
+                f"    {cyan(k)}: {dim(str(config.get(k, '(not set)')))} → {green(str(v))}"
+            )
             had_changes = True
 
     for pname, new_pcfg in provider_changes.items():
@@ -210,8 +224,12 @@ def print_config_summary(config: dict) -> None:
     """Print key config values."""
     print(f"  {bold('Active Configuration')}")
     print()
-    print(f"  {bold('Runtime profile:')}    {config.get('runtime_profile', 'standard')}")
-    print(f"  {bold('Routing strategy:')}   {cyan(config.get('routing_strategy', 'balanced'))}")
+    print(
+        f"  {bold('Runtime profile:')}    {config.get('runtime_profile', 'standard')}"
+    )
+    print(
+        f"  {bold('Routing strategy:')}   {cyan(config.get('routing_strategy', 'balanced'))}"
+    )
     print(f"  {bold('Plan budget:')}        {config.get('plan_budget_hours', 4)}h")
     print(f"  {bold('Dry run:')}            {config.get('dry_run', False)}")
     print()
@@ -222,7 +240,9 @@ def print_config_summary(config: dict) -> None:
         for pid, pcfg in providers.items():
             if not isinstance(pcfg, dict):
                 continue
-            enabled = green("enabled") if pcfg.get("enabled", False) else dim("disabled")
+            enabled = (
+                green("enabled") if pcfg.get("enabled", False) else dim("disabled")
+            )
             print(
                 f"    {pid}: {enabled}  cmd={pcfg.get('cli_command', '?')}  "
                 f"default_model={pcfg.get('default_model', '?')}"
@@ -256,7 +276,9 @@ def print_config_summary(config: dict) -> None:
                 model = phase_models.get(phase, default_model)
                 print(f"      {phase:<30} {model}")
         print()
-    print(f"  Tip: run {cyan('aidlc config show --effective')} for a full routing preview.")
+    print(
+        f"  Tip: run {cyan('aidlc config show --effective')} for a full routing preview."
+    )
 
 
 def print_effective_preview(config: dict, project_root: Path) -> None:
@@ -277,14 +299,18 @@ def print_effective_preview(config: dict, project_root: Path) -> None:
 
     print(f"  {bold('Provider Health:')}")
     providers_cfg = config.get("providers", {})
-    for provider_id, pcfg in providers_cfg.items() if isinstance(providers_cfg, dict) else []:
+    for provider_id, pcfg in (
+        providers_cfg.items() if isinstance(providers_cfg, dict) else []
+    ):
         if not isinstance(pcfg, dict):
             continue
         adapter = router._adapters.get(provider_id)
         if adapter:
             health = adapter.validate_health()
             health_icon = green("●") if health.is_usable else red("●")
-            print(f"    {health_icon} {provider_id}: {health.status.value} — {health.message[:60]}")
+            print(
+                f"    {health_icon} {provider_id}: {health.status.value} — {health.message[:60]}"
+            )
         else:
             print(f"    {dim('○')} {provider_id}: {dim('not loaded')}")
     print()

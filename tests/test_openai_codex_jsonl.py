@@ -30,7 +30,9 @@ def test_parse_codex_jsonl_skips_non_object():
 
 
 def test_parse_codex_jsonl_turn_completed_usage():
-    line1 = json.dumps({"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 2}})
+    line1 = json.dumps(
+        {"type": "turn.completed", "usage": {"input_tokens": 3, "output_tokens": 2}}
+    )
     line2 = json.dumps(
         {
             "type": "item.completed",
@@ -92,7 +94,11 @@ def test_openai_check_available_true_when_dry_run():
 
 def test_openai_get_default_model_phase():
     log = logging.getLogger("t_openai")
-    cfg = {"providers": {"openai": {"phase_models": {"plan": "gpt-x"}, "default_model": "gpt-4o"}}}
+    cfg = {
+        "providers": {
+            "openai": {"phase_models": {"plan": "gpt-x"}, "default_model": "gpt-4o"}
+        }
+    }
     ad = OpenAIAdapter(cfg, log)
     assert ad.get_default_model("plan") == "gpt-x"
     assert ad.get_default_model() == "gpt-4o"

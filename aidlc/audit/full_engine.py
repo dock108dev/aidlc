@@ -90,7 +90,9 @@ class FullAuditEngine:
             try:
                 return parse_audit_module_output(cli_result["output"])
             except ValueError as err:
-                self.logger.warning(f"Failed to parse module analysis for {module.name}: {err}")
+                self.logger.warning(
+                    f"Failed to parse module analysis for {module.name}: {err}"
+                )
         return None
 
     def read_module_source(self, module: ModuleInfo) -> str:
@@ -112,7 +114,9 @@ class FullAuditEngine:
                     if total_chars + len(content) > self.max_source_chars:
                         remaining = self.max_source_chars - total_chars
                         if remaining > 500:
-                            parts.append(f"\n--- {rel_path} (truncated) ---\n{content[:remaining]}")
+                            parts.append(
+                                f"\n--- {rel_path} (truncated) ---\n{content[:remaining]}"
+                            )
                         break
                     parts.append(f"\n--- {rel_path} ---\n{content}")
                     total_chars += len(content)

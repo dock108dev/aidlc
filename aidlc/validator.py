@@ -214,7 +214,9 @@ class Validator:
                 self.logger.warning(f"Test command not found: {command}")
                 return False, ""
             if result.timed_out:
-                self.logger.warning(f"Test command timed out after {self.test_timeout}s: {command}")
+                self.logger.warning(
+                    f"Test command timed out after {self.test_timeout}s: {command}"
+                )
                 return False, "Test timed out"
             output = result.stdout + "\n" + result.stderr
             return result.returncode == 0, output

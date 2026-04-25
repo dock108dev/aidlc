@@ -25,7 +25,11 @@ def config(tmp_path):
         "_reports_dir": str(aidlc_dir / "reports"),
         "_issues_dir": str(aidlc_dir / "issues"),
         "providers": {
-            "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}
+            "claude": {
+                "enabled": True,
+                "cli_command": "claude",
+                "default_model": "sonnet",
+            }
         },
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
@@ -90,7 +94,9 @@ class TestScanProject:
         assert state.docs_scanned >= 1
 
     @patch("aidlc.runner.ProjectScanner")
-    def test_logs_when_doc_chars_exceed_threshold(self, MockScanner, config, tmp_path, caplog):
+    def test_logs_when_doc_chars_exceed_threshold(
+        self, MockScanner, config, tmp_path, caplog
+    ):
         (tmp_path / "README.md").write_text("# x")
         mock_inst = MagicMock()
         mock_inst.scan.return_value = {
@@ -236,10 +242,22 @@ class TestRunFull:
     @patch("aidlc.runner.ProviderRouter")
     @patch("aidlc.runner.RunLock")
     def test_run_full_quick_audit_no_conflicts_plan_only(
-        self, MockLock, MockRouter, MockAuditor, mock_scan, mock_doc_gaps, config, tmp_path
+        self,
+        MockLock,
+        MockRouter,
+        MockAuditor,
+        mock_scan,
+        mock_doc_gaps,
+        config,
+        tmp_path,
     ):
         (tmp_path / "README.md").write_text("# T")
-        cfg = {**config, "dry_run": True, "plan_only": True, "doc_gap_detection_enabled": True}
+        cfg = {
+            **config,
+            "dry_run": True,
+            "plan_only": True,
+            "doc_gap_detection_enabled": True,
+        }
         MockLock.return_value = MagicMock()
         mock_cli = MagicMock()
         mock_cli.check_available.return_value = True
@@ -257,7 +275,12 @@ class TestRunFull:
             state.scanned_docs = []
             return (
                 "ctx",
-                {"doc_files": [], "existing_issues": [], "total_docs": 0, "project_type": "py"},
+                {
+                    "doc_files": [],
+                    "existing_issues": [],
+                    "total_docs": 0,
+                    "project_type": "py",
+                },
             )
 
         mock_scan.side_effect = _fake_scan
@@ -268,7 +291,9 @@ class TestRunFull:
 
         with patch("aidlc.runner.Planner") as MockPlanner:
             MockPlanner.return_value.run = MagicMock()
-            run_full(config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False)
+            run_full(
+                config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False
+            )
 
         aud.run.assert_called_once_with(depth="quick")
         mock_cli.set_phase.assert_any_call("audit")

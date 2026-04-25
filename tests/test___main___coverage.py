@@ -68,8 +68,14 @@ def test_main_dispatches_config(mock_cfg):
     "argv_patch,target",
     [
         (["aidlc", "status", "--project", "/tmp"], "aidlc.__main__.cmd_status"),
-        (["aidlc", "accounts", "--project", "/tmp", "list"], "aidlc.__main__.cmd_accounts"),
-        (["aidlc", "provider", "--project", "/tmp", "list"], "aidlc.__main__.cmd_provider"),
+        (
+            ["aidlc", "accounts", "--project", "/tmp", "list"],
+            "aidlc.__main__.cmd_accounts",
+        ),
+        (
+            ["aidlc", "provider", "--project", "/tmp", "list"],
+            "aidlc.__main__.cmd_provider",
+        ),
         (["aidlc", "usage", "--project", "/tmp"], "aidlc.__main__.cmd_usage"),
     ],
 )
@@ -80,7 +86,9 @@ def test_main_dispatches_other_commands(argv_patch, target):
     mock_cmd.assert_called_once()
 
 
-@pytest.mark.parametrize("removed_cmd", ["audit", "improve", "plan", "finalize", "validate"])
+@pytest.mark.parametrize(
+    "removed_cmd", ["audit", "improve", "plan", "finalize", "validate"]
+)
 def test_removed_commands_no_longer_parse(removed_cmd, capsys):
     """Commands removed in the core-focus audit must not silently re-parse.
 
@@ -101,7 +109,10 @@ def test_main_no_subcommand_prints_help(capsys):
 @patch("aidlc.__main__.run_full")
 @patch("aidlc.__main__.load_config")
 def test_cmd_run_applies_plan_budget_hours(mock_load_config, mock_run_full, tmp_path):
-    mock_load_config.return_value = {"_project_root": str(tmp_path), "runtime_profile": "dev"}
+    mock_load_config.return_value = {
+        "_project_root": str(tmp_path),
+        "runtime_profile": "dev",
+    }
     from aidlc.__main__ import cmd_run
 
     args = MagicMock()

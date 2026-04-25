@@ -207,7 +207,9 @@ def _parse_cargo(output: str) -> list[FailureReport]:
         test_name = match.group(1)
         details = match.group(2).strip()
 
-        loc_match = re.search(r"thread '.*?' panicked at '(.*?)',\s+(\S+):(\d+)", details)
+        loc_match = re.search(
+            r"thread '.*?' panicked at '(.*?)',\s+(\S+):(\d+)", details
+        )
         assertion = loc_match.group(1) if loc_match else details[:200]
         file_path = loc_match.group(2) if loc_match else ""
         line = int(loc_match.group(3)) if loc_match else 0
@@ -285,7 +287,9 @@ def _parse_generic(output: str) -> list[FailureReport]:
     # Look for common failure patterns
     patterns = [
         re.compile(r"(?:FAIL|FAILED|ERROR|FAILURE)[\s:]+(.+?)(?:\n|$)", re.IGNORECASE),
-        re.compile(r"(?:assert|expect).*?(?:fail|error).*?:?\s*(.+?)(?:\n|$)", re.IGNORECASE),
+        re.compile(
+            r"(?:assert|expect).*?(?:fail|error).*?:?\s*(.+?)(?:\n|$)", re.IGNORECASE
+        ),
     ]
 
     seen = set()

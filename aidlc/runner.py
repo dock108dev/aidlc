@@ -31,7 +31,13 @@ from .reporting import generate_run_report
 from .resume_reconcile import reconcile_issues_on_resume
 from .routing import ProviderRouter
 from .scanner import ProjectScanner
-from .state_manager import RunLock, find_latest_run, generate_run_id, load_state, save_state
+from .state_manager import (
+    RunLock,
+    find_latest_run,
+    generate_run_id,
+    load_state,
+    save_state,
+)
 
 # Phases after planning: resuming here must not trigger another planning session.
 _POST_PLANNING_PHASES = frozenset(
@@ -68,8 +74,14 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
                     f"(stale {state.phase.value}). Starting new run; "
                     f"delete .aidlc/runs/{run_dir.name}/ to remove it."
                 )
-            elif state.status in (RunStatus.COMPLETE, RunStatus.FAILED, RunStatus.ABANDONED):
-                print(f"Previous run {state.run_id} is {state.status.value}. Starting new run.")
+            elif state.status in (
+                RunStatus.COMPLETE,
+                RunStatus.FAILED,
+                RunStatus.ABANDONED,
+            ):
+                print(
+                    f"Previous run {state.run_id} is {state.status.value}. Starting new run."
+                )
             else:
                 print(f"Resuming run {state.run_id} (phase: {state.phase.value})")
                 (run_dir / "claude_outputs").mkdir(exist_ok=True)
@@ -305,7 +317,9 @@ def run_full(
                 state.audit_completed = True
 
                 if audit_result.conflicts:
-                    state.audit_conflicts = [c.to_dict() for c in audit_result.conflicts]
+                    state.audit_conflicts = [
+                        c.to_dict() for c in audit_result.conflicts
+                    ]
                     state.status = RunStatus.PAUSED
                     state.stop_reason = (
                         f"Audit found {len(audit_result.conflicts)} conflict(s). "
@@ -332,7 +346,9 @@ def run_full(
                 f"Resume: restoring phase '{phase_before_scan.value}' — "
                 "skipping new planning (scan refreshed context only)."
             )
-            reconcile_issues_on_resume(state, Path(config["_project_root"]), logger, config)
+            reconcile_issues_on_resume(
+                state, Path(config["_project_root"]), logger, config
+            )
 
         save_state(state, run_dir)
 
@@ -384,8 +400,12 @@ def run_full(
             # IMPLEMENT
             if state.issues:
                 cli.set_phase("implementation")
-                impl_context = scan_result.get("implementation_context") or project_context
-                implementer = Implementer(state, run_dir, config, cli, impl_context, logger)
+                impl_context = (
+                    scan_result.get("implementation_context") or project_context
+                )
+                implementer = Implementer(
+                    state, run_dir, config, cli, impl_context, logger
+                )
                 verification_ok = implementer.run()
                 save_state(state, run_dir)
                 logger.info(
@@ -397,12 +417,16 @@ def run_full(
                 if not verification_ok:
                     state.status = RunStatus.PAUSED
                     if not state.stop_reason:
-                        state.stop_reason = "Implementation stopped: final verification failed"
+                        state.stop_reason = (
+                            "Implementation stopped: final verification failed"
+                        )
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
                     # Do not return here; always proceed to validation
             else:
-                logger.warning("No issues to implement. Did planning produce any issues?")
+                logger.warning(
+                    "No issues to implement. Did planning produce any issues?"
+                )
 
         # VALIDATE (optional) — test, parse failures, fix, re-test loop
         if (
@@ -424,9 +448,13 @@ def run_full(
                     f"Validation incomplete: {state.validation_cycles} cycles, "
                     f"{state.validation_issues_created} fix issues created"
                 )
-                if config.get("strict_validation") or config.get("fail_on_validation_incomplete"):
+                if config.get("strict_validation") or config.get(
+                    "fail_on_validation_incomplete"
+                ):
                     state.status = RunStatus.PAUSED
-                    state.stop_reason = "Validation incomplete under strict validation settings"
+                    state.stop_reason = (
+                        "Validation incomplete under strict validation settings"
+                    )
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
                     return

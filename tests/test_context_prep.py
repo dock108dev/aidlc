@@ -11,7 +11,9 @@ def test_build_doc_manifest_empty():
 
 
 def test_build_doc_manifest_one_doc():
-    docs = [{"path": "README.md", "size": 100, "content": "First real line of content here"}]
+    docs = [
+        {"path": "README.md", "size": 100, "content": "First real line of content here"}
+    ]
     out = context_prep.build_doc_manifest(docs, max_summary_len=50)
     assert "README.md" in out
     assert "100" in out
@@ -27,9 +29,12 @@ def test_build_doc_manifest_truncates_summary():
 
 def test_extract_summary_skips_headers_and_short():
     assert (
-        context_prep._extract_summary("# only\n\n---\n\n", 80) == "(empty or header-only document)"
+        context_prep._extract_summary("# only\n\n---\n\n", 80)
+        == "(empty or header-only document)"
     )
-    assert context_prep._extract_summary("hi\n\n", 80) == "(empty or header-only document)"
+    assert (
+        context_prep._extract_summary("hi\n\n", 80) == "(empty or header-only document)"
+    )
 
 
 def test_extract_summary_first_meaningful_line():
@@ -57,7 +62,9 @@ def test_build_project_brief_single_batch_truncates():
     cli = MagicMock()
     cli.execute_prompt.return_value = {"success": True, "output": "x" * 2000}
     docs = [{"path": "a.md", "size": 3, "content": "abc"}]
-    out = context_prep.build_project_brief(docs, cli, Path("."), MagicMock(), max_brief_chars=100)
+    out = context_prep.build_project_brief(
+        docs, cli, Path("."), MagicMock(), max_brief_chars=100
+    )
     assert out is not None
     assert "truncated" in out
 

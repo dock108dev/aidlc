@@ -210,7 +210,9 @@ Weekly limits
 30% used
 """
     assert (
-        rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"})
+        rs.is_rate_limited_result(
+            {"success": False, "error": msg, "failure_type": "issue"}
+        )
         is False
     )
 
@@ -219,7 +221,9 @@ def test_doc_gap_rate_limiting_prose_not_rate_limited():
     """Doc-gap / design copy often says 'rate limiting' without an API rate-limit error."""
     msg = "Add graceful rate limiting middleware for the public API gateway."
     assert (
-        rs.is_rate_limited_result({"success": False, "error": msg, "failure_type": "issue"})
+        rs.is_rate_limited_result(
+            {"success": False, "error": msg, "failure_type": "issue"}
+        )
         is False
     )
 
@@ -238,9 +242,16 @@ def test_overloaded_servers_prose_not_rate_limited():
 
 
 def test_format_rate_limit_diagnostics_includes_pattern():
-    r = {"failure_type": "issue", "error": "upstream said rate limit exceeded", "output": ""}
+    r = {
+        "failure_type": "issue",
+        "error": "upstream said rate limit exceeded",
+        "output": "",
+    }
     text = rs.format_rate_limit_diagnostics(
-        r, raw_restore_epoch=None, cooldown_until_epoch=1_700_000_000.0, buffer_seconds=3600.0
+        r,
+        raw_restore_epoch=None,
+        cooldown_until_epoch=1_700_000_000.0,
+        buffer_seconds=3600.0,
     )
     assert "rate_limit_api_phrase" in text or "classification=" in text
     assert "cooldown_until_epoch=" in text

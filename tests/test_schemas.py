@@ -161,9 +161,9 @@ class TestPlanningAction:
         for action_type in ("create_doc", "update_doc"):
             action = PlanningAction(action_type=action_type)
             errors = action.validate()
-            assert any("Unknown action_type" in e for e in errors), (
-                f"{action_type} should be rejected as unknown"
-            )
+            assert any(
+                "Unknown action_type" in e for e in errors
+            ), f"{action_type} should be rejected as unknown"
 
     def test_research_missing_topic_and_question(self):
         action = PlanningAction(action_type="research")

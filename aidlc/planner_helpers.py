@@ -253,7 +253,9 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
       4. ## BRAINDUMP — Scope Source (last-resort drop; pointer is left behind)
     Schema, instructions, and Run State are never dropped.
     """
-    max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
+    max_chars = max(
+        4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000)
+    )
     if len(prompt) <= max_chars:
         return prompt
 
@@ -339,7 +341,9 @@ def write_planning_index(planner) -> Path:
     if issues_dir.exists():
         issue_files = sorted(issues_dir.glob("*.md"))
         if issue_files:
-            lines.append(f"## Existing Issues ({len(issue_files)} files in .aidlc/issues/)")
+            lines.append(
+                f"## Existing Issues ({len(issue_files)} files in .aidlc/issues/)"
+            )
             lines.append("Read individual issue files for full specs:")
             for issue_file in issue_files:
                 lines.append(f"- .aidlc/issues/{issue_file.name}")
@@ -366,7 +370,8 @@ def write_planning_index(planner) -> Path:
                 label_counts[label] = label_counts.get(label, 0) + 1
 
         completed = sum(
-            status_counts.get(name, 0) for name in ("implemented", "verified", "skipped")
+            status_counts.get(name, 0)
+            for name in ("implemented", "verified", "skipped")
         )
         completion_pct = (completed / len(issues)) * 100 if issues else 0.0
         lines.append(f"- Completion: {completed}/{len(issues)} ({completion_pct:.1f}%)")
@@ -382,14 +387,18 @@ def write_planning_index(planner) -> Path:
 
         if label_counts:
             lines.append("### Category Rollup (Labels)")
-            for label, count in sorted(label_counts.items(), key=lambda item: (-item[1], item[0])):
+            for label, count in sorted(
+                label_counts.items(), key=lambda item: (-item[1], item[0])
+            ):
                 lines.append(f"- {label}: {count}")
             lines.append("")
 
         lines.append("### Active Issues")
         active_statuses = ("pending", "in_progress", "blocked", "failed")
         active_issues = [
-            issue for issue in issues if issue.get("status", "pending") in active_statuses
+            issue
+            for issue in issues
+            if issue.get("status", "pending") in active_statuses
         ]
         if active_issues:
             for issue in active_issues:
@@ -405,7 +414,9 @@ def write_planning_index(planner) -> Path:
 
         lines.append("### Completed Issues")
         done_statuses = ("implemented", "verified", "skipped")
-        done_issues = [issue for issue in issues if issue.get("status", "pending") in done_statuses]
+        done_issues = [
+            issue for issue in issues if issue.get("status", "pending") in done_statuses
+        ]
         if done_issues:
             for issue in done_issues:
                 lines.append(
@@ -486,7 +497,9 @@ def build_prompt(planner, is_finalization: bool) -> str:
         if critical_gaps:
             volatile_parts.append("\n## Critical Doc Gaps\n")
             for gap in critical_gaps[:5]:
-                volatile_parts.append(f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}")
+                volatile_parts.append(
+                    f"- `{gap.doc_path}:{gap.line}` — {gap.text[:80]}"
+                )
         non_crit = [g for g in planner.doc_gaps if g.severity != "critical"]
         if non_crit:
             volatile_parts.append(
@@ -504,7 +517,9 @@ def build_prompt(planner, is_finalization: bool) -> str:
 
     prompt = "\n\n".join(static_parts + volatile_parts)
     prompt = _enforce_prompt_budget(prompt, planner)
-    planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
+    planner.logger.info(
+        f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)"
+    )
     return prompt
 
 
@@ -522,7 +537,9 @@ def execute_research(planner, action) -> None:
     sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
     output_path = planner.project_root / "docs" / "research" / f"{sanitized}.md"
     if output_path.exists():
-        planner.logger.info(f"Research already exists: docs/research/{sanitized}.md — skipping")
+        planner.logger.info(
+            f"Research already exists: docs/research/{sanitized}.md — skipping"
+        )
         return
 
     planner.logger.info(f"Researching: {action.research_topic}")
@@ -604,12 +621,16 @@ def execute_research(planner, action) -> None:
     planner.state.elapsed_seconds += duration
 
     if not result["success"]:
-        planner.logger.error(f"Research failed for {action.research_topic}: {result.get('error')}")
+        planner.logger.error(
+            f"Research failed for {action.research_topic}: {result.get('error')}"
+        )
         return
 
     output = result.get("output", "")
     if not output:
-        planner.logger.warning(f"Research returned empty output for {action.research_topic}")
+        planner.logger.warning(
+            f"Research returned empty output for {action.research_topic}"
+        )
         return
     if is_permission_chatter(output):
         planner.logger.warning(
@@ -625,7 +646,9 @@ def execute_research(planner, action) -> None:
             retry_prompt,
             planner.project_root,
         )
-        planner.state.record_provider_result(retry_result, planner.config, phase="research")
+        planner.state.record_provider_result(
+            retry_result, planner.config, phase="research"
+        )
         retry_duration = time.time() - retry_start
         planner.state.plan_elapsed_seconds += retry_duration
         planner.state.elapsed_seconds += retry_duration
@@ -717,5 +740,3 @@ def save_cycle_notes(run_dir: Path, frontier: str, notes: str, cycle_num: int) -
         ),
     }
     notes_path.write_text(json.dumps(data, indent=2))
-
-

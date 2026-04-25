@@ -47,7 +47,9 @@ def test_cmd_provider_list_shows_rows(mock_banner, version, tmp_path, capsys):
     aidlc.mkdir()
     cfg = aidlc / "config.json"
     cfg.write_text(
-        json.dumps({"providers": {"claude": {"enabled": True, "default_model": "sonnet"}}})
+        json.dumps(
+            {"providers": {"claude": {"enabled": True, "default_model": "sonnet"}}}
+        )
     )
     cmd_provider(_ns(project=str(tmp_path)), version)
     assert "claude" in capsys.readouterr().out
@@ -57,10 +59,14 @@ def test_cmd_provider_list_shows_rows(mock_banner, version, tmp_path, capsys):
 def test_cmd_provider_toggle_errors(mock_banner, version, tmp_path):
     with patch("aidlc.cli.provider.sys.exit", side_effect=SystemExit(1)):
         with pytest.raises(SystemExit):
-            cmd_provider(_ns(provider_cmd="enable", name=None, project=str(tmp_path)), version)
+            cmd_provider(
+                _ns(provider_cmd="enable", name=None, project=str(tmp_path)), version
+            )
     with patch("aidlc.cli.provider.sys.exit", side_effect=SystemExit(1)):
         with pytest.raises(SystemExit):
-            cmd_provider(_ns(provider_cmd="enable", name="bad", project=str(tmp_path)), version)
+            cmd_provider(
+                _ns(provider_cmd="enable", name="bad", project=str(tmp_path)), version
+            )
 
 
 @patch("aidlc.cli.display.print_banner")
@@ -69,24 +75,34 @@ def test_cmd_provider_toggle_success(mock_banner, version, tmp_path, capsys):
     aidlc.mkdir()
     cfg = aidlc / "config.json"
     cfg.write_text(json.dumps({"providers": {}}))
-    cmd_provider(_ns(provider_cmd="enable", name="claude", project=str(tmp_path)), version)
+    cmd_provider(
+        _ns(provider_cmd="enable", name="claude", project=str(tmp_path)), version
+    )
     data = json.loads(cfg.read_text())
     assert data["providers"]["claude"]["enabled"] is True
-    cmd_provider(_ns(provider_cmd="disable", name="claude", project=str(tmp_path)), version)
+    cmd_provider(
+        _ns(provider_cmd="disable", name="claude", project=str(tmp_path)), version
+    )
     assert json.loads(cfg.read_text())["providers"]["claude"]["enabled"] is False
 
 
 @patch("aidlc.cli.display.print_banner")
 @patch("aidlc.cli.provider.load_config")
-def test_cmd_provider_auth_subcommand_requires_name(mock_load, mock_banner, version, tmp_path):
+def test_cmd_provider_auth_subcommand_requires_name(
+    mock_load, mock_banner, version, tmp_path
+):
     with patch("aidlc.cli.provider.sys.exit", side_effect=SystemExit(1)):
         with pytest.raises(SystemExit):
-            cmd_provider(_ns(provider_cmd="auth", name=None, project=str(tmp_path)), version)
+            cmd_provider(
+                _ns(provider_cmd="auth", name=None, project=str(tmp_path)), version
+            )
 
 
 @patch("aidlc.cli.display.print_banner")
 @patch("aidlc.cli.provider.load_config")
-def test_cmd_provider_auth_subcommand_runs(mock_load, mock_banner, version, tmp_path, capsys):
+def test_cmd_provider_auth_subcommand_runs(
+    mock_load, mock_banner, version, tmp_path, capsys
+):
     mock_load.return_value = {"providers": {"claude": {"enabled": True}}}
     adapter = MagicMock()
     h = MagicMock()
@@ -97,8 +113,13 @@ def test_cmd_provider_auth_subcommand_runs(mock_load, mock_banner, version, tmp_
         cls.return_value._adapters = {"claude": adapter}
         with patch("aidlc.cli.provider._sp.run") as run:
             run.return_value = MagicMock(returncode=0)
-            cmd_provider(_ns(provider_cmd="auth", name="claude", project=str(tmp_path)), version)
-    assert "Launching" in capsys.readouterr().out or "claude" in capsys.readouterr().out.lower()
+            cmd_provider(
+                _ns(provider_cmd="auth", name="claude", project=str(tmp_path)), version
+            )
+    assert (
+        "Launching" in capsys.readouterr().out
+        or "claude" in capsys.readouterr().out.lower()
+    )
 
 
 @patch("aidlc.cli.display.print_banner")
@@ -180,13 +201,18 @@ def test_cmd_provider_auth_exit_zero_not_usable_after(capsys):
         cls.return_value._adapters = {"openai": adapter}
         with patch("aidlc.cli.provider._sp.run", return_value=MagicMock(returncode=0)):
             cmd_provider_auth("openai", cfg, show_health=True)
-    assert "failing" in capsys.readouterr().out.lower() or "still bad" in capsys.readouterr().out
+    assert (
+        "failing" in capsys.readouterr().out.lower()
+        or "still bad" in capsys.readouterr().out
+    )
 
 
 def test_cmd_provider_auth_nonzero_exit(capsys):
     cfg = {"providers": {"claude": {"enabled": True}}}
     adapter = MagicMock()
-    adapter.validate_health.return_value = MagicMock(is_usable=False, status=MagicMock(value="x"))
+    adapter.validate_health.return_value = MagicMock(
+        is_usable=False, status=MagicMock(value="x")
+    )
     with patch("aidlc.cli.provider.ProviderRouter") as cls:
         cls.return_value._adapters = {"claude": adapter}
         with patch("aidlc.cli.provider._sp.run", return_value=MagicMock(returncode=2)):
@@ -197,10 +223,14 @@ def test_cmd_provider_auth_nonzero_exit(capsys):
 def test_cmd_provider_auth_copilot_gh_command(capsys):
     cfg = {"providers": {"copilot": {"enabled": True, "cli_command": "gh"}}}
     adapter = MagicMock()
-    adapter.validate_health.return_value = MagicMock(is_usable=True, status=MagicMock(value="ok"))
+    adapter.validate_health.return_value = MagicMock(
+        is_usable=True, status=MagicMock(value="ok")
+    )
     with patch("aidlc.cli.provider.ProviderRouter") as cls:
         cls.return_value._adapters = {"copilot": adapter}
-        with patch("aidlc.cli.provider._sp.run", return_value=MagicMock(returncode=0)) as run:
+        with patch(
+            "aidlc.cli.provider._sp.run", return_value=MagicMock(returncode=0)
+        ) as run:
             cmd_provider_auth("copilot", cfg, show_health=False)
     invoked = run.call_args[0][0]
     assert invoked[0] == "gh"

@@ -127,7 +127,9 @@ def test_all_token_exhausted_returns_terminal_failure(tmp_path):
         "usage_source": "none",
     }
     router._adapters = {
-        "openai": FakeAdapter("openai", [dict(exhausted)], default_model="gpt-5.4-mini"),
+        "openai": FakeAdapter(
+            "openai", [dict(exhausted)], default_model="gpt-5.4-mini"
+        ),
         "copilot": FakeAdapter("copilot", [dict(exhausted)], default_model=""),
     }
     router._session_budget_provider = "openai"
@@ -136,7 +138,9 @@ def test_all_token_exhausted_returns_terminal_failure(tmp_path):
 
     assert result["success"] is False
     assert result["failure_type"] == "token_exhausted_all_models"
-    assert "out of tokens" in result["error"].lower() or "quota" in result["error"].lower()
+    assert (
+        "out of tokens" in result["error"].lower() or "quota" in result["error"].lower()
+    )
 
 
 def _chain_config() -> dict:
@@ -192,7 +196,9 @@ def _ok(model_name: str) -> dict:
 def test_token_exhaustion_walks_chain_within_provider(tmp_path):
     """ISSUE-004: sonnet exhausted → router tries opus on same provider."""
     router = ProviderRouter(_chain_config(), logging.getLogger("test.router.chain"))
-    fake = FakeAdapter("claude", [_exhaust("sonnet"), _ok("opus")], default_model="sonnet")
+    fake = FakeAdapter(
+        "claude", [_exhaust("sonnet"), _ok("opus")], default_model="sonnet"
+    )
     router._adapters = {"claude": fake}
 
     result = router.execute_prompt("hello", tmp_path)
@@ -205,7 +211,9 @@ def test_token_exhaustion_walks_chain_within_provider(tmp_path):
 
 def test_token_exhaustion_chain_exhausted_returns_terminal_failure(tmp_path):
     """All chain entries exhausted: provider excluded; failure terminal."""
-    router = ProviderRouter(_chain_config(), logging.getLogger("test.router.chain_exhausted"))
+    router = ProviderRouter(
+        _chain_config(), logging.getLogger("test.router.chain_exhausted")
+    )
     fake = FakeAdapter(
         "claude",
         [_exhaust("sonnet"), _exhaust("opus"), _exhaust("haiku")],
@@ -226,7 +234,9 @@ def test_token_exhaustion_chain_exhausted_returns_terminal_failure(tmp_path):
 def test_token_exhaustion_chain_skips_excluded_models(tmp_path):
     """When opus is on cooldown, chain skips it and tries haiku next."""
     router = ProviderRouter(_chain_config(), logging.getLogger("test.router.skip"))
-    fake = FakeAdapter("claude", [_exhaust("sonnet"), _ok("haiku")], default_model="sonnet")
+    fake = FakeAdapter(
+        "claude", [_exhaust("sonnet"), _ok("haiku")], default_model="sonnet"
+    )
     router._adapters = {"claude": fake}
     # Pre-load opus cooldown so the chain skips it.
     import time as _time
@@ -256,7 +266,9 @@ def test_is_model_exhausted_result_named_model():
 
 
 def test_rate_limit_falls_back_to_other_provider(tmp_path):
-    router = ProviderRouter(_config(), logging.getLogger("test.router.rate_limit_fallback"))
+    router = ProviderRouter(
+        _config(), logging.getLogger("test.router.rate_limit_fallback")
+    )
     router._adapters = {
         "openai": FakeAdapter(
             "openai",
@@ -304,7 +316,9 @@ def test_rate_limit_falls_back_to_other_provider(tmp_path):
 
 
 def test_all_rate_limited_returns_terminal_failure(tmp_path):
-    router = ProviderRouter(_config(), logging.getLogger("test.router.rate_limited_all"))
+    router = ProviderRouter(
+        _config(), logging.getLogger("test.router.rate_limited_all")
+    )
     limited = {
         "success": False,
         "output": None,
@@ -331,7 +345,9 @@ def test_all_rate_limited_returns_terminal_failure(tmp_path):
 
 
 def test_balanced_budget_routing_uses_pressure_not_single_provider(tmp_path):
-    router = ProviderRouter(_config(), logging.getLogger("test.router.pressure_balance"))
+    router = ProviderRouter(
+        _config(), logging.getLogger("test.router.pressure_balance")
+    )
     router._adapters = {
         "openai": FakeAdapter(
             "openai",
@@ -423,7 +439,9 @@ def test_rate_limit_buffer_adds_to_reported_restore(monkeypatch):
         "failure_type": "rate_limited",
         "details": {"retry_after_seconds": 120},
     }
-    until = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", result, now)
+    until = router._compute_rate_limit_cooldown_until(
+        "openai", "gpt-5.4-mini", result, now
+    )
     assert until is not None
     assert until == now + 120.0 + 3600.0
 
@@ -440,9 +458,13 @@ def test_rate_limit_backoff_doubles_buffer(monkeypatch):
         "failure_type": "rate_limited",
         "details": {"retry_after_seconds": 1},
     }
-    first = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", base_result, now)
+    first = router._compute_rate_limit_cooldown_until(
+        "openai", "gpt-5.4-mini", base_result, now
+    )
     assert first == now + 1.0 + 3600.0
-    second = router._compute_rate_limit_cooldown_until("openai", "gpt-5.4-mini", base_result, now)
+    second = router._compute_rate_limit_cooldown_until(
+        "openai", "gpt-5.4-mini", base_result, now
+    )
     assert second == now + 1.0 + 2 * 3600.0
 
 
@@ -450,7 +472,9 @@ def test_excluded_models_uses_cooldown_key_snapshot():
     """_model_is_on_cooldown pops expired entries; excluded_models must not iterate
     `dict.keys()` live or Python raises RuntimeError (dictionary changed size).
     """
-    router = ProviderRouter(_config(), logging.getLogger("test.router.cooldown.snapshot"))
+    router = ProviderRouter(
+        _config(), logging.getLogger("test.router.cooldown.snapshot")
+    )
     # Non-zero expiry values (0.0 is falsy and skips cleanup in _model_is_on_cooldown)
     router._model_cooldowns[("openai", "m1")] = 1.0
     router._model_cooldowns[("openai", "m2")] = 1.0

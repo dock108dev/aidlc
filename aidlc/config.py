@@ -407,18 +407,24 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
                 else:
                     config["providers"][provider_id] = provider_cfg
                     overrides[provider_id] = {
-                        "default_model": provider_cfg.get("default_model")
-                        if isinstance(provider_cfg, dict)
-                        else None,
-                        "phase_models": dict(provider_cfg.get("phase_models") or {})
-                        if isinstance(provider_cfg, dict)
-                        else {},
+                        "default_model": (
+                            provider_cfg.get("default_model")
+                            if isinstance(provider_cfg, dict)
+                            else None
+                        ),
+                        "phase_models": (
+                            dict(provider_cfg.get("phase_models") or {})
+                            if isinstance(provider_cfg, dict)
+                            else {}
+                        ),
                     }
         else:
             config[key] = value
 
 
-def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None) -> Path:
+def write_default_config(
+    aidlc_dir: Path, detected_overrides: dict | None = None
+) -> Path:
     """Write a default .aidlc/config.json using the canonical defaults.
 
     This is the single authoritative place that writes the initial project config,
@@ -500,7 +506,9 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
     return config_path
 
 
-def load_config(config_path: str | None = None, project_root: str | None = None) -> dict:
+def load_config(
+    config_path: str | None = None, project_root: str | None = None
+) -> dict:
     """Load and validate config. Merges defaults with user config."""
     config = dict(DEFAULTS)
     # Always present so consumers can do ``config["_user_provider_overrides"].get(pid)``

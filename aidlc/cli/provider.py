@@ -59,7 +59,9 @@ def cmd_provider(args: argparse.Namespace, version: str) -> None:
         cmd_provider_auth(name, config)
     elif subcmd == "reconnect":
         if not config_path.exists():
-            print(f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first.")
+            print(
+                f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first."
+            )
             sys.exit(1)
 
         with open(config_path) as f:
@@ -67,7 +69,9 @@ def cmd_provider(args: argparse.Namespace, version: str) -> None:
 
         providers_cfg = raw.get("providers", {})
         enabled_names = [
-            n for n, c in providers_cfg.items() if isinstance(c, dict) and c.get("enabled", False)
+            n
+            for n, c in providers_cfg.items()
+            if isinstance(c, dict) and c.get("enabled", False)
         ]
 
         if not enabled_names:
@@ -111,7 +115,9 @@ def cmd_provider(args: argparse.Namespace, version: str) -> None:
 
 def cmd_provider_list(config_path: Path) -> None:
     if not config_path.exists():
-        print(f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first.")
+        print(
+            f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first."
+        )
         return
 
     with open(config_path) as f:
@@ -148,7 +154,9 @@ def cmd_provider_toggle(config_path: Path, name: str, enabled: bool) -> None:
         sys.exit(1)
 
     if not config_path.exists():
-        print(f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first.")
+        print(
+            f"  {yellow('!')} No .aidlc/config.json found. Run {cyan('aidlc init')} first."
+        )
         sys.exit(1)
 
     with open(config_path) as f:
@@ -168,13 +176,17 @@ def cmd_provider_toggle(config_path: Path, name: str, enabled: bool) -> None:
 def cmd_provider_auth(name: str, config: dict, show_health: bool = True) -> None:
     """Run vendor login flow for a provider, preserving TTY."""
     if name not in KNOWN_PROVIDERS:
-        print(f"{red('x')} Unknown provider '{name}'. Known: {', '.join(sorted(KNOWN_PROVIDERS))}")
+        print(
+            f"{red('x')} Unknown provider '{name}'. Known: {', '.join(sorted(KNOWN_PROVIDERS))}"
+        )
         sys.exit(1)
 
     auth_cmd, fallback_instructions = _PROVIDER_AUTH_COMMANDS[name]
     if name == "copilot":
         providers_cfg = config.get("providers", {})
-        provider_cfg = providers_cfg.get("copilot", {}) if isinstance(providers_cfg, dict) else {}
+        provider_cfg = (
+            providers_cfg.get("copilot", {}) if isinstance(providers_cfg, dict) else {}
+        )
         cli_command = provider_cfg.get("cli_command", "copilot")
         if cli_command == "gh":
             auth_cmd = ["gh", "auth", "login"]

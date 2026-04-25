@@ -91,7 +91,9 @@ def make_state_with_issue(issue_id="ISSUE-001", **overrides):
 
 class TestImplementIssueSuccess:
     @patch("aidlc.implementer.run_with_group_kill")
-    def test_uses_standard_implementation_routing(self, mock_subproc, config, logger, tmp_path):
+    def test_uses_standard_implementation_routing(
+        self, mock_subproc, config, logger, tmp_path
+    ):
         mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         cli = make_cli_success(
             {
@@ -116,7 +118,9 @@ class TestImplementIssueSuccess:
         assert "model_override" not in kwargs
 
     @patch("aidlc.implementer.run_with_group_kill")
-    def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):
+    def test_escalates_complex_issue_to_complex_model(
+        self, mock_subproc, config, logger, tmp_path
+    ):
         mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         config["implementation_complexity_acceptance_criteria_threshold"] = 2
         cli = make_cli_success(
@@ -140,7 +144,9 @@ class TestImplementIssueSuccess:
         cli.set_complexity.assert_called_once_with("complex")
 
     @patch("aidlc.implementer.run_with_group_kill")
-    def test_escalates_retry_to_complex_model(self, mock_subproc, config, logger, tmp_path):
+    def test_escalates_retry_to_complex_model(
+        self, mock_subproc, config, logger, tmp_path
+    ):
         mock_subproc.return_value = ProcResult(0, "a.py\n", "", False)
         config["implementation_escalate_on_retry"] = True
         cli = make_cli_success(
@@ -274,7 +280,9 @@ class TestRunWithTests:
 
     @patch("aidlc.implementer.run_with_group_kill")
     @patch("aidlc.implementer_workspace.subprocess.run")
-    def test_test_timeout_leads_to_failure(self, mock_git, mock_rgk, config, logger, tmp_path):
+    def test_test_timeout_leads_to_failure(
+        self, mock_git, mock_rgk, config, logger, tmp_path
+    ):
         config["run_tests_command"] = "sleep 100"
         config["test_timeout_seconds"] = 1
 
@@ -521,7 +529,9 @@ class TestFixFailingTests:
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = "pytest"
-        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
+        issue = Issue(
+            id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"]
+        )
         result = impl._fix_failing_tests(issue, model_override="opus")
         assert result.tests_now_passing is True
         kwargs = cli.execute_prompt.call_args.kwargs
@@ -545,7 +555,9 @@ class TestFixFailingTests:
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = "pytest"
-        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
+        issue = Issue(
+            id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"]
+        )
         result = impl._fix_failing_tests(issue)
         assert result.tests_now_passing is False
 
@@ -641,7 +653,9 @@ class TestPreviousAttemptInPrompt:
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         impl = Implementer(state, run_dir, config, MagicMock(), "long ctx", logger)
-        issue = Issue(id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"])
+        issue = Issue(
+            id="ISSUE-001", title="T", description="D", acceptance_criteria=["AC1"]
+        )
         issue.attempt_count = 2
         issue.implementation_notes = "Previous attempt failed: syntax error"
         prompt = impl._build_implementation_prompt(issue)
@@ -700,7 +714,9 @@ class TestErrorPayloadSampling:
 
 class TestImplementerMoreBranches:
     @patch("aidlc.implementer.sort_issues_for_implementation", return_value=False)
-    def test_run_stops_when_initial_sort_detects_cycle(self, _mock_sort, config, logger, tmp_path):
+    def test_run_stops_when_initial_sort_detects_cycle(
+        self, _mock_sort, config, logger, tmp_path
+    ):
         config["dry_run"] = True
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
@@ -734,7 +750,9 @@ class TestImplementerMoreBranches:
             assert impl._is_complex_issue(issue) is True
         assert "implementation_complex" in caplog.text
 
-    def test_log_provider_result_requested_vs_actual(self, config, logger, tmp_path, caplog):
+    def test_log_provider_result_requested_vs_actual(
+        self, config, logger, tmp_path, caplog
+    ):
         config["dry_run"] = True
         state = RunState(run_id="t", config_name="c")
         run_dir = tmp_path / "run"
@@ -900,7 +918,9 @@ class TestImplementerMoreBranches:
         assert impl._implement_issue(issue) is False
 
     @patch.object(Implementer, "_run_tests", return_value=False)
-    def test_verification_pass_fail_on_final_test(self, mock_rt, config, logger, tmp_path):
+    def test_verification_pass_fail_on_final_test(
+        self, mock_rt, config, logger, tmp_path
+    ):
         config["fail_on_final_test_failure"] = True
         config["run_tests_command"] = "pytest"
         state = RunState(run_id="t", config_name="c")
@@ -962,7 +982,14 @@ class TestAutosyncProgress:
     @patch("aidlc.implementer.git_commit_cycle_snapshot")
     @patch("aidlc.finalizer.Finalizer")
     def test_autosync_runs_after_each_cycle_when_interval_is_one(
-        self, mock_finalizer_cls, mock_commit, mock_push, mock_prune, config, logger, tmp_path
+        self,
+        mock_finalizer_cls,
+        mock_commit,
+        mock_push,
+        mock_prune,
+        config,
+        logger,
+        tmp_path,
     ):
         config["dry_run"] = False
         config["autosync_every_implementation_cycles"] = 1
@@ -1030,7 +1057,14 @@ class TestAutosyncProgress:
     @patch("aidlc.implementer.git_commit_cycle_snapshot")
     @patch("aidlc.finalizer.Finalizer")
     def test_autosync_skips_pre_push_finalize_when_disabled(
-        self, mock_finalizer_cls, mock_commit, mock_push, mock_prune, config, logger, tmp_path
+        self,
+        mock_finalizer_cls,
+        mock_commit,
+        mock_push,
+        mock_prune,
+        config,
+        logger,
+        tmp_path,
     ):
         config["dry_run"] = False
         config["autosync_every_implementation_cycles"] = 1

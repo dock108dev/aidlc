@@ -5,7 +5,11 @@ from unittest.mock import patch
 
 import pytest
 from aidlc.audit_models import DocGap
-from aidlc.doc_gap_detector import _is_excluded, _is_likely_false_positive, detect_doc_gaps
+from aidlc.doc_gap_detector import (
+    _is_excluded,
+    _is_likely_false_positive,
+    detect_doc_gaps,
+)
 
 
 @pytest.fixture
@@ -19,13 +23,17 @@ def config():
 
 class TestDetectDocGaps:
     def test_detects_tbd(self, tmp_path, config):
-        (tmp_path / "ROADMAP.md").write_text("# Roadmap\n\n## Phase 1\nScoring algorithm: TBD\n")
+        (tmp_path / "ROADMAP.md").write_text(
+            "# Roadmap\n\n## Phase 1\nScoring algorithm: TBD\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 1
         assert any(g.pattern.upper() == "TBD" for g in gaps)
 
     def test_detects_design_tbd_as_critical(self, tmp_path, config):
-        (tmp_path / "DESIGN.md").write_text("# Design\n\nCaching strategy: design TBD\n")
+        (tmp_path / "DESIGN.md").write_text(
+            "# Design\n\nCaching strategy: design TBD\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         critical = [g for g in gaps if g.severity == "critical"]
         assert len(critical) >= 1
@@ -39,14 +47,18 @@ class TestDetectDocGaps:
         assert any("research" in g.pattern.lower() for g in gaps)
 
     def test_detects_formula_needed(self, tmp_path, config):
-        (tmp_path / "DESIGN.md").write_text("# Design\n\nEdge weight calculation: formula needed\n")
+        (tmp_path / "DESIGN.md").write_text(
+            "# Design\n\nEdge weight calculation: formula needed\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         assert len(gaps) >= 1
         critical = [g for g in gaps if g.severity == "critical"]
         assert len(critical) >= 1
 
     def test_detects_placeholder_braces(self, tmp_path, config):
-        (tmp_path / "README.md").write_text("# {Project Name}\n\nBuilt by {author name}\n")
+        (tmp_path / "README.md").write_text(
+            "# {Project Name}\n\nBuilt by {author name}\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         info_gaps = [g for g in gaps if g.severity == "info"]
         assert len(info_gaps) >= 1
@@ -107,8 +119,12 @@ class TestDetectDocGaps:
         assert gaps == []
 
     def test_no_gaps_in_clean_docs(self, tmp_path, config):
-        (tmp_path / "README.md").write_text("# My Project\n\nA well-documented project.\n")
-        (tmp_path / "ROADMAP.md").write_text("# Roadmap\n\n## Phase 1\nBuild the thing.\n")
+        (tmp_path / "README.md").write_text(
+            "# My Project\n\nA well-documented project.\n"
+        )
+        (tmp_path / "ROADMAP.md").write_text(
+            "# Roadmap\n\n## Phase 1\nBuild the thing.\n"
+        )
         gaps = detect_doc_gaps(tmp_path, config)
         assert gaps == []
 
@@ -140,7 +156,11 @@ class TestDetectDocGaps:
 
     def test_doc_gap_serialization(self):
         gap = DocGap(
-            doc_path="ROADMAP.md", line=10, pattern="TBD", text="Scoring: TBD", severity="warning"
+            doc_path="ROADMAP.md",
+            line=10,
+            pattern="TBD",
+            text="Scoring: TBD",
+            severity="warning",
         )
         d = gap.to_dict()
         restored = DocGap.from_dict(d)

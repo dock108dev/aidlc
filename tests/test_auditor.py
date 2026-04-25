@@ -3,7 +3,13 @@
 import json
 
 import pytest
-from aidlc.audit_models import AuditConflict, AuditResult, CoverageInfo, ModuleInfo, TechDebtItem
+from aidlc.audit_models import (
+    AuditConflict,
+    AuditResult,
+    CoverageInfo,
+    ModuleInfo,
+    TechDebtItem,
+)
 from aidlc.auditor import CodeAuditor
 
 
@@ -36,7 +42,9 @@ def python_project(tmp_path):
     api = tmp_path / "api"
     api.mkdir()
     (api / "__init__.py").write_text("")
-    (api / "routes.py").write_text("# API routes\n# TODO: add auth\ndef get_users(): pass\n")
+    (api / "routes.py").write_text(
+        "# API routes\n# TODO: add auth\ndef get_users(): pass\n"
+    )
     (api / "models.py").write_text("class User:\n    pass\n")
 
     models = tmp_path / "models"
@@ -176,7 +184,9 @@ class TestCodeAuditorQuickScan:
         assert not (python_project / "ARCHITECTURE.md").exists()
 
     def test_does_not_overwrite_existing_architecture_md(self, python_project, config):
-        (python_project / "ARCHITECTURE.md").write_text("# My Architecture\nCustom content.")
+        (python_project / "ARCHITECTURE.md").write_text(
+            "# My Architecture\nCustom content."
+        )
         auditor = CodeAuditor(python_project, config)
         result = auditor.run(depth="quick")
         assert "ARCHITECTURE.md" not in result.generated_docs
@@ -210,7 +220,9 @@ class TestAuditDoesNotTouchBraindump:
     audit_result.json) and nothing more.
     """
 
-    def test_full_audit_does_not_create_braindump(self, python_project, config, monkeypatch):
+    def test_full_audit_does_not_create_braindump(
+        self, python_project, config, monkeypatch
+    ):
         config.update({"plan_budget_hours": 1, "audit_runtime_enabled": True})
 
         cli = object()
@@ -244,7 +256,10 @@ class TestAuditDoesNotTouchBraindump:
 
         auditor.run(depth="full")
         # User's BRAINDUMP.md is untouched.
-        assert "Build me a thing that does X." in (python_project / "BRAINDUMP.md").read_text()
+        assert (
+            "Build me a thing that does X."
+            in (python_project / "BRAINDUMP.md").read_text()
+        )
 
 
 class TestConflictDetection:
@@ -276,7 +291,9 @@ class TestConflictDetection:
         assert any("billing" in c.audit_value for c in missing)
 
     def test_conflicts_file_written(self, python_project, config):
-        (python_project / "ARCHITECTURE.md").write_text("# Architecture\nThis is a Java project.")
+        (python_project / "ARCHITECTURE.md").write_text(
+            "# Architecture\nThis is a Java project."
+        )
         auditor = CodeAuditor(python_project, config)
         auditor.run(depth="quick")
         conflicts_path = python_project / ".aidlc" / "CONFLICTS.md"
@@ -293,19 +310,33 @@ class TestAuditModels:
             frameworks=["FastAPI"],
             entry_points=["main.py"],
             modules=[
-                ModuleInfo(name="app", path="app", file_count=5, line_count=200, role="services")
+                ModuleInfo(
+                    name="app",
+                    path="app",
+                    file_count=5,
+                    line_count=200,
+                    role="services",
+                )
             ],
             directory_tree="app/\n  main.py",
             source_stats={"total_files": 5, "total_lines": 200},
             tech_debt=[
-                TechDebtItem(file="app/main.py", line=10, type="todo", text="TODO: fix this")
+                TechDebtItem(
+                    file="app/main.py", line=10, type="todo", text="TODO: fix this"
+                )
             ],
             test_coverage=CoverageInfo(
-                test_files=2, test_functions=5, source_files=5, estimated_coverage="moderate"
+                test_files=2,
+                test_functions=5,
+                source_files=5,
+                estimated_coverage="moderate",
             ),
             conflicts=[
                 AuditConflict(
-                    doc_path="ARCH.md", field="type", audit_value="python", user_value="java"
+                    doc_path="ARCH.md",
+                    field="type",
+                    audit_value="python",
+                    user_value="java",
                 )
             ],
             runtime_checks={"overall_passed": False},

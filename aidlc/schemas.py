@@ -140,7 +140,9 @@ class PlanningOutput:
                 planning_complete = True
                 if not completion_reason:
                     completion_reason = (
-                        raw_action.get("completion_reason") or raw_action.get("reason") or ""
+                        raw_action.get("completion_reason")
+                        or raw_action.get("reason")
+                        or ""
                     )
                 continue
 
@@ -167,7 +169,9 @@ class PlanningOutput:
     ) -> list[str]:
         errors = []
         new_ids = [
-            a.issue_id for a in self.actions if a.action_type == "create_issue" and a.issue_id
+            a.issue_id
+            for a in self.actions
+            if a.action_type == "create_issue" and a.issue_id
         ]
         batch_ids = set(new_ids)
         seen = set()
@@ -236,7 +240,9 @@ def parse_json_output(raw_text: str) -> dict:
         if brace_match:
             json_str = brace_match.group(0)
         else:
-            raise ValueError(f"No JSON found in response. Starts with: {raw_text[:200]}")
+            raise ValueError(
+                f"No JSON found in response. Starts with: {raw_text[:200]}"
+            )
 
     try:
         return json.loads(json_str)

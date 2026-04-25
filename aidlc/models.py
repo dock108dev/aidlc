@@ -147,7 +147,11 @@ class RunState:
 
     def get_pending_issues(self) -> list[Issue]:
         """Get issues ready for implementation (deps met, not done)."""
-        done_ids = {d["id"] for d in self.issues if d.get("status") in ("implemented", "verified")}
+        done_ids = {
+            d["id"]
+            for d in self.issues
+            if d.get("status") in ("implemented", "verified")
+        }
         pending = []
         for d in self.issues:
             if d.get("status") not in ("pending", "failed", "in_progress"):
@@ -261,8 +265,12 @@ class RunState:
         state.claude_retries_total = data.get("claude_retries_total", 0)
         state.claude_input_tokens = data.get("claude_input_tokens", 0)
         state.claude_output_tokens = data.get("claude_output_tokens", 0)
-        state.claude_cache_creation_input_tokens = data.get("claude_cache_creation_input_tokens", 0)
-        state.claude_cache_read_input_tokens = data.get("claude_cache_read_input_tokens", 0)
+        state.claude_cache_creation_input_tokens = data.get(
+            "claude_cache_creation_input_tokens", 0
+        )
+        state.claude_cache_read_input_tokens = data.get(
+            "claude_cache_read_input_tokens", 0
+        )
         state.claude_total_input_tokens = data.get("claude_total_input_tokens", 0)
         state.claude_total_tokens = data.get("claude_total_tokens", 0)
         state.claude_web_search_requests = data.get("claude_web_search_requests", 0)
@@ -301,7 +309,9 @@ class RunState:
         state.stop_reason = data.get("stop_reason")
         state.notes = data.get("notes", "")
         state.validation_results = data.get("validation_results", [])
-        state.project_wide_tests_unstable = bool(data.get("project_wide_tests_unstable", False))
+        state.project_wide_tests_unstable = bool(
+            data.get("project_wide_tests_unstable", False)
+        )
         return state
 
     def record_provider_result(
@@ -510,8 +520,12 @@ class RunState:
 
         input_rate = float(selected.get("input", 0.0) or 0.0)
         output_rate = float(selected.get("output", 0.0) or 0.0)
-        cache_creation_rate = float(selected.get("cache_creation_input", input_rate * 1.25) or 0.0)
-        cache_read_rate = float(selected.get("cache_read_input", input_rate * 0.10) or 0.0)
+        cache_creation_rate = float(
+            selected.get("cache_creation_input", input_rate * 1.25) or 0.0
+        )
+        cache_read_rate = float(
+            selected.get("cache_read_input", input_rate * 0.10) or 0.0
+        )
 
         return (
             (input_tokens / 1_000_000.0) * input_rate

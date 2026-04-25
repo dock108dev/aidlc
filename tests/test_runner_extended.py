@@ -38,7 +38,11 @@ def config(tmp_path):
         "_reports_dir": str(aidlc_dir / "reports"),
         "_issues_dir": str(aidlc_dir / "issues"),
         "providers": {
-            "claude": {"enabled": True, "cli_command": "claude", "default_model": "sonnet"}
+            "claude": {
+                "enabled": True,
+                "cli_command": "claude",
+                "default_model": "sonnet",
+            }
         },
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
@@ -151,7 +155,14 @@ class TestResumeSkipsPlanning:
     @patch("aidlc.runner.ProviderRouter")
     @patch("aidlc.runner.RunLock")
     def test_resume_implementing_skips_planner_and_doc_gaps(
-        self, MockLock, MockRouter, mock_scan, MockImplementer, mock_doc_gaps, config, tmp_path
+        self,
+        MockLock,
+        MockRouter,
+        mock_scan,
+        MockImplementer,
+        mock_doc_gaps,
+        config,
+        tmp_path,
     ):
         (tmp_path / "README.md").write_text("# Test")
         runs_dir = Path(config["_runs_dir"])

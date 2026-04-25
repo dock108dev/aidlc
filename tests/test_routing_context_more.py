@@ -85,7 +85,9 @@ def test_resolve_model_user_default_model_overrides_default_phase_models():
     }
     ad = _fake("claude", "haiku")
     assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "opus"
-    assert context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+    assert (
+        context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+    )
 
 
 def test_resolve_model_user_phase_models_beats_user_default_model():
@@ -109,7 +111,9 @@ def test_resolve_model_user_phase_models_beats_user_default_model():
     # implementation phase has no user override → falls through to DEFAULT
     # phase_models → adapter default. With nothing in DEFAULTS for
     # implementation in the test config, falls to user default_model = opus.
-    assert context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+    assert (
+        context.resolve_model_for_phase(cfg, ad, "implementation", "normal") == "opus"
+    )
 
 
 def test_resolve_model_no_user_override_uses_default_phase_models():
@@ -118,14 +122,19 @@ def test_resolve_model_no_user_override_uses_default_phase_models():
         "providers": {
             "claude": {
                 "default_model": "sonnet",
-                "phase_models": {"planning": "sonnet", "implementation_complex": "opus"},
+                "phase_models": {
+                    "planning": "sonnet",
+                    "implementation_complex": "opus",
+                },
             }
         },
         "_user_provider_overrides": {},
     }
     ad = _fake("claude", "haiku")
     assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "sonnet"
-    assert context.resolve_model_for_phase(cfg, ad, "implementation", "complex") == "opus"
+    assert (
+        context.resolve_model_for_phase(cfg, ad, "implementation", "complex") == "opus"
+    )
 
 
 def test_resolve_model_falls_through_to_adapter_default():
@@ -156,7 +165,11 @@ def test_tier_aware_provider_order_implementation_prefers_premium_tag():
     cfg = {
         "routing_impl_budget_explore_probability": 0.0,
         "providers": {
-            "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
+            "claude": {
+                "enabled": True,
+                "max_capacity": True,
+                "max_capacity_weight": 20,
+            },
             "openai": {"enabled": True, "max_capacity": False},
         },
     }
@@ -219,7 +232,11 @@ def test_tier_aware_impl_explore_random(monkeypatch):
 def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
     cfg = {
         "providers": {
-            "claude": {"enabled": True, "max_capacity": True, "max_capacity_weight": 20},
+            "claude": {
+                "enabled": True,
+                "max_capacity": True,
+                "max_capacity_weight": 20,
+            },
             "openai": {"enabled": True},
         }
     }
@@ -265,7 +282,10 @@ def test_provider_max_capacity_weight_explicit():
 
 
 def test_provider_max_capacity_weight_defaults():
-    assert context.provider_max_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
+    assert (
+        context.provider_max_capacity_weight({"providers": {"openai": {}}}, "openai")
+        == 1.0
+    )
     assert (
         context.provider_max_capacity_weight(
             {"providers": {"openai": {"max_capacity": True}}},
