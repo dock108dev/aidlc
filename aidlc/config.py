@@ -192,7 +192,12 @@ DEFAULTS = {
     "test_timeout_seconds": 300,
     "max_doc_chars": 10000,
     "max_context_chars": 40000,
-    "max_implementation_context_chars": 12000,
+    # Implementation-phase prompt budgets. Separate from planning so the
+    # implementer gets a tighter context (planning-only docs filtered out,
+    # per-doc cap lower, audit/issue-index sections skipped). Drop these
+    # numbers to shrink the implementation prompt without affecting planning.
+    "max_implementation_context_chars": 9000,
+    "implementation_max_doc_chars": 4000,
     "doc_scan_patterns": [
         "**/*.md",
         "**/*.txt",
@@ -274,7 +279,38 @@ DEFAULTS = {
     # Finalize prompts: full project_context can exceed CLI limits — cap with head+tail preserve
     "finalize_project_context_max_chars": 22000,
     # Implementation prompt: max prior completed issues listed (titles only); rest on disk
-    "implementation_completed_issues_max": 12,
+    "implementation_completed_issues_max": 6,
+    # Implementation prompt: max docs/research/*.md filenames shown in the
+    # "Available Research" index (implementer can still list the directory).
+    "implementation_research_index_max": 15,
+    # Patterns that classify a doc as planning-only (dropped from impl context)
+    # or implementation-relevant (kept). Unmatched docs fall through to both.
+    # Override per-project by setting the same key in .aidlc/config.json; set
+    # "planning_only" to [] to disable filtering.
+    "implementation_doc_phase_patterns": {
+        "planning_only": [
+            "BRAINDUMP*",
+            "*ROADMAP*",
+            "*VISION*",
+            "*FUTURES*",
+            "docs/roadmap.*",
+            "planning/**",
+            "rfcs/**",
+        ],
+        "implementation": [
+            "README*",
+            "ARCHITECTURE*",
+            "DESIGN*",
+            "CLAUDE.md",
+            "docs/architecture.*",
+            "docs/setup.*",
+            "docs/testing.*",
+            "docs/contributing.*",
+            "docs/configuration*",
+            "docs/style/**",
+            "specs/**",
+        ],
+    },
     "planning_action_failure_ratio_threshold": 0.6,  # fail cycle if too many actions fail
     # Implementation autosync / resilience
     "autosync_enabled": True,

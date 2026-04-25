@@ -63,7 +63,7 @@ class Implementer:
         self.test_command = config.get("run_tests_command")
         self.max_attempts = config.get("max_implementation_attempts", 3)
         self.test_timeout = config.get("test_timeout_seconds", 300)
-        self.max_impl_context_chars = config.get("max_implementation_context_chars", 30000)
+        self.max_impl_context_chars = config.get("max_implementation_context_chars", 9000)
         self.escalate_on_retry = config.get("implementation_escalate_on_retry", True)
         self.complexity_ac_threshold = max(
             1, int(config.get("implementation_complexity_acceptance_criteria_threshold", 6))

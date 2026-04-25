@@ -7,11 +7,43 @@ design docs, etc. to build project context for planning.
 import fnmatch
 import re
 from pathlib import Path
+from typing import Literal
 
 from .models import Issue
 
 # Default max chars per doc (overridden by config["max_doc_chars"])
 DEFAULT_MAX_DOC_CHARS = 10000
+
+# Default doc-phase classification patterns. Planning phase wants vision/roadmap
+# context; implementation phase only wants code-relevant docs. Unmatched docs
+# fall through to "both" (included everywhere).
+DEFAULT_DOC_PHASE_PATTERNS = {
+    "planning_only": [
+        "BRAINDUMP*",
+        "*ROADMAP*",
+        "*VISION*",
+        "*FUTURES*",
+        "docs/roadmap.*",
+        "planning/**",
+        "rfcs/**",
+    ],
+    "implementation": [
+        "README*",
+        "ARCHITECTURE*",
+        "DESIGN*",
+        "CLAUDE.md",
+        "docs/architecture.*",
+        "docs/setup.*",
+        "docs/testing.*",
+        "docs/contributing.*",
+        "docs/configuration*",
+        "docs/style/**",
+        "specs/**",
+    ],
+}
+
+DocPhase = Literal["planning_only", "implementation", "both"]
+ContextMode = Literal["planning", "implementation"]
 
 # Priority patterns — docs matching these get loaded first
 PRIORITY_PATTERNS = [
@@ -60,6 +92,19 @@ PROJECT_INDICATORS = {
 }
 
 
+def _phase_match(rel_path: str, patterns: list[str]) -> bool:
+    """Case-insensitive fnmatch against rel_path and its basename."""
+    if not patterns:
+        return False
+    lower = rel_path.lower()
+    base = lower.rsplit("/", 1)[-1]
+    for pattern in patterns:
+        pat = pattern.lower()
+        if fnmatch.fnmatch(lower, pat) or fnmatch.fnmatch(base, pat):
+            return True
+    return False
+
+
 def detect_project_type(project_root: Path) -> str:
     """Detect project type from repo indicator files and glob patterns."""
     detected: set[str] = set()
@@ -95,6 +140,23 @@ class ProjectScanner:
         )
         self.max_doc_chars = config.get("max_doc_chars", DEFAULT_MAX_DOC_CHARS)
         self.max_context_chars = config.get("max_context_chars", 80000)
+        self.implementation_max_doc_chars = int(
+            config.get("implementation_max_doc_chars", 4000) or 4000
+        )
+        # Implementer's final context budget. When in "implementation" mode,
+        # build_context_prompt uses min(max_context_chars, this) so the scanner
+        # stops assembling at the tighter cap rather than deferring to head/tail
+        # truncation inside the implementer.
+        self.max_implementation_context_chars = int(
+            config.get("max_implementation_context_chars", 9000) or 9000
+        )
+        raw_phase_patterns = config.get(
+            "implementation_doc_phase_patterns", DEFAULT_DOC_PHASE_PATTERNS
+        )
+        self._phase_patterns = {
+            "planning_only": list(raw_phase_patterns.get("planning_only", []) or []),
+            "implementation": list(raw_phase_patterns.get("implementation", []) or []),
+        }
 
     def scan(self) -> dict:
         """Full project scan. Returns structured context.
@@ -161,11 +223,13 @@ class ProjectScanner:
                 if len(content) > self.max_doc_chars:
                     content = content[: self.max_doc_chars] + "\n\n... (truncated)"
                 priority = self._doc_priority(rel_path)
+                phase = self._doc_phase(rel_path)
                 docs.append(
                     {
                         "path": rel_path,
                         "content": content,
                         "priority": priority,
+                        "phase": phase,
                         "size": len(content),
                     }
                 )
@@ -192,6 +256,20 @@ class ProjectScanner:
 
         # Lower: everything else
         return 3
+
+    def _doc_phase(self, rel_path: str) -> DocPhase:
+        """Classify a doc as planning_only, implementation, or both.
+
+        planning_only docs are dropped from implementation-phase context (the
+        vision/roadmap has already been metabolized into acceptance criteria).
+        implementation docs are code-relevant references the implementer may
+        want while coding. Anything not matched falls through to both.
+        """
+        if _phase_match(rel_path, self._phase_patterns["planning_only"]):
+            return "planning_only"
+        if _phase_match(rel_path, self._phase_patterns["implementation"]):
+            return "implementation"
+        return "both"
 
     def _is_excluded(self, rel_path: str) -> bool:
         """Check if path matches any exclusion pattern."""
@@ -339,9 +417,24 @@ class ProjectScanner:
                 self._audit_load_errors += 1
         return None
 
-    def build_context_prompt(self, scan_result: dict) -> str:
-        """Build a project context string from scan results for use in prompts."""
+    def build_context_prompt(
+        self, scan_result: dict, mode: ContextMode = "planning"
+    ) -> str:
+        """Build a project context string from scan results for use in prompts.
+
+        mode="planning" includes all docs, full audit, and the existing-issues
+        index. mode="implementation" drops planning-only docs (BRAINDUMP,
+        ROADMAP, vision/futures), omits tech-debt and existing-issues sections
+        (the implementer prompt carries its own curated `Recently completed`
+        list), and uses a tighter per-doc cap (implementation_max_doc_chars).
+        """
+        is_impl = mode == "implementation"
         sections = []
+        effective_budget = (
+            min(self.max_context_chars, self.max_implementation_context_chars)
+            if is_impl
+            else self.max_context_chars
+        )
 
         # Project type
         sections.append(f"**Project type**: {scan_result['project_type']}")
@@ -366,26 +459,42 @@ class ProjectScanner:
         # Key docs (top priority first, capped)
         sections.append("## Key Documentation\n")
         included = 0
+        skipped_planning_only = 0
         total_chars = 0
-        max_context_chars = self.max_context_chars
+        per_doc_cap = self.implementation_max_doc_chars if is_impl else None
 
         for doc in scan_result["doc_files"]:
-            if total_chars + doc["size"] > max_context_chars:
-                sections.append(
-                    f"\n... ({scan_result['total_docs'] - included} more docs not shown)"
-                )
+            phase = doc.get("phase", "both")
+            if is_impl and phase == "planning_only":
+                skipped_planning_only += 1
+                continue
+            content = doc["content"]
+            if per_doc_cap and len(content) > per_doc_cap:
+                content = content[:per_doc_cap] + "\n\n... (truncated for impl context)"
+            size = len(content)
+            if total_chars + size > effective_budget:
+                remaining = scan_result["total_docs"] - included - skipped_planning_only
+                sections.append(f"\n... ({remaining} more docs not shown)")
                 break
             sections.append(f"### {doc['path']}\n")
-            sections.append(doc["content"])
+            sections.append(content)
             sections.append("")
             included += 1
-            total_chars += doc["size"]
+            total_chars += size
+
+        if is_impl and skipped_planning_only:
+            sections.append(
+                f"\n_(omitted {skipped_planning_only} planning-phase doc(s) — "
+                "vision/roadmap context lives in the planner prompt; "
+                "Read them from disk if needed.)_"
+            )
 
         # Audit findings
         audit = scan_result.get("audit_result")
         if audit:
             sections.append("\n## Code Audit Findings\n")
-            sections.append(f"**Audit depth**: {audit.get('depth', 'quick')}")
+            if not is_impl:
+                sections.append(f"**Audit depth**: {audit.get('depth', 'quick')}")
             sections.append(
                 f"**Detected frameworks**: {', '.join(audit.get('frameworks', [])) or 'none'}"
             )
@@ -394,7 +503,7 @@ class ProjectScanner:
             )
 
             modules = audit.get("modules", [])
-            if modules:
+            if modules and not is_impl:
                 sections.append("\n**Modules:**")
                 for m in modules:
                     name = m.get("name", "?")
@@ -404,25 +513,25 @@ class ProjectScanner:
                     sections.append(f"- `{name}/` — {role} ({files} files, {lines:,} lines)")
 
             stats = audit.get("source_stats", {})
-            if stats:
+            if stats and not is_impl:
                 sections.append(
                     f"\n**Source stats**: {stats.get('total_files', 0)} files, {stats.get('total_lines', 0):,} lines"
                 )
 
             tc = audit.get("test_coverage")
-            if tc:
+            if tc and not is_impl:
                 sections.append(
                     f"**Test coverage**: {tc.get('estimated_coverage', 'unknown')} ({tc.get('test_files', 0)} test files, {tc.get('test_functions', 0)} test functions)"
                 )
 
             features = audit.get("features")
-            if features:
+            if features and not is_impl:
                 sections.append("\n**Features:**")
                 for feat in features:
                     sections.append(f"- {feat}")
 
             tech_debt = audit.get("tech_debt")
-            if tech_debt:
+            if tech_debt and not is_impl:
                 sections.append(f"\n**Tech debt markers**: {len(tech_debt)} found")
                 for td in tech_debt[:10]:
                     sections.append(
@@ -433,8 +542,10 @@ class ProjectScanner:
 
             sections.append("")
 
-        # Existing issues
-        if scan_result["existing_issues"]:
+        # Existing issues — planner needs the index; implementer gets a
+        # curated "Recently completed" list from its own prompt, so skip this
+        # block to avoid duplication.
+        if scan_result["existing_issues"] and not is_impl:
             sections.append(f"\n## Existing Issues ({len(scan_result['existing_issues'])} found)\n")
             max_issue_lines = 25
             shown = 0

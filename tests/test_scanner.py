@@ -174,3 +174,98 @@ Done already.
         scanner = ProjectScanner(tmp_path, config)
         result = scanner.scan()
         assert result["project_type"] == "unknown"
+
+
+class TestDocPhaseClassification:
+    """Phase-aware doc classification for planning vs. implementation prompts."""
+
+    def test_planning_only_buckets(self, tmp_path, config):
+        scanner = ProjectScanner(tmp_path, config)
+        for rel in (
+            "BRAINDUMP.md",
+            "ROADMAP.md",
+            "docs/roadmap.md",
+            "AIDLC_FUTURES.md",
+            "VISION.md",
+            "planning/ideas.md",
+            "rfcs/0001-proposal.md",
+        ):
+            assert scanner._doc_phase(rel) == "planning_only", rel
+
+    def test_implementation_buckets(self, tmp_path, config):
+        scanner = ProjectScanner(tmp_path, config)
+        for rel in (
+            "README.md",
+            "ARCHITECTURE.md",
+            "DESIGN.md",
+            "CLAUDE.md",
+            "docs/architecture.md",
+            "docs/testing.md",
+            "docs/setup.md",
+            "docs/contributing.md",
+            "docs/configuration-deployment.md",
+            "specs/api.md",
+        ):
+            assert scanner._doc_phase(rel) == "implementation", rel
+
+    def test_unmatched_falls_through_to_both(self, tmp_path, config):
+        scanner = ProjectScanner(tmp_path, config)
+        for rel in ("docs/content-data.md", "docs/index.md", "notes/random.md"):
+            assert scanner._doc_phase(rel) == "both", rel
+
+    def test_empty_planning_only_disables_filter(self, tmp_path, config):
+        config = {
+            **config,
+            "implementation_doc_phase_patterns": {
+                "planning_only": [],
+                "implementation": [],
+            },
+        }
+        scanner = ProjectScanner(tmp_path, config)
+        assert scanner._doc_phase("BRAINDUMP.md") == "both"
+
+    def test_impl_context_drops_planning_only_docs(self, tmp_path, config):
+        (tmp_path / "README.md").write_text("# readme body")
+        (tmp_path / "BRAINDUMP.md").write_text("# braindump body")
+        (tmp_path / "ROADMAP.md").write_text("# roadmap body")
+        scanner = ProjectScanner(tmp_path, config)
+        result = scanner.scan()
+
+        planning = scanner.build_context_prompt(result, mode="planning")
+        impl = scanner.build_context_prompt(result, mode="implementation")
+
+        assert "braindump body" in planning
+        assert "roadmap body" in planning
+        assert "braindump body" not in impl
+        assert "roadmap body" not in impl
+        assert "readme body" in impl
+        assert "omitted 2 planning-phase doc" in impl
+
+    def test_impl_context_skips_existing_issues_block(self, tmp_path, config):
+        (tmp_path / "README.md").write_text("# readme")
+        issues_dir = tmp_path / ".aidlc" / "issues"
+        issues_dir.mkdir(parents=True)
+        (issues_dir / "ISSUE-001.md").write_text(
+            "# ISSUE-001: foo\n\n**Priority**: high\n**Status**: pending\n"
+        )
+        scanner = ProjectScanner(tmp_path, config)
+        result = scanner.scan()
+
+        planning = scanner.build_context_prompt(result, mode="planning")
+        impl = scanner.build_context_prompt(result, mode="implementation")
+
+        assert "Existing Issues" in planning
+        assert "Existing Issues" not in impl
+
+    def test_impl_context_uses_tighter_per_doc_cap(self, tmp_path, config):
+        config = {**config, "implementation_max_doc_chars": 100}
+        (tmp_path / "README.md").write_text("x" * 3000)
+        scanner = ProjectScanner(tmp_path, config)
+        result = scanner.scan()
+
+        impl = scanner.build_context_prompt(result, mode="implementation")
+        # README appears once; its body is capped at 100 chars + truncation note
+        assert "truncated for impl context" in impl
+        # Planning keeps the longer (max_doc_chars-capped) body
+        planning = scanner.build_context_prompt(result, mode="planning")
+        assert "truncated for impl context" not in planning

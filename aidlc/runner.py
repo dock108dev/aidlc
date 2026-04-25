@@ -160,6 +160,11 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     For large projects, this also generates a doc manifest and optional
     project brief to ensure Claude sees the full scope even when individual
     docs don't fit in the context budget.
+
+    The scan_result dict also carries `implementation_context` — a slimmer
+    variant that drops planning-only docs (BRAINDUMP/ROADMAP/vision) and
+    audit/issue-index noise. The returned string is the planning-phase
+    context; the implementer reads the impl variant off scan_result.
     """
     logger.info("Scanning project...")
     state.phase = RunPhase.SCANNING
@@ -170,8 +175,12 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
     state.docs_scanned = scan_result["total_docs"]
     state.scanned_docs = [d["path"] for d in scan_result["doc_files"]]
 
-    # Build base context
-    context = scanner.build_context_prompt(scan_result)
+    # Build base context (planning-flavored) + slimmer implementation-flavored
+    # variant that drops planning-only docs and noisy audit/issue sections.
+    context = scanner.build_context_prompt(scan_result, mode="planning")
+    scan_result["implementation_context"] = scanner.build_context_prompt(
+        scan_result, mode="implementation"
+    )
 
     # The active provider has file access (allow_edits=True) so it can read docs directly.
     # No need to paste everything into the prompt or generate summaries.
@@ -375,7 +384,8 @@ def run_full(
             # IMPLEMENT
             if state.issues:
                 cli.set_phase("implementation")
-                implementer = Implementer(state, run_dir, config, cli, project_context, logger)
+                impl_context = scan_result.get("implementation_context") or project_context
+                implementer = Implementer(state, run_dir, config, cli, impl_context, logger)
                 verification_ok = implementer.run()
                 save_state(state, run_dir)
                 logger.info(
