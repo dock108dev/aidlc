@@ -28,6 +28,26 @@ def base_config():
     }
 
 
+def _line_reader(text: str):
+    """Return a readline-compatible callable that yields each line, then ''.
+
+    Cycles back to the start after EOF so the same mock Popen can be reused
+    across retries (each retry's reader thread gets a fresh stream).
+    """
+    lines = text.splitlines(keepends=True) if text else []
+    queue = list(lines) + [""]
+    idx = [0]
+
+    def readline():
+        if idx[0] >= len(queue):
+            idx[0] = 0
+        value = queue[idx[0]]
+        idx[0] += 1
+        return value
+
+    return readline
+
+
 def _mock_popen_success(stdout="output text", stderr=""):
     """Create a mock Popen that succeeds immediately."""
     proc = MagicMock()
@@ -36,8 +56,10 @@ def _mock_popen_success(stdout="output text", stderr=""):
     proc.returncode = 0
     proc.stdin = MagicMock()
     proc.stdout = MagicMock()
+    proc.stdout.readline.side_effect = _line_reader(stdout)
     proc.stdout.read.return_value = stdout
     proc.stderr = MagicMock()
+    proc.stderr.readline.side_effect = _line_reader(stderr)
     proc.stderr.read.return_value = stderr
     return proc
 
@@ -50,8 +72,10 @@ def _mock_popen_failure(returncode=1, stderr="error"):
     proc.returncode = returncode
     proc.stdin = MagicMock()
     proc.stdout = MagicMock()
+    proc.stdout.readline.side_effect = _line_reader("")
     proc.stdout.read.return_value = ""
     proc.stderr = MagicMock()
+    proc.stderr.readline.side_effect = _line_reader(stderr)
     proc.stderr.read.return_value = stderr
     return proc
 
@@ -168,7 +192,8 @@ class TestExecutePrompt:
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "sonnet"
         assert "--output-format" in cmd
-        assert cmd[cmd.index("--output-format") + 1] == "json"
+        assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+        assert "--verbose" in cmd
 
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_extracts_cost_model_and_tool_usage(self, mock_popen, base_config, logger, tmp_path):
@@ -243,8 +268,10 @@ class TestExecutePrompt:
         proc.returncode = 124
         proc.stdin = MagicMock()
         proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader("")
         proc.stdout.read.return_value = ""
         proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
         proc.stderr.read.return_value = ""
         mock_popen.return_value = proc
 
@@ -275,8 +302,10 @@ class TestExecutePrompt:
         proc.returncode = 0
         proc.stdin = MagicMock()
         proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader("partial final output")
         proc.stdout.read.return_value = "partial final output"
         proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
         proc.stderr.read.return_value = ""
         mock_popen.return_value = proc
 
@@ -312,6 +341,180 @@ class TestExtractCliMetadataNdjson:
         assert model == "sonnet"
         assert src == "claude_cli_json"
         assert cost is None
+
+
+class TestStreamJsonAssembly:
+    """stream-json output reassembles into the same fields the parser expects."""
+
+    def test_terminal_result_event_yields_expected_metadata(self):
+        # Minimal stream-json transcript as Claude CLI would emit it.
+        events = [
+            {"type": "system", "subtype": "init", "tools": ["Read"]},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "hi"}]}},
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "final text",
+                "total_cost_usd": 0.42,
+                "model": "sonnet",
+                "usage": {
+                    "input_tokens": 11,
+                    "output_tokens": 7,
+                    "cache_creation_input_tokens": 0,
+                    "cache_read_input_tokens": 5,
+                },
+            },
+        ]
+        blob = "\n".join(json.dumps(e) for e in events) + "\n"
+        text, usage, cost, model, src = ClaudeCLI._extract_cli_metadata(blob, "opus")
+        assert text == "final text"
+        assert usage["input_tokens"] == 11
+        assert usage["output_tokens"] == 7
+        assert usage["cache_read_input_tokens"] == 5
+        assert cost == 0.42
+        assert model == "sonnet"
+        assert src == "claude_cli_json"
+
+    def test_command_line_uses_stream_json_and_verbose(self, base_config, logger, tmp_path):
+        with patch("aidlc.claude_cli.subprocess.Popen") as mock_popen:
+            mock_popen.return_value = _mock_popen_success("{}")
+            cli = ClaudeCLI(base_config, logger)
+            cli.execute_prompt("prompt", tmp_path)
+            cmd = mock_popen.call_args[0][0]
+            assert "--output-format" in cmd
+            assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+            assert "--verbose" in cmd
+
+
+class TestSummarizeStreamEvent:
+    def test_tool_use_with_path(self):
+        from aidlc.claude_cli import _summarize_stream_event
+
+        line = json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": {"file_path": "src/foo.py"},
+                        }
+                    ]
+                },
+            }
+        )
+        assert _summarize_stream_event(line) == "tool_use Read(src/foo.py)"
+
+    def test_assistant_text_counts_chars(self):
+        from aidlc.claude_cli import _summarize_stream_event
+
+        line = json.dumps(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "hello world"}]},
+            }
+        )
+        assert _summarize_stream_event(line) == "assistant_text 11 chars"
+
+    def test_result_event(self):
+        from aidlc.claude_cli import _summarize_stream_event
+
+        line = json.dumps({"type": "result", "subtype": "success", "is_error": False})
+        assert _summarize_stream_event(line) == "result success"
+
+    def test_garbage_returns_empty_summary(self):
+        from aidlc.claude_cli import _summarize_stream_event
+
+        assert _summarize_stream_event("not json") == ""
+        assert _summarize_stream_event("") == ""
+        assert _summarize_stream_event("{") == ""
+
+
+class TestLivenessLoop:
+    """Hard timeout disabled by default + stall-based heartbeat."""
+
+    def test_hard_timeout_disabled_by_default(self, base_config, logger):
+        # base_config has no claude_hard_timeout_seconds; default is 0.
+        assert base_config.get("claude_hard_timeout_seconds") is None
+        cli = ClaudeCLI(base_config, logger)
+        # The value is read inside execute_prompt; we just verify DEFAULTS wins.
+        from aidlc.config import DEFAULTS
+
+        assert DEFAULTS["claude_hard_timeout_seconds"] == 0
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_stall_kill_requests_graceful_stop_on_silence(
+        self, mock_popen, mock_time, base_config, logger, caplog, tmp_path
+    ):
+        """When stall_kill_seconds is set and no stream activity occurs, the
+        CLI is asked to stop (send_signal), and the stall_kill path is logged."""
+        proc = MagicMock()
+        proc.poll.side_effect = [None, 124]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            0,  # graceful stop succeeds
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader("")
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
+        mock_popen.return_value = proc
+
+        base_config["claude_hard_timeout_seconds"] = 0
+        base_config["claude_stall_kill_seconds"] = 1
+        base_config["retry_max_attempts"] = 0
+        # time advances fast enough that the stall_kill threshold trips.
+        clock = itertools.count(start=0.0, step=5.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        with caplog.at_level(logging.WARNING, logger="test_claude_cli"):
+            cli.execute_prompt("prompt", tmp_path)
+
+        # Stall-kill path asked for a graceful stop (send_signal -> SIGINT).
+        assert proc.send_signal.called
+        # The kill reason was logged so an operator can see why.
+        assert any("stall kill" in rec.message for rec in caplog.records)
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_hard_timeout_zero_means_no_time_based_kill(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
+        """hard_timeout=0 + no stall_kill -> process is never killed on elapsed alone."""
+        proc = MagicMock()
+        # Process exits naturally on the 3rd poll.
+        proc.poll.side_effect = [None, None, 0]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            0,
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader("{}")
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
+        mock_popen.return_value = proc
+
+        base_config["claude_hard_timeout_seconds"] = 0
+        base_config["claude_stall_kill_seconds"] = 0
+        base_config["retry_max_attempts"] = 0
+        # Advance time by an hour each tick — no kill should happen.
+        clock = itertools.count(start=0.0, step=3600.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        cli.execute_prompt("prompt", tmp_path)
+        assert not proc.send_signal.called
+        assert not proc.terminate.called
+        assert not proc.kill.called
 
 
 class TestClassifyFailure:

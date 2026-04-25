@@ -72,8 +72,21 @@ DEFAULTS = {
     "plan_budget_hours": 4,
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
-    "claude_long_run_warn_seconds": 300,  # warn every N seconds if Claude is still running
-    "claude_hard_timeout_seconds": 1800,  # default 30-minute escape hatch for stuck runs
+    "claude_long_run_warn_seconds": 300,  # heartbeat-log cadence while Claude is still running
+    # Hard timeout disabled by default — Claude CLI can legitimately run for an
+    # hour+ on complex tasks, and stream-json gives us an activity signal so
+    # "running" vs "stuck" is no longer just "elapsed time". Set > 0 if you
+    # want a wall-clock escape hatch regardless of activity.
+    "claude_hard_timeout_seconds": 0,
+    # Stall detection (activity-based, uses stream-json line events as the
+    # liveness signal):
+    # - claude_stall_warn_seconds: flip the heartbeat log from INFO to WARNING
+    #   once Claude has been silent for this long. Does not kill. Default 300s.
+    # - claude_stall_kill_seconds: if > 0, kill the process after this much
+    #   genuine silence. Disabled by default; opt in as a safety valve for
+    #   unattended runs.
+    "claude_stall_warn_seconds": 300,
+    "claude_stall_kill_seconds": 0,
     "claude_timeout_grace_seconds": 30,  # wait for graceful Claude shutdown before force-kill
     # Telemetry/cost tracking:
     # - auto: use exact CLI-reported cost when available, otherwise estimate from token rates

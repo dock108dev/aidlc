@@ -8,6 +8,7 @@ import logging
 import re
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +34,96 @@ def _compact_text(value: str | None, max_len: int = 240) -> str:
     if len(compact) <= max_len:
         return compact
     return f"{compact[: max_len - 3]}..."
+
+
+def _summarize_stream_event(line: str) -> str:
+    """One-line description of a stream-json event for heartbeat logs.
+
+    Returns an empty string for unparseable or empty lines so the heartbeat
+    reporter can pick a non-empty summary by walking backward.
+    """
+    raw = (line or "").strip()
+    if not raw or not raw.startswith("{"):
+        return ""
+    try:
+        event = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return ""
+    if not isinstance(event, dict):
+        return ""
+    kind = event.get("type")
+    if kind == "system":
+        sub = event.get("subtype", "")
+        return f"system {sub}".strip()
+    if kind == "result":
+        sub = event.get("subtype", "")
+        if event.get("is_error"):
+            return f"result error ({sub})".strip()
+        return f"result {sub}".strip()
+    if kind in ("assistant", "user"):
+        msg = event.get("message") if isinstance(event.get("message"), dict) else {}
+        content = msg.get("content") if isinstance(msg.get("content"), list) else []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "tool_use":
+                name = block.get("name") or "?"
+                inp = block.get("input") or {}
+                # Most Claude tools put a short descriptive field like path/
+                # file_path/command up front; surface the first one that looks
+                # short and non-secret.
+                hint = ""
+                for key in ("file_path", "path", "command", "url", "query", "pattern"):
+                    val = inp.get(key) if isinstance(inp, dict) else None
+                    if isinstance(val, str) and val:
+                        hint = val if len(val) <= 60 else val[:57] + "..."
+                        break
+                return f"tool_use {name}({hint})" if hint else f"tool_use {name}"
+            if btype == "tool_result":
+                return f"tool_result ({kind})"
+            if btype == "text":
+                text = block.get("text") or ""
+                return f"assistant_text {len(text)} chars"
+            if btype == "thinking":
+                text = block.get("thinking") or ""
+                return f"thinking {len(text)} chars"
+        return kind
+    return str(kind or "event")
+
+
+def _pick_last_nonempty_summary(lines: list[str]) -> str:
+    """Walk backward through collected stream lines for a meaningful summary."""
+    for line in reversed(lines):
+        summary = _summarize_stream_event(line)
+        if summary:
+            return summary
+    return "no events yet"
+
+
+def _stream_reader(stream, sink: list[str], last_activity_at: list[float]) -> None:
+    """Background thread: read lines from stream, append to sink, stamp activity.
+
+    Treats anything that is not a non-empty string as EOF. This is defensive
+    against tests that mock `stream.readline` with a MagicMock (which would
+    otherwise never compare equal to "") and against any real stream that
+    gets closed mid-read.
+    """
+    try:
+        while True:
+            try:
+                raw = stream.readline()
+            except (ValueError, OSError):
+                break
+            if not isinstance(raw, str) or raw == "":
+                break
+            sink.append(raw)
+            last_activity_at[0] = time.time()
+    finally:
+        try:
+            stream.close()
+        except (OSError, ValueError, AttributeError):
+            pass
 
 
 class ClaudeCLIError(Exception):
@@ -92,20 +183,30 @@ class ClaudeCLI:
             }
 
         model = model_override or self.model
+        # stream-json + verbose: one JSON event per line. Each line gives us a
+        # natural liveness signal, and the terminal `result` event carries the
+        # same `result`/`usage`/`total_cost_usd` fields the old single-JSON
+        # format did, so the downstream parser still works via its JSONL
+        # fallback path.
         cmd = [
             self.cli_command,
             "--print",
             "--model",
             model,
             "--output-format",
-            "json",
+            "stream-json",
+            "--verbose",
         ]
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
-        hard_timeout_raw = self.config.get("claude_hard_timeout_seconds")
-        hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 1800))
+        hard_timeout_raw = self.config.get("claude_hard_timeout_seconds", 0)
+        hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 0))
+        stall_warn_raw = self.config.get("claude_stall_warn_seconds", 300)
+        stall_warn = max(0, int(stall_warn_raw if stall_warn_raw is not None else 0))
+        stall_kill_raw = self.config.get("claude_stall_kill_seconds", 0)
+        stall_kill = max(0, int(stall_kill_raw if stall_kill_raw is not None else 0))
         timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
         outage_max_wait = max(
             0, int(self.config.get("claude_service_outage_max_wait_seconds", 7200))
@@ -133,7 +234,11 @@ class ClaudeCLI:
                 else:
                     self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
-                # Run without timeout — let Claude finish. Warn periodically.
+                # Run without a default time-based timeout — let Claude finish.
+                # Background reader threads stamp last-activity on every stream
+                # line so the heartbeat can distinguish "still working" from
+                # "stalled". Optional hard_timeout / stall_kill provide escape
+                # hatches (disabled by default).
                 proc = subprocess.Popen(
                     cmd,
                     stdin=subprocess.PIPE,
@@ -146,51 +251,98 @@ class ClaudeCLI:
                 proc.stdin.write(prompt)
                 proc.stdin.close()
 
-                # Wait with periodic warnings and optional hard timeout.
+                stdout_lines: list[str] = []
+                stderr_lines: list[str] = []
+                last_activity_at = [time.time()]
+
+                stdout_thread = threading.Thread(
+                    target=_stream_reader,
+                    args=(proc.stdout, stdout_lines, last_activity_at),
+                    daemon=True,
+                )
+                stderr_thread = threading.Thread(
+                    target=_stream_reader,
+                    args=(proc.stderr, stderr_lines, last_activity_at),
+                    daemon=True,
+                )
+                stdout_thread.start()
+                stderr_thread.start()
+
+                # Activity-aware wait loop. Emit a heartbeat every warn_interval
+                # seconds of wall clock; flip to WARNING when idle crosses
+                # stall_warn. Only kill on explicit opt-in (hard_timeout or
+                # stall_kill set > 0).
                 timed_out = False
                 timeout_forced = False
-                still_running_warnings = 0
+                stall_killed = False
+                heartbeat_count = 0
+                next_heartbeat_at = start + warn_interval
+
                 while proc.poll() is None:
                     try:
-                        proc.wait(timeout=warn_interval)
+                        proc.wait(timeout=1.0)
+                        continue
                     except subprocess.TimeoutExpired:
-                        elapsed = time.time() - start
-                        still_running_warnings += 1
-                        timeout_status = (
-                            f"hard timeout in {max(0, hard_timeout - elapsed):.0f}s"
-                            if hard_timeout
-                            else "no hard timeout configured"
-                        )
-                        self.logger.warning(
-                            "Claude CLI still running "
-                            f"(elapsed={elapsed:.0f}s, warn_count={still_running_warnings}, "
-                            f"{timeout_status}, model={model})"
-                        )
-                        if hard_timeout and elapsed >= hard_timeout:
-                            timed_out = True
+                        pass
+
+                    now = time.time()
+                    elapsed = now - start
+                    idle = now - last_activity_at[0]
+
+                    if now >= next_heartbeat_at:
+                        heartbeat_count += 1
+                        next_heartbeat_at = now + warn_interval
+                        last_event = _pick_last_nonempty_summary(stdout_lines)
+                        if stall_warn and idle >= stall_warn:
                             self.logger.warning(
-                                f"Claude CLI exceeded hard timeout ({hard_timeout}s). "
-                                f"Requesting graceful stop (grace={timeout_grace}s)."
+                                "Claude CLI STALLED "
+                                f"(elapsed={elapsed:.0f}s, idle={idle:.0f}s, "
+                                f"last: {last_event}, model={model})"
                             )
-                            self._request_graceful_stop(proc)
+                        else:
+                            self.logger.info(
+                                "Claude CLI working "
+                                f"(elapsed={elapsed:.0f}s, idle={idle:.0f}s, "
+                                f"last: {last_event}, model={model})"
+                            )
+
+                    kill_reason = None
+                    if hard_timeout and elapsed >= hard_timeout:
+                        kill_reason = f"hard timeout ({hard_timeout}s)"
+                        timed_out = True
+                    elif stall_kill and idle >= stall_kill:
+                        kill_reason = f"stall kill (no output for {idle:.0f}s)"
+                        stall_killed = True
+                        timed_out = True
+
+                    if kill_reason:
+                        self.logger.warning(
+                            f"Claude CLI exceeded {kill_reason}. "
+                            f"Requesting graceful stop (grace={timeout_grace}s)."
+                        )
+                        self._request_graceful_stop(proc)
+                        try:
+                            proc.wait(timeout=timeout_grace)
+                        except subprocess.TimeoutExpired:
+                            timeout_forced = True
+                            self.logger.warning(
+                                "Claude CLI did not stop gracefully; forcing termination."
+                            )
+                            proc.terminate()
                             try:
-                                proc.wait(timeout=timeout_grace)
+                                proc.wait(timeout=5)
                             except subprocess.TimeoutExpired:
-                                timeout_forced = True
-                                self.logger.warning(
-                                    "Claude CLI did not stop gracefully; forcing termination."
-                                )
-                                proc.terminate()
-                                try:
-                                    proc.wait(timeout=5)
-                                except subprocess.TimeoutExpired:
-                                    proc.kill()
-                                    proc.wait(timeout=5)
-                            break
+                                proc.kill()
+                                proc.wait(timeout=5)
+                        break
+
+                # Let reader threads drain any final bytes.
+                stdout_thread.join(timeout=2.0)
+                stderr_thread.join(timeout=2.0)
 
                 duration = time.time() - start
-                stdout = proc.stdout.read()
-                stderr = proc.stderr.read()
+                stdout = "".join(stdout_lines)
+                stderr = "".join(stderr_lines)
                 returncode = proc.returncode if proc.returncode is not None else 124
                 if timeout_forced and returncode == 0:
                     returncode = 124
