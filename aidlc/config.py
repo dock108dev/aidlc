@@ -287,10 +287,22 @@ DEFAULTS = {
     "finalize_enabled": True,  # master switch for finalization
     "fail_on_final_test_failure": False,  # if True, failed final suite pauses run
     "strict_change_detection": False,  # if True, impl success requires verifiable changes
-    "finalize_passes": None,  # None = all; or ["ssot", "docs"]
+    # End-of-run finalization passes. None = all passes in PASS_ORDER
+    # (ssot → security → abend → cleanup → docs). Override with a subset if
+    # you want a faster end-of-run sweep.
+    "finalize_passes": None,
     "finalize_timeout_seconds": 900,  # 15 min per pass
     # Finalize prompts: full project_context can exceed CLI limits — cap with head+tail preserve
     "finalize_project_context_max_chars": 22000,
+    # Periodic cleanup runs a *subset* of finalization passes during the
+    # implementer loop, keeping code health high without paying for the full
+    # 5-pass audit on every commit.
+    # - cleanup_passes_every_cycles: cadence in implementer cycles. 0 = off.
+    # - cleanup_passes_periodic: which passes run periodically. Defaults to
+    #   the two cheapest, safest "act-in-place" passes. Add "ssot",
+    #   "security", or "docs" if you want a fuller mid-run sweep.
+    "cleanup_passes_every_cycles": 10,
+    "cleanup_passes_periodic": ["abend", "cleanup"],
     # Implementation prompt: max prior completed issues listed (titles only); rest on disk
     "implementation_completed_issues_max": 6,
     # Implementation prompt: max docs/research/*.md filenames shown in the

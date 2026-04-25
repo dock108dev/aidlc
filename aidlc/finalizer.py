@@ -1,11 +1,20 @@
 """Finalization engine for AIDLC.
 
-Runs configurable cleanup passes after implementation. Pass set is
-intentionally narrow — vague passes (ssot, security, abend) were removed in the
-core-focus audit. New passes will be added once their prompts are nailed down.
+Runs configurable cleanup/audit passes after implementation. Each pass calls
+the provider with edit permissions and a focused prompt; reports land in
+``docs/audits/`` and the raw provider output in ``run_dir/claude_outputs``.
 
-Each pass calls the provider with edit permissions and a focused prompt.
-Reports are written to docs/audits/ and .aidlc/reports/.
+Two cadences:
+
+- **Periodic** (every ``cleanup_passes_every_cycles`` impl cycles, default 10)
+  runs the safe subset ``cleanup_passes_periodic`` (default ``["abend",
+  "cleanup"]``). Driven from the implementer loop.
+- **End-of-run** runs ``finalize_passes`` (``None`` = all passes in
+  ``PASS_ORDER``). Driven from the runner.
+
+Every pass enforces an *Actionability Contract*: each finding must either be
+fixed in-place or documented as an intentional non-fix with concrete rationale
+in both the pass report and at the code site. Bare "TODO" outputs are rejected.
 """
 
 import subprocess
@@ -14,20 +23,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .finalize_prompts import (
+    ABEND_PROMPT,
     CLEANUP_PROMPT,
     DOCS_PROMPT,
     FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
     PASS_ORDER,
+    SECURITY_PROMPT,
+    SSOT_PROMPT,
 )
 from .models import RunPhase, RunState
 from .state_manager import save_state
 from .timing import add_console_time
 
 PASS_PROMPTS = {
-    "docs": DOCS_PROMPT,
+    "ssot": SSOT_PROMPT,
+    "security": SECURITY_PROMPT,
+    "abend": ABEND_PROMPT,
     "cleanup": CLEANUP_PROMPT,
+    "docs": DOCS_PROMPT,
 }
+
+# Passes whose prompts include a {diff_summary} placeholder (need git diff
+# injection). Docs is intentionally diff-blind — it audits current state.
+DIFF_AWARE_PASSES = {"ssot", "security", "abend", "cleanup"}
 
 
 class Finalizer:
@@ -106,14 +125,22 @@ class Finalizer:
         description = PASS_DESCRIPTIONS.get(pass_name, pass_name)
         self.logger.info(f"=== Finalize: {pass_name} — {description} ===")
 
-        # Build the prompt with project context
+        # Build the prompt with project context. Diff-aware passes (ssot,
+        # security, abend, cleanup) get the branch diff; docs is current-state
+        # only.
         prompt_template = PASS_PROMPTS[pass_name]
-        diff_summary = self._get_diff_summary() if pass_name == "cleanup" else ""
-
-        prompt = prompt_template.format(
-            project_context=self._project_context_for_finalize(),
-            diff_summary=diff_summary or "(no diff available — working on main branch)",
-        )
+        if pass_name in DIFF_AWARE_PASSES:
+            diff_summary = self._get_diff_summary() or (
+                "(no diff available — working on main branch or first commit)"
+            )
+            prompt = prompt_template.format(
+                project_context=self._project_context_for_finalize(),
+                diff_summary=diff_summary,
+            )
+        else:
+            prompt = prompt_template.format(
+                project_context=self._project_context_for_finalize(),
+            )
 
         # Execute Claude with edit permissions (no hard timeout — warns if long)
         start = time.time()

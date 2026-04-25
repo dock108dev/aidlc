@@ -109,6 +109,16 @@ class Implementer:
         self.autosync_keep_claude_outputs = max(
             1, int(config.get("autosync_keep_claude_outputs", 200) or 200)
         )
+        # Periodic cleanup cadence: run a subset of finalization passes every
+        # N implementation cycles to keep code health high mid-run. Independent
+        # of autosync (which is about commit/push). 0 disables the hook.
+        self.cleanup_passes_every_cycles = max(
+            0, int(config.get("cleanup_passes_every_cycles", 10) or 0)
+        )
+        raw_periodic_passes = config.get("cleanup_passes_periodic", ["abend", "cleanup"])
+        self.cleanup_passes_periodic = [
+            str(p).strip().lower() for p in raw_periodic_passes if str(p).strip()
+        ]
         self.stop_on_all_models_token_exhausted = bool(
             config.get("stop_on_all_models_token_exhausted", True)
         )
@@ -322,6 +332,9 @@ class Implementer:
                 if self._autosync_progress():
                     self._emit_run_checkpoint_summary()
                     last_checkpoint_time = time.time()
+
+            if self._should_run_periodic_cleanup():
+                self._run_periodic_cleanup()
 
             if time.time() - last_checkpoint_time >= checkpoint_interval:
                 self._emit_run_checkpoint_summary()
@@ -780,6 +793,44 @@ class Implementer:
         return self.state.implementation_cycles > 0 and (
             self.state.implementation_cycles % self.autosync_every_cycles == 0
         )
+
+    def _should_run_periodic_cleanup(self) -> bool:
+        if self.cleanup_passes_every_cycles <= 0:
+            return False
+        if not self.config.get("finalize_enabled", True) or self.config.get("dry_run"):
+            return False
+        if not self.cleanup_passes_periodic:
+            return False
+        return self.state.implementation_cycles > 0 and (
+            self.state.implementation_cycles % self.cleanup_passes_every_cycles == 0
+        )
+
+    def _run_periodic_cleanup(self) -> None:
+        """Run the periodic-cleanup subset of finalization passes mid-run.
+
+        Independent of autosync. Drives the same Finalizer entry point but
+        with the opted-in subset (default: abend + cleanup). After the passes
+        run, the implementer phase is restored.
+        """
+        from .finalizer import Finalizer
+
+        cycle = self.state.implementation_cycles
+        passes = list(self.cleanup_passes_periodic)
+        self.logger.info(
+            f"Periodic cleanup at implementation cycle {cycle} "
+            f"(passes={', '.join(passes)})"
+        )
+        finalizer = Finalizer(
+            self.state,
+            self.run_dir,
+            self.config,
+            self.cli,
+            self.project_context,
+            self.logger,
+        )
+        finalizer.run(passes=passes)
+        self.state.phase = RunPhase.IMPLEMENTING
+        save_state(self.state, self.run_dir)
 
     def _autosync_finalize_before_push_if_enabled(self) -> None:
         """Run full finalization passes (same as end-of-run) before commit/push."""
