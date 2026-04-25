@@ -186,75 +186,61 @@ def _render_prior_run_issues_section(planner) -> list[str]:
 
 
 def _render_foundation_docs_section(planner) -> list[str]:
-    """Render BRAINDUMP in full plus short excerpts of ROADMAP / ARCHITECTURE / DESIGN.
+    """Render the root-level BRAINDUMP.md in full as the cycle's scope source.
 
-    BRAINDUMP.md is the **scope source**: it describes the end state the project
-    is trying to reach. Planning exists to cover it. It is rendered in full so
-    the model sees every concrete ask — truncating it is how we end up with
-    plans that chase the roadmap and ignore what the customer actually wants.
+    This is the only doc the planner injects into the prompt. The repo itself
+    is authoritative for "what is" (the model has file access — it can read
+    anything it needs, and `--audit` produces a pre-flight summary). BRAINDUMP
+    is authoritative for "what next". Roadmaps, architecture docs, design
+    docs, audits, ADRs, etc. are not scope — they're reference material the
+    model can pull on demand.
 
-    ROADMAP / ARCHITECTURE / DESIGN are **support context** — they describe what
-    already exists, architectural constraints, and design rules the plan must
-    fit within. They render as short excerpts; the model reads the full files
-    on its own when it needs them.
+    Only the **root** BRAINDUMP.md counts. Files like `docs/audits/braindump.md`
+    are historical snapshots; matching them as foundation docs silently swapped
+    scope to month-old assessments and produced backlogs full of cut-list items.
     """
     docs = list(getattr(planner, "doc_files", None) or [])
     if not docs:
         return []
 
-    support_excerpt_max = max(
-        500, int(planner.config.get("planning_foundation_doc_excerpt_chars", 2000))
-    )
-    foundation_names = ("braindump.md", "roadmap.md", "architecture.md", "design.md")
-    by_name = {}
+    braindump = None
     for doc in docs:
-        name = (doc.get("path") or "").split("/")[-1].lower()
-        if name in foundation_names and name not in by_name:
-            by_name[name] = doc
+        path = (doc.get("path") or "").replace("\\", "/")
+        if path.lower() == "braindump.md":
+            braindump = doc
+            break
 
-    if not by_name:
+    if braindump is None:
         return []
 
-    lines = [
-        "\n## Foundation Docs\n",
-        "**BRAINDUMP.md is the scope source.** It describes where this project "
-        "needs to end up. Planning means filing issues that get the project to "
-        "BRAINDUMP-complete. Every concrete ask in BRAINDUMP should be reflected "
-        "in the backlog — either as an issue already filed (check `## Existing "
-        "Issues` and `## Prior Run — Already Done`) or as a new issue this cycle. "
-        "When a BRAINDUMP ask needs details you don't have (specific content, "
-        "formulas, external APIs), emit a `research` action this cycle so "
-        "`docs/research/<topic>.md` lands before the dependent issue.\n\n"
-        "**ROADMAP / ARCHITECTURE / DESIGN are support context**, not scope. "
-        "They tell you what already exists, what architectural rules apply, and "
-        "how new work should fit. Use them to shape issues, not to set the "
-        "backlog's ceiling. If you notice gaps, regressions, or architectural "
-        "problems while reviewing these docs that would block BRAINDUMP work, "
-        "file issues for them too.\n\n"
-        "**Planning is complete when the BRAINDUMP agenda is covered** by "
-        "issues (filed or already done), not when a roadmap phase is checked off.\n",
+    content = (braindump.get("content") or "").strip()
+    if not content:
+        return []
+
+    return [
+        "\n## BRAINDUMP — Scope Source (authoritative)\n",
+        "BRAINDUMP.md is the **only** scope source. Every issue must trace to a "
+        "concrete ask in it. Before filing an issue, name the BRAINDUMP section, "
+        "bullet, or checklist row it satisfies — if you can't, the issue is out "
+        "of scope this cycle regardless of how reasonable it sounds.\n\n"
+        "**Exclusions are binding.** If BRAINDUMP names a cut list, non-goals, "
+        "out-of-scope section, or defers items to a later phase, those items "
+        "MUST NOT be filed as issues — even if the codebase, audit findings, "
+        "or other docs argue they're needed. BRAINDUMP's exclusions override "
+        "everything else.\n\n"
+        "**Other docs are reference, not scope.** ROADMAP, ARCHITECTURE, DESIGN, "
+        "CLAUDE, audits, ADRs, research notes — read them on demand to shape "
+        "*how* an issue is written (fit existing systems, respect constraints), "
+        "never to expand the backlog beyond BRAINDUMP. Audit findings about "
+        "current state are inputs to issues that BRAINDUMP asks for — not "
+        "license to file new categories of work.\n\n"
+        "**Research:** when a BRAINDUMP ask needs specifics you can't find in "
+        "the repo, emit a `research` action this cycle so `docs/research/<topic>.md` "
+        "lands before the dependent issue.\n\n"
+        "**Planning is complete when every concrete BRAINDUMP ask maps to a filed "
+        "or prior-run issue.**\n",
+        f"\n### BRAINDUMP.md (full content)\n```\n{content}\n```",
     ]
-    for name in foundation_names:
-        doc = by_name.get(name)
-        if not doc:
-            continue
-        content = (doc.get("content") or "").strip()
-        if not content:
-            continue
-        display_name = name.upper()
-        if name == "braindump.md":
-            lines.append(f"\n### {display_name} (scope source — full content)\n```\n{content}\n```")
-        else:
-            excerpt = content[:support_excerpt_max]
-            truncated_marker = (
-                f"\n... (truncated; full file at {doc.get('path')})"
-                if len(content) > support_excerpt_max
-                else ""
-            )
-            lines.append(
-                f"\n### {display_name} (support context)\n```\n{excerpt}{truncated_marker}\n```"
-            )
-    return lines
 
 
 def _enforce_prompt_budget(prompt: str, planner) -> str:
@@ -262,9 +248,9 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
 
     Drop priority (first to last):
       1. ## Existing Issues (current-run)
-      2. ## Prior Run — Already Done (prior-run issues from disk, ISSUE-005)
+      2. ## Prior Run — Already Done (prior-run issues from disk)
       3. ## Previous Cycle
-      4. ## Foundation Docs (ISSUE-006)
+      4. ## BRAINDUMP — Scope Source (last-resort drop; pointer is left behind)
     Schema, instructions, and Run State are never dropped.
     """
     max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
@@ -303,8 +289,8 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
         return shrunk
 
     shrunk = re.sub(
-        r"\n## Foundation Docs[\s\S]*?(?=\n## |\Z)",
-        "\n## Foundation Docs\nBRAINDUMP.md is the scope source; ROADMAP/ARCHITECTURE/DESIGN are support context. Read them at project root.",
+        r"\n## BRAINDUMP — Scope Source \(authoritative\)[\s\S]*?(?=\n## |\Z)",
+        "\n## BRAINDUMP — Scope Source (authoritative)\nRead BRAINDUMP.md at the project root for the full scope source. Only items it asks for are in scope; cut-list items are forbidden.",
         shrunk,
         count=1,
     )
@@ -321,18 +307,24 @@ def write_planning_index(planner) -> Path:
     index_path = planner.run_dir.parent.parent / "planning_index.md"
     lines = ["# AIDLC Planning Index", ""]
 
-    lines.append("## Key Project Docs (read these for full detail)")
-    for name in [
+    lines.append("## Scope Source (authoritative)")
+    lines.append("- BRAINDUMP.md")
+    lines.append("")
+
+    optional_refs = [
         "README.md",
+        "STATUS.md",
+        "ROADMAP.md",
         "ARCHITECTURE.md",
         "DESIGN.md",
         "CLAUDE.md",
-        "STATUS.md",
-        "ROADMAP.md",
-    ]:
-        if (planner.project_root / name).exists():
+    ]
+    present = [n for n in optional_refs if (planner.project_root / n).exists()]
+    if present:
+        lines.append("## Reference Docs (optional context — never expand scope)")
+        for name in present:
             lines.append(f"- {name}")
-    lines.append("")
+        lines.append("")
 
     research_dir = planner.project_root / "docs" / "research"
     if research_dir.exists():
@@ -467,8 +459,10 @@ def build_prompt(planner, is_finalization: bool) -> str:
     volatile_parts: list[str] = [
         "# Planning Task\n",
         (
-            "Read: `README.md`, `ARCHITECTURE.md`, `DESIGN.md`, `.aidlc/planning_index.md`, "
-            "`.aidlc/issues/*.md`; `ROADMAP.md` optional. Full file access — do not ask for pastes."
+            "Read: `BRAINDUMP.md` (rendered below — authoritative scope), the repo "
+            "itself, `.aidlc/planning_index.md`, `.aidlc/issues/*.md`. Other docs "
+            "(README, ROADMAP, ARCHITECTURE, audits, ADRs) are reference only — "
+            "pull on demand. Full file access — do not ask for pastes."
         ),
     ]
 
@@ -498,9 +492,6 @@ def build_prompt(planner, is_finalization: bool) -> str:
             volatile_parts.append(
                 f"\n## Doc gaps (non-critical): {len(non_crit)} — scan repo / planning_index for details\n"
             )
-
-    volatile_parts.append("\n## Planning Foundation Status\n")
-    volatile_parts.append(render_planning_foundation(planner))
 
     plan_h = planner.state.plan_elapsed_seconds / 3600
     budget_h = planner.state.plan_budget_seconds / 3600
@@ -679,76 +670,6 @@ def execute_research(planner, action) -> None:
     (output_dir / f"research_{sanitized}.md").write_text(output)
 
 
-def assess_planning_foundation(planner) -> dict:
-    """Assess whether core planning docs are present and sufficiently detailed.
-
-    Required docs are matched by basename (case-insensitive) anywhere in the
-    doc tree — `ARCHITECTURE.md`, `docs/architecture.md`, `Docs/Architecture.MD`
-    all satisfy the `ARCHITECTURE.md` requirement. If multiple files share a
-    basename, the longest non-empty one wins.
-    """
-    required_docs = ("ARCHITECTURE.md", "DESIGN.md", "CLAUDE.md")
-    by_basename: dict[str, dict] = {}
-    for doc in planner.doc_files:
-        path = doc.get("path") or ""
-        basename = path.rsplit("/", 1)[-1].lower()
-        if not basename:
-            continue
-        existing = by_basename.get(basename)
-        if existing is None or len((doc.get("content") or "")) > len(
-            (existing.get("content") or "")
-        ):
-            by_basename[basename] = doc
-
-    details = []
-    missing = []
-    thin = []
-    min_chars = planner.planning_doc_min_chars
-
-    for name in required_docs:
-        doc = by_basename.get(name.lower())
-        if not doc:
-            details.append(f"- {name}: missing")
-            missing.append(name)
-            continue
-
-        content = (doc.get("content") or "").strip()
-        char_count = len(content)
-        placeholder_hits = sum(
-            token in content.lower()
-            for token in ("tbd", "todo", "to be determined", "[tbd]", "[todo]")
-        )
-        if char_count < min_chars or placeholder_hits >= 3:
-            details.append(
-                f"- {name}: thin ({char_count} chars, placeholder markers: {placeholder_hits})"
-            )
-            thin.append(name)
-        else:
-            details.append(f"- {name}: ok ({char_count} chars)")
-
-    ready = not missing and not thin
-    return {
-        "ready": ready,
-        "missing": missing,
-        "thin": thin,
-        "details": details,
-    }
-
-
-def render_planning_foundation(planner) -> str:
-    """Render planning foundation status as markdown snippet."""
-    foundation = planner._planning_foundation
-    lines = [
-        f"- Foundation ready: {'yes' if foundation.get('ready') else 'no'}",
-        *foundation.get("details", []),
-    ]
-    if not foundation.get("ready"):
-        lines.append(
-            "- Required action: prioritize create_doc/update_doc actions before declaring completion."
-        )
-    return "\n".join(lines)
-
-
 def render_issue_md(issue: Issue) -> str:
     """Render an issue as markdown."""
     lines = [
@@ -798,28 +719,3 @@ def save_cycle_notes(run_dir: Path, frontier: str, notes: str, cycle_num: int) -
     notes_path.write_text(json.dumps(data, indent=2))
 
 
-def upsert_doc_file(planner, rel_path: str, content: str) -> None:
-    """Update planner doc cache and recompute planning foundation."""
-    rel_path_norm = rel_path.replace("\\", "/")
-    size = len(content)
-    priority = 1
-    for idx, doc in enumerate(planner.doc_files):
-        if doc.get("path", "").lower() == rel_path_norm.lower():
-            planner.doc_files[idx] = {
-                "path": rel_path_norm,
-                "content": content,
-                "priority": doc.get("priority", priority),
-                "size": size,
-            }
-            planner._planning_foundation = planner._assess_planning_foundation()
-            return
-
-    planner.doc_files.append(
-        {
-            "path": rel_path_norm,
-            "content": content,
-            "priority": priority,
-            "size": size,
-        }
-    )
-    planner._planning_foundation = planner._assess_planning_foundation()

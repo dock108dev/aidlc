@@ -35,62 +35,33 @@ def test_print_precheck_not_ready(capsys):
     result.config_created = False
     result.has_source_code = False
     result.required_found = []
-    result.recommended_found = []
-    result.optional_found = []
-    result.score = "not ready"
+    result.ready = False
     display.print_precheck(result, Path("/tmp"), verbose=False)
     out = capsys.readouterr().out
-    assert "Readiness" in out
+    assert "NOT READY" in out
+    assert "BRAINDUMP.md" in out
 
 
-def test_print_precheck_excellent(capsys):
-    from aidlc.precheck import OPTIONAL_DOCS, RECOMMENDED_DOCS
-
+def test_print_precheck_ready_when_braindump_present(capsys):
     result = MagicMock()
     result.config_created = True
     result.has_source_code = True
-    result.required_found = []
-    result.recommended_found = list(RECOMMENDED_DOCS.keys())
-    result.optional_found = list(OPTIONAL_DOCS.keys())
-    result.score = "excellent"
-    display.print_precheck(result, Path("/tmp"), verbose=True)
-    assert "EXCELLENT" in capsys.readouterr().out
-
-
-def test_print_precheck_good_and_verbose_recommended(capsys):
-    result = MagicMock()
-    result.config_created = False
-    result.has_source_code = True
-    result.required_found = []
-    result.recommended_found = []
-    result.optional_found = []
-    result.score = "good"
-    display.print_precheck(result, Path("/tmp"), verbose=True)
-    out = capsys.readouterr().out
-    assert "GOOD" in out
-
-
-def test_print_precheck_minimal_score(capsys):
-    result = MagicMock()
-    result.config_created = False
-    result.has_source_code = False
-    result.required_found = []
-    result.recommended_found = []
-    result.optional_found = []
-    result.score = "minimal"
+    result.project_type = "python"
+    result.required_found = ["BRAINDUMP.md"]
+    result.ready = True
     display.print_precheck(result, Path("/tmp"), verbose=False)
-    assert "MINIMAL" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "READY" in out
+    assert "BRAINDUMP.md" in out
 
 
-def test_print_precheck_has_source_and_status_hint(capsys):
+def test_print_precheck_has_source_and_audit_hint(capsys):
     result = MagicMock()
     result.config_created = False
     result.has_source_code = True
     result.project_type = "python"
-    result.required_found = []
-    result.recommended_found = []
-    result.optional_found = []
-    result.score = "good"
+    result.required_found = ["BRAINDUMP.md"]
+    result.ready = True
     display.print_precheck(result, Path("/tmp"), verbose=False)
     out = capsys.readouterr().out
-    assert "audit" in out.lower() or "Project" in out
+    assert "audit" in out.lower()

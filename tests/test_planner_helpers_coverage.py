@@ -13,14 +13,12 @@ from aidlc.planner_helpers import (
     _enforce_prompt_budget,
     _issue_number,
     _render_existing_issues_section,
-    assess_planning_foundation,
+    _render_foundation_docs_section,
     build_prompt,
     execute_research,
     load_last_cycle_notes,
     render_issue_md,
-    render_planning_foundation,
     save_cycle_notes,
-    upsert_doc_file,
     write_planning_index,
 )
 from aidlc.schemas import PlanningAction
@@ -43,7 +41,6 @@ def _base_config(tmp_path):
         "_aidlc_dir": str(aidlc_dir),
         "_issues_dir": str(aidlc_dir / "issues"),
         "_runs_dir": str(aidlc_dir / "runs"),
-        "planning_doc_min_chars": 50,
         "max_planning_prompt_chars": 8000,
         "planning_last_cycle_notes_max_chars": 500,
         "planning_issue_index_max_items": 12,
@@ -160,19 +157,13 @@ def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
         DocGap("a.md", 1, "TBD", "x" * 100, severity="critical"),
         DocGap("b.md", 2, "x", "y", severity="warning"),
     ]
-    foundation = {
-        "ready": False,
-        "details": ["- ARCHITECTURE.md: missing"],
-    }
     cli = MagicMock()
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_gaps=gaps)
-    planner._planning_foundation = foundation
     planner._offer_completion = True
     with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
         prompt = build_prompt(planner, is_finalization=False)
     assert "Critical Doc Gaps" in prompt
     assert "non-critical" in prompt
-    assert "Foundation ready: no" in prompt
     assert "completion" in prompt.lower() or "offer" in prompt.lower()
 
 
@@ -416,50 +407,44 @@ def test_execute_research_retry_still_chatter(tmp_path):
     planner.logger.error.assert_called()
 
 
-def test_assess_planning_foundation_missing_and_thin(logger, tmp_path):
+def test_render_foundation_section_renders_root_braindump(logger, tmp_path):
+    """The foundation section renders the ROOT BRAINDUMP.md only — nested
+    files like docs/audits/braindump.md must NOT shadow it. This is the
+    regression that produced 16 issues from a stale audit doc instead of
+    the active BRAINDUMP."""
     cfg, run_dir = _base_config(tmp_path)
     state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
     docs = [
-        {"path": "DESIGN.md", "content": "tbd\n[todo]\nTBD", "size": 20, "priority": 1},
-    ]
-    planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_files=docs)
-    out = assess_planning_foundation(planner)
-    assert out["ready"] is False
-    assert "ARCHITECTURE.md" in out["missing"] or "CLAUDE.md" in out["missing"]
-    assert "DESIGN.md" in out["thin"]
-
-
-def test_assess_planning_foundation_matches_nested_lowercase_paths(logger, tmp_path):
-    """Docs at docs/architecture.md satisfy the ARCHITECTURE.md requirement.
-
-    Projects vary in casing and layout; a mallcore-style layout with
-    `docs/architecture.md` plus lowercase filenames must be detected so the
-    model isn't perpetually told the foundation is missing after it wrote
-    exactly what was asked for.
-    """
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    body = "x" * 6000  # well above min_chars and no placeholder tokens
-    docs = [
-        {"path": "docs/architecture.md", "content": body, "size": len(body), "priority": 1},
-        {"path": "docs/design.md", "content": body, "size": len(body), "priority": 1},
-        {"path": "CLAUDE.md", "content": body, "size": len(body), "priority": 1},
+        {
+            "path": "docs/audits/braindump.md",
+            "content": "STALE AUDIT — do not use",
+            "size": 24,
+            "priority": 1,
+        },
+        {
+            "path": "BRAINDUMP.md",
+            "content": "ACTIVE SCOPE — use this one",
+            "size": 27,
+            "priority": 1,
+        },
     ]
     planner = Planner(state, run_dir, cfg, MagicMock(), "ctx", logger, doc_files=docs)
-    out = assess_planning_foundation(planner)
-    assert out["ready"] is True
-    assert out["missing"] == []
-    assert out["thin"] == []
+    section = "\n".join(_render_foundation_docs_section(planner))
+    assert "ACTIVE SCOPE" in section
+    assert "STALE AUDIT" not in section
 
 
-def test_render_planning_foundation_ready(logger, tmp_path):
+def test_render_foundation_section_empty_without_root_braindump(logger, tmp_path):
+    """No root BRAINDUMP.md → no foundation section rendered. Nested
+    braindump files do not satisfy the contract."""
     cfg, run_dir = _base_config(tmp_path)
     state = RunState(run_id="r", config_name="c")
-    planner = Planner(state, run_dir, cfg, MagicMock(), "ctx", logger)
-    planner._planning_foundation = {"ready": True, "details": ["- ok"]}
-    text = render_planning_foundation(planner)
-    assert "yes" in text
+    docs = [
+        {"path": "docs/audits/braindump.md", "content": "x", "size": 1, "priority": 1},
+        {"path": "ARCHITECTURE.md", "content": "y", "size": 1, "priority": 1},
+    ]
+    planner = Planner(state, run_dir, cfg, MagicMock(), "ctx", logger, doc_files=docs)
+    assert _render_foundation_docs_section(planner) == []
 
 
 def test_render_issue_md_with_notes():
@@ -487,21 +472,5 @@ def test_save_cycle_notes_roundtrip(tmp_path):
     assert "planning cycle (3)" in load_last_cycle_notes(tmp_path)
 
 
-def test_upsert_doc_updates_and_inserts(logger, tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    planner = Planner(
-        state,
-        run_dir,
-        cfg,
-        cli,
-        "ctx",
-        logger,
-        doc_files=[{"path": "ARCHITECTURE.md", "content": "old", "size": 3, "priority": 1}],
-    )
-    upsert_doc_file(planner, "ARCHITECTURE.md", "new content " * 20)
-    arch = next(d for d in planner.doc_files if d["path"].lower() == "architecture.md")
-    assert "new content" in arch["content"]
-    upsert_doc_file(planner, "NEW.md", "hello")
-    assert any(d["path"] == "NEW.md" for d in planner.doc_files)
+# `upsert_doc_file` was removed along with the foundation-doc framework —
+# the planner no longer authors or recomputes status for support docs.

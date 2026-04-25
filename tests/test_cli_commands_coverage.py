@@ -31,10 +31,11 @@ def _args(**kw):
     base = dict(
         project=None,
         verbose=False,
-        with_docs=False,
         providers=False,
         config=None,
     )
+    # Drop legacy --with-docs kwargs from older tests; production no longer reads it.
+    kw.pop("with_docs", None)
     base.update(kw)
     return Namespace(**base)
 
@@ -68,46 +69,38 @@ def test_cmd_precheck_not_ready_exits(
 @patch("aidlc.cli_commands._get_template_dir")
 @patch("aidlc.cli_commands.write_default_config")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_init_new_project(mock_banner, mock_wdc, mock_tpl, version, tmp_path, capsys):
+def test_cmd_init_scaffolds_braindump(mock_banner, mock_wdc, mock_tpl, version, tmp_path):
+    """init scaffolds .aidlc/ + BRAINDUMP.md — the only required doc."""
     template_dir = tmp_path / "tpl"
     template_dir.mkdir()
-    (template_dir / "README.md").write_text("t")
-    (template_dir / "BRAINDUMP.md").write_text("b")
+    (template_dir / "BRAINDUMP.md").write_text("# braindump template\n")
     mock_tpl.return_value = template_dir
-    cmd_init(_args(project=str(tmp_path), with_docs=True), version)
-    assert (tmp_path / "README.md").exists()
+    cmd_init(_args(project=str(tmp_path)), version)
     assert (tmp_path / "BRAINDUMP.md").exists()
 
 
 @patch("aidlc.cli_commands._get_template_dir")
 @patch("aidlc.cli_commands.write_default_config")
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_init_scaffolds_braindump_without_with_docs(
+def test_cmd_init_missing_braindump_template_exits(
     mock_banner, mock_wdc, mock_tpl, version, tmp_path
 ):
-    """Even without --with-docs, BRAINDUMP.md is scaffolded — it is the
-    customer-voice entry point for the lifecycle."""
+    """If the bundled BRAINDUMP.md template is missing, init must error — the
+    user has no required doc to fill in otherwise."""
     template_dir = tmp_path / "tpl"
-    template_dir.mkdir()
-    (template_dir / "BRAINDUMP.md").write_text("# braindump template\n")
+    template_dir.mkdir()  # template dir exists but BRAINDUMP.md absent
     mock_tpl.return_value = template_dir
-    cmd_init(_args(project=str(tmp_path), with_docs=False), version)
-    assert (tmp_path / "BRAINDUMP.md").exists()
-
-
-@patch("aidlc.cli_commands._get_template_dir")
-@patch("aidlc.cli_commands._print_banner")
-def test_cmd_init_with_docs_missing_templates_exits(mock_banner, mock_tpl, version, tmp_path):
-    mock_tpl.return_value = tmp_path / "missing_tpl"
     with patch("aidlc.cli_commands.sys.exit") as mock_exit:
-        cmd_init(_args(project=str(tmp_path), with_docs=True), version)
+        cmd_init(_args(project=str(tmp_path)), version)
     mock_exit.assert_called_once_with(1)
 
 
 @patch("aidlc.cli_commands._print_banner")
-def test_cmd_init_existing_aidlc_without_docs_returns(mock_banner, version, tmp_path):
+def test_cmd_init_existing_aidlc_and_braindump_returns(mock_banner, version, tmp_path):
+    """When both .aidlc/ and BRAINDUMP.md exist, init is a no-op short-circuit."""
     (tmp_path / ".aidlc").mkdir()
-    cmd_init(_args(project=str(tmp_path), with_docs=False), version)
+    (tmp_path / "BRAINDUMP.md").write_text("# existing\n")
+    cmd_init(_args(project=str(tmp_path)), version)
 
 
 @patch("aidlc.cli_commands.cmd_provider_auth")

@@ -13,14 +13,11 @@ from pathlib import Path
 from .logger import log_checkpoint
 from .models import Issue, RunPhase, RunState
 from .planner_helpers import (
-    assess_planning_foundation,
     build_prompt,
     execute_research,
     load_last_cycle_notes,
     render_issue_md,
-    render_planning_foundation,
     save_cycle_notes,
-    upsert_doc_file,
     write_planning_index,
 )
 from .planner_text import (
@@ -64,8 +61,6 @@ class Planner:
         self._last_cycle_notes = load_last_cycle_notes(self.run_dir)
         self.logger = logger
         self.project_root = Path(config["_project_root"])
-        self.planning_doc_min_chars = config.get("planning_doc_min_chars", 800)
-        self._planning_foundation = self._assess_planning_foundation()
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
@@ -148,7 +143,6 @@ class Planner:
             save_cycle_snapshot(self.state, self.run_dir, self.state.planning_cycles + 1)
 
             # Run one planning cycle
-            self._planning_foundation = self._assess_planning_foundation()
             issues_before = self.state.issues_created
             result = self._planning_cycle()
 
@@ -178,7 +172,6 @@ class Planner:
                     if (
                         len(recent_cycles) >= threshold
                         and len(self.state.issues) > 0
-                        and self._planning_foundation.get("ready", False)
                         and all(n == 0 for n in recent_cycles[-threshold:])
                     ):
                         if not self._offer_completion:
@@ -219,7 +212,6 @@ class Planner:
                 if (
                     len(recent_cycles) >= threshold
                     and len(self.state.issues) > 0
-                    and self._planning_foundation.get("ready", False)
                     and all(n == 0 for n in recent_cycles[-threshold:])
                 ):
                     if not self._offer_completion:
@@ -363,35 +355,18 @@ class Planner:
             f"Notes: {planning_output.cycle_notes}"
         )
 
-        # Only accept planning_complete if we've offered it and planning docs are sufficient.
+        # Only accept planning_complete if we've offered it.
         # (Claude sometimes adds this field unprompted — ignore it until invited)
-        foundation_ready = self._planning_foundation.get("ready", False)
-        if (
-            planning_output.planning_complete
-            and getattr(self, "_offer_completion", False)
-            and foundation_ready
-        ):
+        if planning_output.planning_complete and getattr(self, "_offer_completion", False):
             reason = planning_output.completion_reason or "planning completed"
             self._pending_completion_reason = f"Planning complete — {reason}"
             self.logger.info(f"Model signaled planning_complete (accepted): {reason}")
         elif planning_output.planning_complete:
-            if not foundation_ready:
-                self.logger.warning(
-                    "Model signaled planning_complete but planning docs are still incomplete "
-                    "(missing/thin foundation docs) — ignoring"
-                )
-            else:
-                self.logger.info(
-                    "Model signaled planning_complete but completion not yet offered — ignoring"
-                )
+            self.logger.info(
+                "Model signaled planning_complete but completion not yet offered — ignoring"
+            )
 
         if not planning_output.actions:
-            if not foundation_ready:
-                self.logger.warning(
-                    "No actions proposed but planning foundation is incomplete — "
-                    "expecting create_doc/update_doc actions first."
-                )
-                return False
             self.logger.info("No actions proposed — frontier may be clear")
             return None
 
@@ -548,40 +523,12 @@ class Planner:
             else:
                 self.logger.warning(f"Cannot update unknown issue: {action.issue_id}")
 
-        elif action.action_type in ("create_doc", "update_doc"):
-            file_path = self.project_root / action.file_path
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(action.content)
-            self._upsert_doc_file(action.file_path, action.content)
-            self.state.files_created += 1
-            self.state.created_artifacts.append(
-                {
-                    "path": action.file_path,
-                    "type": "doc",
-                    "action": "create" if action.action_type == "create_doc" else "update",
-                }
-            )
-            self.logger.info(
-                f"{'Created' if action.action_type == 'create_doc' else 'Updated'} doc: {action.file_path}"
-            )
-
         elif action.action_type == "research":
             self._execute_research(action)
 
     def _execute_research(self, action: PlanningAction) -> None:
         """Execute a research action."""
         execute_research(self, action)
-
-    def _upsert_doc_file(self, rel_path: str, content: str) -> None:
-        """Update in-memory doc cache so planning quality checks see new docs immediately."""
-        upsert_doc_file(self, rel_path, content)
-
-    def _assess_planning_foundation(self) -> dict:
-        """Assess whether core planning docs are present and sufficiently detailed."""
-        return assess_planning_foundation(self)
-
-    def _render_planning_foundation(self) -> str:
-        return render_planning_foundation(self)
 
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""

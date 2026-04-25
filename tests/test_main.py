@@ -70,14 +70,17 @@ class TestCmdInit:
         assert ".aidlc/" in content
 
     def test_already_initialized(self, tmp_path, capsys):
+        # init no-ops only when BOTH .aidlc/ and BRAINDUMP.md are already there;
+        # if BRAINDUMP is missing, init still scaffolds it (it is required).
         (tmp_path / ".aidlc").mkdir()
+        (tmp_path / "BRAINDUMP.md").write_text("# existing\n")
         args = MagicMock()
         args.project = str(tmp_path)
-        args.with_docs = False
+        args.providers = False
         cmd_init(args)
 
         captured = capsys.readouterr()
-        assert "already exists" in captured.out
+        assert "already exist" in captured.out
 
 
 class TestCmdStatus:

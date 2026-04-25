@@ -156,28 +156,14 @@ class TestPlanningAction:
         errors = action.validate(known_issue_ids={"ISSUE-001"})
         assert any("update_issue requires issue_id" in e for e in errors)
 
-    def test_valid_create_doc(self):
-        action = PlanningAction(
-            action_type="create_doc",
-            file_path="docs/design.md",
-            content="# Design\nContent here",
-        )
-        errors = action.validate()
-        assert errors == []
-
-    def test_create_doc_missing_fields(self):
-        action = PlanningAction(
-            action_type="create_doc",
-        )
-        errors = action.validate()
-        assert any("file_path" in e for e in errors)
-        assert any("content" in e for e in errors)
-
-    def test_update_doc_missing_fields(self):
-        action = PlanningAction(action_type="update_doc")
-        errors = action.validate()
-        assert any("file_path" in e for e in errors)
-        assert any("content" in e for e in errors)
+    def test_create_doc_action_type_unknown(self):
+        """create_doc/update_doc were removed — they must validate as unknown action types."""
+        for action_type in ("create_doc", "update_doc"):
+            action = PlanningAction(action_type=action_type)
+            errors = action.validate()
+            assert any("Unknown action_type" in e for e in errors), (
+                f"{action_type} should be rejected as unknown"
+            )
 
     def test_research_missing_topic_and_question(self):
         action = PlanningAction(action_type="research")

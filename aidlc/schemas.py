@@ -14,8 +14,6 @@ from typing import Optional
 PLANNING_ACTION_TYPES = {
     "create_issue",  # Create a new issue for implementation
     "update_issue",  # Refine an existing issue
-    "create_doc",  # Create a design/planning document
-    "update_doc",  # Update an existing document
     "research",  # Investigate a topic before creating issues
 }
 
@@ -33,10 +31,6 @@ class PlanningAction:
     labels: list = field(default_factory=list)
     dependencies: list = field(default_factory=list)
     acceptance_criteria: list = field(default_factory=list)
-
-    # For doc operations
-    file_path: Optional[str] = None
-    content: Optional[str] = None
 
     # For research operations
     research_topic: Optional[str] = None
@@ -96,12 +90,6 @@ class PlanningAction:
             if all_valid_ids and self.issue_id and self.issue_id not in all_valid_ids:
                 errors.append(f"cannot update unknown issue: {self.issue_id}")
 
-        if self.action_type in ("create_doc", "update_doc"):
-            if not self.file_path:
-                errors.append(f"{self.action_type} requires file_path")
-            if not self.content:
-                errors.append(f"{self.action_type} requires content")
-
         if self.action_type == "research":
             if not self.research_topic:
                 errors.append("research requires research_topic")
@@ -122,8 +110,6 @@ class PlanningAction:
             labels=data.get("labels", []),
             dependencies=data.get("dependencies", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
-            file_path=data.get("file_path"),
-            content=data.get("content"),
             research_topic=data.get("research_topic"),
             research_question=data.get("research_question"),
             research_scope=data.get("research_scope", []),
@@ -309,25 +295,17 @@ Action shapes (canonical keys only — unknown keys are ignored, missing require
  "labels": [], "dependencies": [], "acceptance_criteria": ["..."]}
 ```
 ```
-{"action_type": "create_doc", "file_path": "docs/design.md",
- "content": "# Full markdown body of the new file"}
-```
-```
-{"action_type": "update_doc", "file_path": "docs/architecture.md",
- "content": "# Full replacement markdown body — not a diff, not a summary"}
-```
-```
 {"action_type": "research", "research_topic": "pricing-formula",
  "research_question": "How should condition modifiers stack?",
  "research_scope": ["game/systems/pricing.gd"]}
 ```
 
 Rules:
-- `file_path` is **`file_path`** (not `path`, `doc_path`, `filename`). Paths are relative to repo root.
-- `content` is **`content`** (not `new_content`, `body`, `text`, `markdown`). For `update_doc`, `content` is the **full replacement body** — the file is overwritten, not patched.
 - ISSUE-NNN format; deps must already exist (in backlog or same batch).
 - Finalization cycle: `create_issue` only if `critical_gap: true` and `priority: "high"`.
 - `research` writes `docs/research/<topic>.md` for later cycles to reference.
+- Doc authoring is not a planning action. Source code and BRAINDUMP.md are the
+  only inputs; do not file `create_doc`/`update_doc` actions — they are removed.
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\

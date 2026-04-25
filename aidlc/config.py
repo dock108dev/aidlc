@@ -265,7 +265,6 @@ DEFAULTS = {
     "doc_gap_max_items": 50,  # cap gaps passed to planner prompt (when enabled)
     # Resume (implementation-phase continuation)
     "resume_reconcile_enabled": True,  # git-grep heuristic when resuming past planning
-    "planning_doc_min_chars": 800,  # minimum chars for "sufficient" planning docs
     # Context preparation
     "project_brief_max_chars": 20000,  # max size of generated project brief
     "phase_context_max_chars": 20000,  # max chars for phase-focused docs per cycle

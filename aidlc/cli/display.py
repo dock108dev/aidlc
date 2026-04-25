@@ -57,7 +57,9 @@ def get_template_dir() -> Path:
 
 def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
     """Print precheck results to console."""
-    from aidlc.precheck import OPTIONAL_DOCS, RECOMMENDED_DOCS, REQUIRED_DOCS
+    from aidlc.precheck import REQUIRED_DOCS
+
+    del verbose  # No optional/recommended docs anymore — nothing to expand.
 
     if result.config_created:
         print(f"  {green('+')} Auto-created {cyan('.aidlc/')} with default config")
@@ -67,12 +69,10 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
 
     if result.has_source_code:
         print(f"  {bold('Project:')} {result.project_type} {dim('(source code detected)')}")
-        if "STATUS.md" not in [
-            *result.optional_found,
-            *result.recommended_found,
-            *result.required_found,
-        ]:
-            print(f"    Tip: run {cyan('aidlc run --audit')} to generate STATUS.md from your code")
+        print(
+            f"    Tip: run {cyan('aidlc run --audit')} so the planner sees current state, "
+            "not a stale snapshot"
+        )
     else:
         print(f"  {bold('Project:')} {dim('no source code detected (new project?)')}")
     print()
@@ -88,41 +88,8 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
                 print(f"      {dim(line)}")
     print()
 
-    print(f"  {bold('Recommended')}")
-    for doc in RECOMMENDED_DOCS:
-        if doc in result.recommended_found:
-            print(f"    {green('v')} {doc}")
-        else:
-            info = RECOMMENDED_DOCS[doc]
-            print(f"    {yellow('-')} {doc} — {info['purpose']}")
-            if verbose:
-                for line in info["suggestion"].split("\n"):
-                    print(f"      {dim(line)}")
-    print()
-
-    print(f"  {bold('Optional')}")
-    for doc in OPTIONAL_DOCS:
-        if doc in result.optional_found:
-            print(f"    {green('v')} {doc}")
-        else:
-            info = OPTIONAL_DOCS[doc]
-            print(f"    {dim('-')} {doc} — {info['purpose']}")
-    print()
-
-    found = sum(
-        [len(result.required_found), len(result.recommended_found), len(result.optional_found)]
-    )
-    total = len(REQUIRED_DOCS) + len(RECOMMENDED_DOCS) + len(OPTIONAL_DOCS)
-    score = result.score
-
-    if score == "not ready":
-        print(f"  {bold('Readiness:')} {red('NOT READY')} — missing required doc(s)")
-        print(f"    Create the required files above, then run {cyan('aidlc precheck')} again.")
-    elif score == "excellent":
-        print(f"  {bold('Readiness:')} {green('EXCELLENT')} ({found}/{total} docs) — ready to run")
-    elif score == "good":
-        print(f"  {bold('Readiness:')} {green('GOOD')} ({found}/{total} docs) — ready to run")
+    if result.ready:
+        print(f"  {bold('Status:')} {green('READY')} — BRAINDUMP.md present")
     else:
-        print(
-            f"  {bold('Readiness:')} {yellow('MINIMAL')} ({found}/{total} docs) — can run, but more docs = better plans"
-        )
+        print(f"  {bold('Status:')} {red('NOT READY')} — BRAINDUMP.md is required")
+        print(f"    Create it (or run {cyan('aidlc init')}), then run {cyan('aidlc run')}.")

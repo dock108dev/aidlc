@@ -122,91 +122,94 @@ def _doc(path, content):
     return {"path": path, "content": content, "priority": 1, "size": len(content)}
 
 
-def test_foundation_docs_section_renders_present_docs(tmp_path):
-    arch = "# Architecture\n\nThis describes the system." + (" " * 50)
-    roadmap = "# Roadmap\n\nPhases."
-    p = _planner(tmp_path, doc_files=[_doc("ARCHITECTURE.md", arch), _doc("ROADMAP.md", roadmap)])
-    out = "\n".join(_render_foundation_docs_section(p))
-    assert "## Foundation Docs" in out
-    assert "ARCHITECTURE.MD" in out
-    assert "ROADMAP.MD" in out
-    assert "Architecture" in out
-    assert "Roadmap" in out
-
-
-def test_foundation_docs_section_frames_braindump_as_scope_source(tmp_path):
-    """BRAINDUMP is the scope source — not a roadmap-adjacent doc.
-
-    The framing must tell the model BRAINDUMP drives the backlog and support
-    docs do not. Without that, the model follows ROADMAP phases and silently
-    drops BRAINDUMP's actual asks.
-    """
+def test_foundation_section_only_renders_root_braindump(tmp_path):
+    """The foundation section is BRAINDUMP-only. Support docs (ROADMAP,
+    ARCHITECTURE, DESIGN, CLAUDE) are no longer injected — the planner
+    reads them on demand instead. That's the whole simplification."""
     brain = "# Brain Dump\n\nI want a 9-hole mini-golf course with named holes."
     arch = "# Architecture\n\nThree.js + Cannon-es."
+    roadmap = "# Roadmap\n\nPhases."
     p = _planner(
         tmp_path,
-        doc_files=[_doc("BRAINDUMP.md", brain), _doc("ARCHITECTURE.md", arch)],
+        doc_files=[
+            _doc("BRAINDUMP.md", brain),
+            _doc("ARCHITECTURE.md", arch),
+            _doc("ROADMAP.md", roadmap),
+        ],
     )
     out = "\n".join(_render_foundation_docs_section(p))
-    assert "BRAINDUMP.MD" in out
-    assert "scope source" in out  # primacy framing
-    assert "support context" in out  # other docs framed as non-scope
+    assert "BRAINDUMP — Scope Source" in out
+    assert "9-hole mini-golf" in out
+    # Support docs are NOT inlined.
+    assert "Three.js" not in out
+    assert "Phases." not in out
+
+
+def test_foundation_section_frames_braindump_as_authoritative(tmp_path):
+    """Framing must call BRAINDUMP authoritative and warn other docs are
+    reference-only — that's what stops the planner from chasing roadmap
+    phases or audit findings BRAINDUMP told it to ignore."""
+    brain = "# Brain Dump\n\nI want a 9-hole mini-golf course with named holes."
+    p = _planner(tmp_path, doc_files=[_doc("BRAINDUMP.md", brain)])
+    out = "\n".join(_render_foundation_docs_section(p))
+    assert "authoritative" in out.lower()
+    assert "exclusion" in out.lower() or "cut" in out.lower()
     assert "research" in out  # research trigger preserved
-    # BRAINDUMP rendered before ARCHITECTURE so its content lands first.
-    assert out.index("BRAINDUMP.MD") < out.index("ARCHITECTURE.MD")
 
 
-def test_foundation_docs_section_renders_braindump_in_full_ignoring_excerpt_cap(tmp_path):
-    """BRAINDUMP must bypass the excerpt cap — truncating it is how BRAINDUMP
-    asks stop reaching the planner.
-
-    Support docs keep the cap; only BRAINDUMP is rendered in full.
-    """
+def test_foundation_section_renders_braindump_in_full(tmp_path):
+    """BRAINDUMP is rendered uncapped — truncating it is how its asks go
+    missing. There is no support-doc excerpt cap to honor anymore."""
     big_brain = "# Brain Dump\n\n" + "\n".join(
         f"- Ask {i}: concrete requirement number {i}" for i in range(200)
     )
-    long_arch = "# Architecture\n\n" + ("a" * 5000)
     p = _planner(
         tmp_path,
-        doc_files=[_doc("BRAINDUMP.md", big_brain), _doc("ARCHITECTURE.md", long_arch)],
+        doc_files=[_doc("BRAINDUMP.md", big_brain)],
         config={"planning_foundation_doc_excerpt_chars": 1000},
     )
     out = "\n".join(_render_foundation_docs_section(p))
-    # Every BRAINDUMP ask is present — nothing is lost to truncation.
     assert "Ask 0:" in out
     assert "Ask 199:" in out
-    assert "(truncated; full file at BRAINDUMP.md)" not in out
-    # Support docs are still truncated per the cap.
-    assert "(truncated; full file at ARCHITECTURE.md)" in out
+    assert "truncated" not in out
 
 
-def test_foundation_docs_section_truncates_support_doc(tmp_path):
-    long_arch = "# Architecture\n\n" + ("a" * 5000)
+def test_foundation_section_prefers_root_braindump_over_nested(tmp_path):
+    """Nested files like docs/audits/braindump.md must NOT shadow the root
+    BRAINDUMP. This is the regression that produced 16 issues from a stale
+    audit doc instead of the active scope source."""
     p = _planner(
         tmp_path,
-        doc_files=[_doc("ARCHITECTURE.md", long_arch)],
-        config={"planning_foundation_doc_excerpt_chars": 1000},
+        doc_files=[
+            _doc("docs/audits/braindump.md", "STALE AUDIT — do not use"),
+            _doc("BRAINDUMP.md", "ACTIVE SCOPE — use this one"),
+        ],
     )
     out = "\n".join(_render_foundation_docs_section(p))
-    assert "(truncated; full file at ARCHITECTURE.md)" in out
+    assert "ACTIVE SCOPE" in out
+    assert "STALE AUDIT" not in out
 
 
-def test_foundation_docs_section_empty_when_no_foundation_docs(tmp_path):
-    # Other docs present but no BRAINDUMP/ROADMAP/ARCHITECTURE/DESIGN.
-    p = _planner(tmp_path, doc_files=[_doc("README.md", "hi")])
+def test_foundation_section_empty_without_root_braindump(tmp_path):
+    # Other docs present (including a nested braindump) but no root one.
+    p = _planner(
+        tmp_path,
+        doc_files=[
+            _doc("README.md", "hi"),
+            _doc("ARCHITECTURE.md", "x"),
+            _doc("docs/audits/braindump.md", "stale"),
+        ],
+    )
     assert _render_foundation_docs_section(p) == []
 
 
 # -- _enforce_prompt_budget priority --------------------------------------
 
 
-def test_budget_drops_existing_first_then_prior_then_cycle_then_foundation(tmp_path):
-    """When over budget, sections drop in this order; foundation drops last.
-
-    ``_enforce_prompt_budget`` floors max_chars at 4000, so we use real-sized
-    sections (~6kB each) and a budget that lets the schema + only some
-    sections survive.
-    """
+def test_budget_drops_existing_first_then_prior_then_cycle_then_braindump(tmp_path):
+    """Drop order under budget pressure: existing issues → prior run →
+    previous cycle → BRAINDUMP scope source (last resort, replaced with a
+    pointer)."""
     p = _planner(tmp_path, config={"max_planning_prompt_chars": 4000})
     big = "x" * 6000
     prompt = (
@@ -214,24 +217,17 @@ def test_budget_drops_existing_first_then_prior_then_cycle_then_foundation(tmp_p
         f"## Existing Issues\nlongbody {big}\n"
         f"## Prior Run — Already Done\nlongbody {big}\n"
         f"## Previous Cycle\nlongbody {big}\n"
-        f"## Foundation Docs\nlongbody {big}\n"
+        f"## BRAINDUMP — Scope Source (authoritative)\nlongbody {big}\n"
         "## Run State\nkeep me too\n"
     )
-    assert len(prompt) > 4000  # confirm we trigger the shrink path
+    assert len(prompt) > 4000
     shrunk = _enforce_prompt_budget(prompt, p)
 
-    # Existing-issues section is dropped FIRST; its replacement pointer text
-    # must appear once the function runs even one substitution.
     assert "Use .aidlc/planning_index.md and .aidlc/issues/*.md" in shrunk
-    # Prior Run section dropped SECOND.
     assert "Prior issues exist on disk" in shrunk
-    # Previous Cycle section dropped THIRD.
     assert "prior cycle notes" in shrunk
-    # Foundation Docs section dropped LAST.
-    assert "BRAINDUMP.md is the scope source" in shrunk
-    # Schema and Run State are never dropped.
+    assert "Read BRAINDUMP.md at the project root" in shrunk
     assert "## Schema" in shrunk
     assert "## Run State" in shrunk
     assert "keep me too" in shrunk
-    # Result fits the budget (with truncation marker tolerance).
     assert len(shrunk) <= 4500

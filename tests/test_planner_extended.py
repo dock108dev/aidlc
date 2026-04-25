@@ -103,7 +103,6 @@ class TestPlanningCycleWithRealOutput:
         state.issues_created = 1
         config["max_planning_cycles"] = 20
         config["diminishing_returns_threshold"] = 3
-        config["planning_doc_min_chars"] = 10
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -153,26 +152,9 @@ class TestPlanningCycleWithRealOutput:
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
 
-    def test_empty_actions_with_missing_docs_counts_as_failure(self, config, logger, tmp_path):
-        response = make_planning_response(actions=[])
-        cli = MagicMock()
-        cli.execute_prompt.return_value = {
-            "success": True,
-            "output": response,
-            "error": None,
-            "failure_type": None,
-            "duration_seconds": 1.0,
-            "retries": 0,
-        }
-        state = RunState(run_id="test", config_name="default")
-        state.plan_budget_seconds = 3600
-        config["max_consecutive_failures"] = 1
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
-        planner = Planner(state, run_dir, config, cli, "context", logger)
-        planner.run()
-        assert "failures" in (state.stop_reason or "").lower()
+    # Removed: test_empty_actions_with_missing_docs_counts_as_failure.
+    # The foundation-doc gate ("no actions + missing foundation = failure") is gone.
+    # Empty action lists now signal an idle cycle; completion offers handle wind-down.
 
     def test_validation_errors_fail_cycle(self, config, logger, tmp_path):
         response = make_planning_response(
@@ -393,11 +375,13 @@ class TestApplyActionEdgeCases:
         planner._apply_action(action)
         assert len(state.issues) == 0
 
-    def test_update_doc(self, config, logger, tmp_path):
+    def test_update_doc_action_is_noop(self, config, logger, tmp_path):
+        """update_doc was removed — _apply_action silently ignores unknown types
+        (validation in PlanningOutput.validate catches them upstream). The doc
+        on disk must remain unchanged."""
         from aidlc.schemas import PlanningAction
 
         state = RunState(run_id="test", config_name="default")
-        # Create initial doc
         doc_path = tmp_path / "docs" / "design.md"
         doc_path.parent.mkdir(parents=True)
         doc_path.write_text("# V1")
@@ -406,13 +390,11 @@ class TestApplyActionEdgeCases:
         planner = Planner(state, run_dir, config, MagicMock(), "context", logger)
         action = PlanningAction(
             action_type="update_doc",
-            file_path="docs/design.md",
-            content="# V2\nUpdated",
+            issue_id=None,
         )
         planner._apply_action(action)
-        assert doc_path.read_text() == "# V2\nUpdated"
-        assert state.files_created == 1
-        assert state.created_artifacts[0]["action"] == "update"
+        assert doc_path.read_text() == "# V1"
+        assert state.files_created == 0
 
 
 class TestCheckpointDuringPlanning:

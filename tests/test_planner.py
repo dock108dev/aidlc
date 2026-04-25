@@ -255,26 +255,16 @@ class TestPlanner:
             "ISSUE-002" in deps.get("ISSUE-001", []) and "ISSUE-001" in deps.get("ISSUE-002", [])
         )
 
-    def test_apply_create_doc(self, state, config, cli, logger, tmp_path):
+    def test_create_doc_action_type_rejected(self):
+        """create_doc/update_doc actions are removed — schema validation must reject them."""
         from aidlc.schemas import PlanningAction
-
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        planner = Planner(state, run_dir, config, cli, "context", logger)
 
         action = PlanningAction(
             action_type="create_doc",
-            file_path="docs/design.md",
-            content="# Design\nContent",
+            issue_id=None,
         )
-        planner._apply_action(action)
-
-        doc_path = tmp_path / "docs" / "design.md"
-        assert doc_path.exists()
-        assert state.files_created == 1
-        assert len(state.created_artifacts) == 1
-        assert state.created_artifacts[0]["type"] == "doc"
-        assert state.created_artifacts[0]["action"] == "create"
+        errors = action.validate()
+        assert any("Unknown action_type" in e for e in errors)
 
     def test_consecutive_failures_stop(self, state, config, logger, tmp_path):
         cli = MagicMock()

@@ -59,16 +59,11 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         "init",
         help="Initialize AIDLC in a project",
         description=(
-            "Set up .aidlc/ directory with config, scaffold BRAINDUMP.md if missing, "
-            "and optionally copy planning doc templates."
+            "Set up .aidlc/ directory with config and scaffold BRAINDUMP.md if missing. "
+            "BRAINDUMP.md is the only required doc — describe what this cycle should deliver."
         ),
     )
     init_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
-    init_parser.add_argument(
-        "--with-docs",
-        action="store_true",
-        help="Also copy the rest of the planning doc templates (ARCHITECTURE.md, ROADMAP.md, etc.)",
-    )
     init_parser.add_argument(
         "--providers",
         action="store_true",

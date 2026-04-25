@@ -59,15 +59,20 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     """Initialize AIDLC in a project directory."""
     project_root = Path(args.project or ".").resolve()
     aidlc_dir = project_root / ".aidlc"
+    braindump_path = project_root / "BRAINDUMP.md"
 
     _print_banner(version)
 
-    if aidlc_dir.exists() and not args.with_docs:
-        print(f"{_yellow('!')} .aidlc/ already exists at {project_root}")
-        print(f"  Use {_cyan('aidlc run --resume')} to resume, or delete .aidlc/ to start fresh.")
+    aidlc_existed = aidlc_dir.exists()
+    braindump_existed = braindump_path.exists()
+    providers_flag = getattr(args, "providers", False) is True
+
+    if aidlc_existed and braindump_existed and not providers_flag:
+        print(f"{_yellow('!')} .aidlc/ and BRAINDUMP.md already exist at {project_root}")
+        print(f"  Use {_cyan('aidlc run')} to start, or delete .aidlc/ to re-init.")
         return
 
-    if not aidlc_dir.exists():
+    if not aidlc_existed:
         from .config_detect import describe_detected, detect_config
 
         detected = detect_config(project_root)
@@ -94,54 +99,23 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
         print(f"  {_dim('Config:')}  {aidlc_dir / 'config.json'}")
         print(f"  {_dim('Issues:')}  {aidlc_dir / 'issues/'}")
 
-    # Always scaffold BRAINDUMP.md if missing — it is the customer's voice and
-    # the entry point for the lifecycle. Other planning docs are opt-in via
-    # --with-docs. We never overwrite an existing file.
-    braindump_path = project_root / "BRAINDUMP.md"
-    if not braindump_path.exists():
+    # BRAINDUMP.md is required and the only doc we scaffold. Repo state is
+    # authoritative for "what is"; BRAINDUMP is authoritative for "what next".
+    # Never overwrite an existing file.
+    if not braindump_existed:
         template_dir = _get_template_dir()
         src = template_dir / "BRAINDUMP.md"
         if src.exists():
             shutil.copy2(src, braindump_path)
             print(f"  {_green('+')} BRAINDUMP.md (edit this — it's what AIDLC builds from)")
-
-    if args.with_docs:
-        template_dir = _get_template_dir()
-        if not template_dir.exists():
-            print(f"{_red('x')} Template directory not found at {template_dir}")
-            print("  This can happen if aidlc was installed from a wheel without package data.")
+        else:
+            print(f"  {_red('x')} BRAINDUMP.md template missing at {src}")
             sys.exit(1)
-
-        copied = 0
-        skipped = 0
-        for src_file in sorted(template_dir.rglob("*")):
-            if not src_file.is_file():
-                continue
-            rel = src_file.relative_to(template_dir)
-            dest = project_root / rel
-            if dest.exists():
-                skipped += 1
-                print(f"  {_dim('skip')} {rel} (already exists)")
-                continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_file, dest)
-            copied += 1
-            print(f"  {_green('+')} {rel}")
-
-        print()
-        print(f"  {_green(str(copied))} template files copied, {skipped} skipped (already exist)")
 
     print()
     print("Next steps:")
-    print(f"  1. Open {_cyan('BRAINDUMP.md')} and describe what you want built")
-    if args.with_docs:
-        print(
-            f"  2. Optionally edit {_cyan('ARCHITECTURE.md')}, {_cyan('DESIGN.md')}, {_cyan('ROADMAP.md')}"
-        )
-        print(f"  3. Run {_cyan('aidlc run')}")
-    else:
-        print(f"  2. Optional: {_cyan('aidlc init --with-docs')} to copy more planning templates")
-        print(f"  3. Run {_cyan('aidlc run')}")
+    print(f"  1. Open {_cyan('BRAINDUMP.md')} and describe what this cycle should deliver")
+    print(f"  2. Run {_cyan('aidlc run')}  (use {_cyan('--audit')} so the planner sees current state)")
 
     # Provider setup wizard (--providers flag)
     if getattr(args, "providers", False) is True:

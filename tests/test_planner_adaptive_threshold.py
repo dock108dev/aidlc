@@ -26,7 +26,6 @@ def _make_planner(tmp_path, num_issues: int, config_overrides: dict | None = Non
         "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
         "_runs_dir": str(tmp_path / ".aidlc" / "runs"),
         "_reports_dir": str(tmp_path / ".aidlc" / "reports"),
-        "planning_doc_min_chars": 100,
     }
     if config_overrides:
         config.update(config_overrides)
