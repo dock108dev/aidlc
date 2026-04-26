@@ -267,16 +267,6 @@ class CopilotAdapter(ProviderAdapter):
             )
 
         # Auth failures surface at prompt execution time; version check is sufficient for install probe.
-        try:
-            subprocess.run(
-                [self.cli_command, "--help"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-        except Exception:
-            pass
-
         version = result.stdout.strip().splitlines()[0] if result.stdout else ""
         return HealthResult(
             status=HealthStatus.HEALTHY,

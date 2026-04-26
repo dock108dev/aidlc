@@ -185,8 +185,10 @@ class ProviderRouter:
                 if decision.account_id and self._account_manager:
                     try:
                         self._account_manager.mark_used(decision.account_id)
-                    except Exception:
-                        pass
+                    except Exception as mark_err:  # noqa: BLE001 — 3rd-party AccountManager may raise anything; usage tracking is non-fatal
+                        self.logger.debug(
+                            f"mark_used failed for {decision.account_id}: {mark_err}"
+                        )
 
                 if result.get("success"):
                     self._provider_cooldowns.pop(decision.provider_id, None)
@@ -484,7 +486,9 @@ class ProviderRouter:
 
     def _get_accounts_for_provider(self, provider_id: str) -> list:
         """Return Account objects for a provider if AccountManager is available."""
-        return context.get_accounts_for_provider(self._account_manager, provider_id)
+        return context.get_accounts_for_provider(
+            self._account_manager, provider_id, logger=self.logger
+        )
 
     def _select_account(
         self,

@@ -118,7 +118,11 @@ class CredentialStore:
             try:
                 with open(self._fallback_path) as f:
                     return json.load(f)
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning(
+                    f"Credentials file at {self._fallback_path} unreadable ({exc}); "
+                    "treating as empty. Stored credentials will not be available until this is resolved."
+                )
                 return {}
         return {}
 

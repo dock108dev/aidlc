@@ -1,6 +1,8 @@
 """Usage aggregation and display CLI."""
 
 import argparse
+import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,10 +54,12 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
     totals: dict[str, dict] = {}
     run_count = 0
 
+    logger = logging.getLogger("aidlc.usage")
     for run_dir in run_dirs:
         try:
             state = load_state(run_dir)
-        except Exception:
+        except (FileNotFoundError, OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
+            logger.debug(f"Skipping unreadable run {run_dir.name}: {exc}")
             continue
         run_count += 1
 

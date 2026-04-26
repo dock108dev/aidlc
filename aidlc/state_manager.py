@@ -41,7 +41,9 @@ class RunLock:
                 else:
                     logging.getLogger("aidlc").warning(f"Cleaning up stale lock from PID {pid}")
             except (ValueError, IndexError):
-                pass  # Corrupted lock file, overwrite it
+                logging.getLogger("aidlc").warning(
+                    f"Lock file at {self.lock_path} is corrupt; overwriting"
+                )
 
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self.lock_path.write_text(f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}\n")
@@ -114,7 +116,8 @@ def load_state(run_dir: Path) -> RunState:
                     data = json.load(f)
                 logger.warning(f"Recovered state from {cp_path.name}")
                 return RunState.from_dict(data)
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError) as cp_err:
+                logger.debug(f"Checkpoint {cp_path.name} unreadable ({cp_err}); trying older")
                 continue
 
     raise FileNotFoundError(f"No valid state file or checkpoint at {run_dir}")

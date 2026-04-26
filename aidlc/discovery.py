@@ -77,8 +77,8 @@ def run_discovery(
             existing_topics = json.loads(topics_path.read_text(encoding="utf-8") or "[]")
             if isinstance(existing_topics, list):
                 state.research_topics_total = len(existing_topics)
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug(f"Could not measure existing topics.json on resume: {exc}")
         return findings_path, topics_path
 
     braindump = _read_braindump(project_root)

@@ -171,12 +171,20 @@ def _weighted_fair_provider_order(
     return sorted(enabled, key=sort_key)
 
 
-def get_accounts_for_provider(account_manager: Any, provider_id: str) -> list:
+def get_accounts_for_provider(
+    account_manager: Any,
+    provider_id: str,
+    logger: Any = None,
+) -> list:
     if account_manager:
         try:
             return account_manager.by_provider(provider_id)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — 3rd-party AccountManager may raise anything; falling back to a synthetic default keeps the run going
+            if logger is not None:
+                logger.warning(
+                    f"AccountManager.by_provider({provider_id}) failed ({exc}); "
+                    "using synthetic default account"
+                )
     from ..accounts.models import Account, AuthState
 
     return [
