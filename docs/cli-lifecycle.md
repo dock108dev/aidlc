@@ -201,6 +201,21 @@ the router's fallback chain, dependency cycle, consecutive failures), the
 implementer logs a single visually-distinct stop-reason line and a
 `RESUME WITH:` instruction, then exits.
 
+### Interrupted-attempt recovery
+
+If a run is killed mid-attempt (Ctrl-C, SIGTERM, OOM, hard timeout), the
+issue's state is persisted with `status=in_progress` and `attempt_count`
+already incremented (the increment happens at the START of an attempt).
+On resume, the implementer detects this and **restarts the same attempt**
+rather than incrementing the counter again — one killed attempt should
+not consume two of `max_attempts`.
+
+The resume warning includes a note that the working tree may contain
+partial changes from the killed attempt; the model receives whatever the
+tree currently shows and decides whether to extend or revert. AIDLC does
+not snapshot/restore the working tree itself — that stays under your git
+control.
+
 By default, finalization **does not** auto-run on early stop — the prior
 behavior burned more budget at exactly the moment we wanted to stop cleanly.
 To opt back in, set `implementation_finalize_on_early_stop: true` in

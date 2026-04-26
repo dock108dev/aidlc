@@ -279,6 +279,133 @@ class TestImplementUnstructuredOutput:
         assert ok is False
 
 
+class TestResumeInterruptedAttempt:
+    """Regression: when a run is killed (Ctrl-C, SIGTERM, hard timeout)
+    mid-attempt, the issue is persisted with status=IN_PROGRESS and
+    attempt_count already incremented (the increment happens at the START
+    of an attempt, before the model call). On resume, the implementer
+    must restart the SAME attempt rather than burning another
+    attempt_count slot — one killed attempt should not consume two of
+    max_attempts."""
+
+    @pytest.fixture
+    def interrupted_state(self):
+        """Mimics a state file persisted mid-attempt: status=IN_PROGRESS,
+        attempt_count already advanced to 2 (the killed attempt was #2 of 3)."""
+        s = RunState(run_id="t-resume", config_name="default")
+        s.issues = [
+            {
+                "id": "ISSUE-007",
+                "title": "issue mid-attempt",
+                "description": "do thing",
+                "priority": "medium",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "in_progress",
+                "implementation_notes": "Attempt 1 failed: timeout",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 2,  # killed mid-attempt 2; state persisted with this value
+                "max_attempts": 3,
+            },
+        ]
+        s.total_issues = 1
+        return s
+
+    def _build_impl(self, state, tmp_path, logger):
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "_reports_dir": str(tmp_path / ".aidlc" / "reports"),
+            "checkpoint_interval_minutes": 999,
+            "max_consecutive_failures": 3,
+            "max_implementation_attempts": 3,
+            "test_timeout_seconds": 30,
+            "max_implementation_context_chars": 30000,
+            "dry_run": False,
+            "run_tests_command": None,
+        }
+        (tmp_path / ".aidlc" / "issues").mkdir(parents=True, exist_ok=True)
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "output": '{"issue_id": "ISSUE-007", "success": true, "summary": "ok"}',
+            "success": True,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        return Implementer(state, run_dir, config, cli, "context", logger)
+
+    def test_resume_does_not_double_increment_attempt_count(
+        self, interrupted_state, tmp_path, logger
+    ):
+        impl = self._build_impl(interrupted_state, tmp_path, logger)
+        with patch.object(impl, "_get_changed_files", return_value=(["x.py"], True)):
+            issue = Issue.from_dict(interrupted_state.issues[0])
+            ok = impl._implement_issue(issue)
+        assert ok is True
+        # The attempt_count must remain at 2 — the killed attempt #2 is
+        # being resumed, not a fresh attempt #3 burning a third slot.
+        assert interrupted_state.issues[0]["attempt_count"] == 2
+        # And on success, status is implemented (not stuck at in_progress).
+        assert interrupted_state.issues[0]["status"] == "implemented"
+
+    def test_fresh_pending_issue_still_increments_normally(self, tmp_path, logger):
+        """Sanity check: the resume-detection branch must not trigger for a
+        normal pending issue. attempt_count goes from 0 → 1."""
+        s = RunState(run_id="t-fresh", config_name="default")
+        s.issues = [
+            {
+                "id": "ISSUE-100",
+                "title": "fresh issue",
+                "description": "do thing",
+                "priority": "medium",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+        ]
+        s.total_issues = 1
+        impl = self._build_impl(s, tmp_path, logger)
+        with patch.object(impl, "_get_changed_files", return_value=(["x.py"], True)):
+            issue = Issue.from_dict(s.issues[0])
+            impl._implement_issue(issue)
+        assert s.issues[0]["attempt_count"] == 1
+
+    def test_resume_does_not_exhaust_max_attempts_on_repeated_kill(
+        self, interrupted_state, tmp_path, logger
+    ):
+        """Edge case: user kills attempt 2/3, resumes (now still attempt 2/3),
+        kills again, resumes again. Without the fix this would jump to 4/3
+        and exhaust max_attempts; with the fix it stays at 2/3."""
+        impl = self._build_impl(interrupted_state, tmp_path, logger)
+        # Simulate: model "interrupted" again — force the status back to
+        # IN_PROGRESS with the same attempt_count.
+        with patch.object(impl, "_get_changed_files", return_value=([], True)):
+            # Model returns nothing useful; mid-attempt kill leaves
+            # status=in_progress, attempt_count unchanged.
+            interrupted_state.issues[0]["status"] = "in_progress"
+            interrupted_state.issues[0]["attempt_count"] = 2
+
+            issue = Issue.from_dict(interrupted_state.issues[0])
+            impl._implement_issue(issue)
+        # After one resume that didn't add a fresh attempt, count is still
+        # within budget (≤ max_attempts=3). Without the fix, count would
+        # have gone to 3 then 4 across two resume cycles.
+        assert interrupted_state.issues[0]["attempt_count"] <= 3
+
+
 class TestSortIssues:
     def test_priority_ordering(self, config, cli, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")

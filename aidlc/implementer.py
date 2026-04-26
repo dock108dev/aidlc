@@ -245,10 +245,10 @@ class Implementer:
                     break
 
             issue = pending[0]
-            self.logger.info(
-                f"=== Implementing {issue.id}: {issue.title} "
-                f"(attempt {issue.attempt_count + 1}/{issue.max_attempts}) ==="
-            )
+            # The "===" header is logged inside `_implement_issue` so it can
+            # honestly distinguish "starting attempt N+1" from "resuming
+            # interrupted attempt N" — see the IN_PROGRESS-on-entry branch
+            # at the top of `_implement_issue`.
 
             # Implement
             success = self._implement_issue(issue)
@@ -347,8 +347,31 @@ class Implementer:
 
     def _implement_issue(self, issue: Issue) -> bool:
         """Implement a single issue. Returns True on success."""
+        # Detect resume-of-interrupted-attempt. State is persisted with
+        # status=IN_PROGRESS and attempt_count already incremented at the
+        # *start* of an attempt (see further down in this method); if we
+        # see IN_PROGRESS on entry, the previous attempt was killed mid-
+        # flight (Ctrl-C, SIGTERM, OOM, hard timeout). Restart the same
+        # attempt rather than burning a fresh attempt_count slot — one
+        # killed attempt should not consume two of max_attempts.
+        resuming_interrupted = issue.status == IssueStatus.IN_PROGRESS
+        if resuming_interrupted:
+            self.logger.info(
+                f"=== Resuming interrupted {issue.id}: {issue.title} "
+                f"(attempt {issue.attempt_count}/{issue.max_attempts}) ==="
+            )
+            self.logger.warning(
+                f"{issue.id}: previous attempt was killed mid-flight. "
+                "Working tree may contain partial changes from that attempt; "
+                "the model will see them and decide whether to extend or revert."
+            )
+        else:
+            issue.attempt_count += 1
+            self.logger.info(
+                f"=== Implementing {issue.id}: {issue.title} "
+                f"(attempt {issue.attempt_count}/{issue.max_attempts}) ==="
+            )
         issue.status = IssueStatus.IN_PROGRESS
-        issue.attempt_count += 1
         self.state.current_issue_id = issue.id
         self.state.update_issue(issue)
         self._sync_issue_markdown(issue)
