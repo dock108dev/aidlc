@@ -3,6 +3,7 @@
 import time
 from pathlib import Path
 
+from . import implementer_finalize
 from ._proc import run_with_group_kill
 from .implementer_helpers import (
     FixTestsOutcome,
@@ -11,6 +12,9 @@ from .implementer_helpers import (
     ensure_test_deps,
     fix_failing_tests,
     implementation_instructions,
+    log_provider_result_for_issue,
+    reopen_stale_verified_issues,
+    reopen_transient_failures,
 )
 from .implementer_issue_order import sort_issues_for_implementation
 from .implementer_signals import (
@@ -125,71 +129,19 @@ class Implementer:
         )
 
     def _maybe_reopen_transient_failures(self, force_all: bool = False) -> int:
-        """ISSUE-012: reopen failed issues whose cause was transient.
-
-        Auto-runs at the start of each implementation cycle. Reopens issues with
-        ``failure_cause`` in ``{token_exhausted, unknown}`` (transient) to
-        ``pending`` so they get another shot. Issues with cause
-        ``dependency`` or ``test_regression`` stay failed for manual review.
-
-        With ``force_all=True`` (the ``--retry-failed`` flag), all failed issues
-        are reopened regardless of cause.
-
-        Returns the number of issues reopened.
-        """
-        from .issue_model import TRANSIENT_FAILURE_CAUSES
-
-        reopened = 0
-        for d in list(self.state.issues):
-            if d.get("status") != IssueStatus.FAILED.value:
-                continue
-            cause = d.get("failure_cause")
-            if not force_all and cause not in TRANSIENT_FAILURE_CAUSES:
-                continue
-            issue = Issue.from_dict(d)
-            self.logger.info(
-                f"Reopening {issue.id} (cause={cause or 'none'}) — "
-                f"{'forced via --retry-failed' if force_all else 'transient cause auto-reopen'}"
-            )
-            issue.status = IssueStatus.PENDING
-            issue.failure_cause = None
-            # attempt_count is preserved so max_attempts still bounds retries.
-            self.state.update_issue(issue)
-            self._sync_issue_markdown(issue)
-            reopened += 1
-        return reopened
+        """Delegate to ``implementer_helpers.reopen_transient_failures`` (kept as a method for callers)."""
+        return reopen_transient_failures(
+            self.state, self.logger, self._sync_issue_markdown, force_all=force_all
+        )
 
     def _maybe_reopen_stale_verified_issues(self) -> bool:
-        """Re-open verified issues that have no Verification Result body (planner/template noise).
-
-        Without this, hydrated ``Status: verified`` rows make ``all_issues_resolved()`` true and
-        the implementation loop is skipped entirely while work was never done.
-        """
-        if not self.config.get("implementation_reopen_verified_without_result", True):
-            return False
-        non_skip = [d for d in self.state.issues if d.get("status") != IssueStatus.SKIPPED.value]
-        if not non_skip:
-            return False
-        for d in non_skip:
-            if d.get("status") != IssueStatus.VERIFIED.value:
-                return False
-        stale: list[Issue] = []
-        for d in non_skip:
-            issue = Issue.from_dict(d)
-            if not (issue.verification_result or "").strip():
-                stale.append(issue)
-        if not stale:
-            return False
-        self.logger.warning(
-            f"{len(stale)} issue(s) are verified but have no Verification Result text; "
-            "re-opening as pending so implementation runs "
-            "(disable via implementation_reopen_verified_without_result=false)."
+        """Delegate to ``implementer_helpers.reopen_stale_verified_issues`` (kept as a method for callers)."""
+        return reopen_stale_verified_issues(
+            self.state,
+            self.logger,
+            self._sync_issue_markdown,
+            enabled=self.config.get("implementation_reopen_verified_without_result", True),
         )
-        for issue in stale:
-            issue.status = IssueStatus.PENDING
-            self.state.update_issue(issue)
-            self._sync_issue_markdown(issue)
-        return True
 
     def _emit_run_checkpoint_summary(self) -> None:
         """Snapshot state to checkpoints/, write markdown summary, log CHECKPOINT block."""
@@ -661,29 +613,8 @@ class Implementer:
         return is_complex
 
     def _log_provider_result(self, issue: Issue, result: dict) -> None:
-        """Log which provider/model handled an implementation call."""
-        provider = str(result.get("provider_id") or "unknown")
-        model = str(result.get("model_used") or "unknown")
-        routing = result.get("routing_decision") or {}
-        requested_model = str(routing.get("model") or model)
-        if model != requested_model and model != "unknown":
-            self.logger.info(
-                f"{issue.id}: model {provider}/{model} (requested {provider}/{requested_model})"
-            )
-        else:
-            self.logger.info(f"{issue.id}: model {provider}/{requested_model}")
-
-        usage = result.get("usage")
-        if isinstance(usage, dict):
-            inp = int(usage.get("input_tokens", 0) or 0)
-            out = int(usage.get("output_tokens", 0) or 0)
-            cc = int(usage.get("cache_creation_input_tokens", 0) or 0)
-            cr = int(usage.get("cache_read_input_tokens", 0) or 0)
-            if inp or out or cc or cr:
-                self.logger.info(
-                    f"  {issue.id}: tokens (this call) in={inp:,} out={out:,} "
-                    f"cache_write={cc:,} cache_read={cr:,}"
-                )
+        """Delegate to ``implementer_helpers.log_provider_result_for_issue``."""
+        log_provider_result_for_issue(self.logger, issue, result)
 
     def _ensure_test_deps(self):
         ensure_test_deps(self.project_root, self.test_command, self.logger, state=self.state)
@@ -796,70 +727,13 @@ class Implementer:
         )
 
     def _should_run_periodic_cleanup(self) -> bool:
-        if self.cleanup_passes_every_cycles <= 0:
-            return False
-        if not self.config.get("finalize_enabled", True) or self.config.get("dry_run"):
-            return False
-        if not self.cleanup_passes_periodic:
-            return False
-        return self.state.implementation_cycles > 0 and (
-            self.state.implementation_cycles % self.cleanup_passes_every_cycles == 0
-        )
+        return implementer_finalize.should_run_periodic_cleanup(self)
 
     def _run_periodic_cleanup(self) -> None:
-        """Run the periodic-cleanup subset of finalization passes mid-run.
-
-        Independent of autosync. Drives the same Finalizer entry point but
-        with the opted-in subset (default: abend + cleanup). After the passes
-        run, the implementer phase is restored.
-        """
-        from .finalizer import Finalizer
-
-        cycle = self.state.implementation_cycles
-        passes = list(self.cleanup_passes_periodic)
-        self.logger.info(
-            f"Periodic cleanup at implementation cycle {cycle} (passes={', '.join(passes)})"
-        )
-        finalizer = Finalizer(
-            self.state,
-            self.run_dir,
-            self.config,
-            self.cli,
-            self.project_context,
-            self.logger,
-        )
-        finalizer.run(passes=passes)
-        self.state.phase = RunPhase.IMPLEMENTING
-        save_state(self.state, self.run_dir)
+        implementer_finalize.run_periodic_cleanup(self)
 
     def _autosync_finalize_before_push_if_enabled(self) -> None:
-        """Run full finalization passes (same as end-of-run) before commit/push."""
-        if not self.config.get("finalize_enabled", True):
-            return
-        if not self.autosync_finalize_before_push:
-            return
-        if self.config.get("dry_run"):
-            return
-
-        from .finalizer import Finalizer
-
-        passes = self.config.get("finalize_passes")
-        c = self.state.implementation_cycles
-        self.logger.info(
-            f"Pre-autosync finalization at implementation cycle {c} "
-            f"(finalize_passes; then commit/push)"
-        )
-        finalizer = Finalizer(
-            self.state,
-            self.run_dir,
-            self.config,
-            self.cli,
-            self.project_context,
-            self.logger,
-        )
-        finalizer.run(passes=passes)
-        self.state.phase = RunPhase.IMPLEMENTING
-        save_state(self.state, self.run_dir)
+        implementer_finalize.run_finalize_before_push_if_enabled(self)
 
     def _autosync_progress(self) -> bool:
         """Persist issue statuses, commit, push, and prune stale run artifacts.

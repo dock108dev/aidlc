@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .models import Issue, IssueStatus
 from .schemas import (
     IMPLEMENTATION_SCHEMA_DESCRIPTION,
     TEST_FIX_OUTCOME_SCHEMA_DESCRIPTION,
@@ -385,3 +386,107 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
             follow_up_documentation=doc,
         )
     return FixTestsOutcome()
+
+
+def reopen_transient_failures(state, logger, sync_issue_markdown, force_all: bool = False) -> int:
+    """ISSUE-012: reopen failed issues whose cause was transient.
+
+    Auto-runs at the start of each implementation cycle. Reopens issues with
+    ``failure_cause`` in ``TRANSIENT_FAILURE_CAUSES`` (token_exhausted, unknown)
+    to ``pending`` so they get another shot. Issues with cause ``dependency``
+    or ``test_regression`` stay failed for manual review.
+
+    With ``force_all=True`` (the ``--retry-failed`` flag), all failed issues
+    are reopened regardless of cause.
+
+    Returns the number of issues reopened.
+    """
+    from .issue_model import TRANSIENT_FAILURE_CAUSES
+
+    reopened = 0
+    for d in list(state.issues):
+        if d.get("status") != IssueStatus.FAILED.value:
+            continue
+        cause = d.get("failure_cause")
+        if not force_all and cause not in TRANSIENT_FAILURE_CAUSES:
+            continue
+        issue = Issue.from_dict(d)
+        logger.info(
+            f"Reopening {issue.id} (cause={cause or 'none'}) — "
+            f"{'forced via --retry-failed' if force_all else 'transient cause auto-reopen'}"
+        )
+        issue.status = IssueStatus.PENDING
+        issue.failure_cause = None
+        # attempt_count is preserved so max_attempts still bounds retries.
+        state.update_issue(issue)
+        sync_issue_markdown(issue)
+        reopened += 1
+    return reopened
+
+
+def reopen_stale_verified_issues(
+    state,
+    logger,
+    sync_issue_markdown,
+    *,
+    enabled: bool,
+) -> bool:
+    """Re-open verified issues that have no Verification Result body.
+
+    Without this, hydrated ``Status: verified`` rows make ``all_issues_resolved()``
+    true and the implementation loop is skipped entirely while work was never
+    done. Returns True iff any issue was reopened.
+    """
+    if not enabled:
+        return False
+    non_skip = [d for d in state.issues if d.get("status") != IssueStatus.SKIPPED.value]
+    if not non_skip:
+        return False
+    # Only run when *every* non-skipped issue is currently verified — otherwise
+    # the planner already has work to do and we shouldn't reshuffle.
+    for d in non_skip:
+        if d.get("status") != IssueStatus.VERIFIED.value:
+            return False
+    stale: list[Issue] = []
+    for d in non_skip:
+        issue = Issue.from_dict(d)
+        if not (issue.verification_result or "").strip():
+            stale.append(issue)
+    if not stale:
+        return False
+    logger.warning(
+        f"{len(stale)} issue(s) are verified but have no Verification Result text; "
+        "re-opening as pending so implementation runs "
+        "(disable via implementation_reopen_verified_without_result=false)."
+    )
+    for issue in stale:
+        issue.status = IssueStatus.PENDING
+        state.update_issue(issue)
+        sync_issue_markdown(issue)
+    return True
+
+
+def log_provider_result_for_issue(logger, issue, result: dict) -> None:
+    """Log which provider/model handled an implementation call + token counts."""
+    provider = str(result.get("provider_id") or "unknown")
+    model = str(result.get("model_used") or "unknown")
+    routing = result.get("routing_decision") or {}
+    requested_model = str(routing.get("model") or model)
+    if model != requested_model and model != "unknown":
+        logger.info(
+            f"{issue.id}: model {provider}/{model} (requested {provider}/{requested_model})"
+        )
+    else:
+        logger.info(f"{issue.id}: model {provider}/{requested_model}")
+
+    usage = result.get("usage")
+    if isinstance(usage, dict):
+        inp = int(usage.get("input_tokens", 0) or 0)
+        out = int(usage.get("output_tokens", 0) or 0)
+        cc = int(usage.get("cache_creation_input_tokens", 0) or 0)
+        cr = int(usage.get("cache_read_input_tokens", 0) or 0)
+        if inp or out or cc or cr:
+            logger.info(
+                f"  {issue.id}: tokens (this call) in={inp:,} out={out:,} "
+                f"cache_write={cc:,} cache_read={cr:,}"
+            )

@@ -21,11 +21,10 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 from pathlib import Path
 
 from ..providers.base import ProviderAdapter
-from . import context, helpers, result_signals, strategy_resolution
+from . import context, cooldown, helpers, result_signals, strategy_resolution
 from .adapter_registry import build_provider_adapters
 from .types import RouteDecision, RoutingStrategy, UsagePressure
 
@@ -230,43 +229,13 @@ class ProviderRouter:
                     excluded_providers.add(decision.provider_id)
                     excluded_models.add((decision.provider_id, decision.model))
                     rate_limited_models.append((decision.provider_id, decision.model))
-
-                    raw_reported = result_signals.extract_restore_time_epoch(result)
-                    restore_at = self._compute_rate_limit_cooldown_until(
-                        decision.provider_id, decision.model, result, now
+                    cooldown.record_rate_limit(
+                        router=self,
+                        decision=decision,
+                        result=result,
+                        now=now,
+                        effective_phase=effective_phase,
                     )
-                    buf_hint: float | None = None
-                    if restore_at is not None and raw_reported is not None:
-                        buf_hint = max(0.0, restore_at - raw_reported)
-                    elif restore_at is not None and raw_reported is None:
-                        buf_hint = max(0.0, restore_at - now)
-                    detail = result_signals.format_rate_limit_diagnostics(
-                        result,
-                        raw_restore_epoch=raw_reported,
-                        cooldown_until_epoch=restore_at,
-                        buffer_seconds=buf_hint,
-                    )
-                    for line in detail.splitlines():
-                        self.logger.warning(
-                            f"[routing] {effective_phase}: rate_limited_detail | {line}"
-                        )
-                    if restore_at is not None:
-                        self._provider_cooldowns[decision.provider_id] = restore_at
-                        self._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
-                        restore_text = datetime.fromtimestamp(restore_at).isoformat(
-                            timespec="seconds"
-                        )
-                        self.logger.warning(
-                            f"[routing] {effective_phase}: rate limited on "
-                            f"{decision.provider_id}/{decision.model}; cooldown_until={restore_text} "
-                            f"(try another provider if configured)"
-                        )
-                    else:
-                        self.logger.warning(
-                            f"[routing] {effective_phase}: rate limited on "
-                            f"{decision.provider_id}/{decision.model}; no cooldown_until "
-                            f"(try another provider if configured)"
-                        )
                     continue
 
                 return result
@@ -536,34 +505,17 @@ class ProviderRouter:
         result: dict,
         now: float,
     ) -> float | None:
-        """Next epoch when *model* may be tried again after a rate limit.
-
-        Adds an exponential buffer on top of the provider-reported window: base·1h,
-        base·2h, base·4h, … capped at base·8h (multiplier min(2^step, 8)) per consecutive
-        rate limit on this (provider, model). Resets when a call succeeds.
-
-        If buffer base is 0 and the response includes no parseable restore time, returns
-        None (legacy test / opt-out: no cooldown row).
-        """
-        key = (provider_id, model)
-        step = self._rate_limit_backoff_step.get(key, 0)
-        mult = min(2**step, 8)
-        buf_seconds = float(self._rate_limit_buffer_base_seconds) * float(mult)
-
-        reported = result_signals.extract_restore_time_epoch(result)
-        if reported is None and buf_seconds <= 0:
-            return None
-
-        if reported is not None:
-            restore_at = reported + buf_seconds
-        else:
-            restore_at = now + max(buf_seconds, float(self._rate_limit_cooldown_seconds))
-
-        if restore_at <= now:
-            restore_at = now + 1.0
-
-        self._rate_limit_backoff_step[key] = step + 1
-        return restore_at
+        """Delegate to ``cooldown.compute_rate_limit_cooldown_until`` (kept as
+        a method so tests can call ``router._compute_rate_limit_cooldown_until``)."""
+        return cooldown.compute_rate_limit_cooldown_until(
+            provider_id=provider_id,
+            model=model,
+            result=result,
+            now=now,
+            backoff_step=self._rate_limit_backoff_step,
+            buffer_base_seconds=self._rate_limit_buffer_base_seconds,
+            fallback_cooldown_seconds=self._rate_limit_cooldown_seconds,
+        )
 
     def _log_routing_note(self, decision: RouteDecision, phase: str) -> None:
         """Emit a user-facing log line when routing affects quality or cost."""
@@ -635,38 +587,15 @@ class ProviderRouter:
 
     def _provider_is_on_cooldown(self, provider_id: str, now: float | None = None) -> bool:
         """Return True when a provider is temporarily excluded after rate limiting."""
-        expiry = self._provider_cooldowns.get(provider_id)
-        if not expiry:
-            return False
-        t = now if now is not None else time.time()
-        if t < expiry:
-            return True
-        self._provider_cooldowns.pop(provider_id, None)
-        return False
+        return cooldown.is_on_cooldown(self._provider_cooldowns, provider_id, now)
 
     def _model_is_on_cooldown(self, provider_id: str, model: str, now: float | None = None) -> bool:
         """Return True when a model is temporarily excluded after rate limiting."""
-        key = (provider_id, model)
-        expiry = self._model_cooldowns.get(key)
-        if not expiry:
-            return False
-        t = now if now is not None else time.time()
-        if t < expiry:
-            return True
-        self._model_cooldowns.pop(key, None)
-        return False
+        return cooldown.is_on_cooldown(self._model_cooldowns, (provider_id, model), now)
 
     def _next_model_restore_time(self, now: float | None = None) -> float | None:
         """Return the earliest future cooldown expiry across models, if any."""
-        t = now if now is not None else time.time()
-        next_restore: float | None = None
-        for (provider_id, model), expiry in list(self._model_cooldowns.items()):
-            if expiry <= t:
-                self._model_cooldowns.pop((provider_id, model), None)
-                continue
-            if next_restore is None or expiry < next_restore:
-                next_restore = expiry
-        return next_restore
+        return cooldown.next_model_restore_time(self._model_cooldowns, now)
 
     def set_account_manager(self, manager) -> None:
         """Inject an AccountManager for per-account routing decisions."""

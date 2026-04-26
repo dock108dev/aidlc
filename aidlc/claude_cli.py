@@ -12,6 +12,13 @@ import threading
 import time
 from pathlib import Path
 
+from .claude_cli_metadata import (
+    extract_cli_metadata as _extract_cli_metadata_impl,
+)
+from .claude_cli_metadata import (
+    extract_text_from_message as _extract_text_from_message_impl,
+)
+
 _TRANSIENT_PATTERNS = re.compile(
     r"rate.?limit|connection|timeout|API error|overloaded|503|502|429|ECONNRESET",
     re.IGNORECASE,
@@ -469,120 +476,11 @@ class ClaudeCLI:
             "usage_source": "none",
         }
 
-    @staticmethod
-    def _extract_cli_metadata(
-        stdout: str,
-        fallback_model: str,
-    ) -> tuple[str, dict, float | None, str, str]:
-        """Parse Claude CLI JSON output, returning text + usage metadata."""
-        text = stdout or ""
-        usage = {}
-        total_cost_usd = None
-        model_used = fallback_model
-        usage_source = "none"
-
-        if not text.strip():
-            return text, usage, total_cost_usd, model_used, usage_source
-
-        parsed = None
-        try:
-            parsed = json.loads(text.strip())
-        except json.JSONDecodeError:
-            parsed = None
-
-        if not isinstance(parsed, dict):
-            usage_candidate = None
-            fallback_line_dict = None
-            for line in text.splitlines():
-                line = line.strip()
-                if not line.startswith("{"):
-                    continue
-                try:
-                    cand = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(cand, dict):
-                    continue
-                fallback_line_dict = cand
-                msg = cand.get("message")
-                if isinstance(cand.get("usage"), dict) or (
-                    isinstance(msg, dict) and isinstance(msg.get("usage"), dict)
-                ):
-                    usage_candidate = cand
-            parsed = usage_candidate or fallback_line_dict
-
-        if not isinstance(parsed, dict):
-            return text, usage, total_cost_usd, model_used, usage_source
-
-        usage_source = "claude_cli_json"
-        result_text = parsed.get("result")
-        if not isinstance(result_text, str):
-            message = parsed.get("message")
-            if isinstance(message, dict):
-                result_text = ClaudeCLI._extract_text_from_message(message)
-            else:
-                result_text = text
-
-        parsed_usage = parsed.get("usage")
-        if not isinstance(parsed_usage, dict):
-            message = parsed.get("message")
-            if isinstance(message, dict):
-                parsed_usage = message.get("usage")
-        if isinstance(parsed_usage, dict):
-            usage = {
-                "input_tokens": int(parsed_usage.get("input_tokens", 0) or 0),
-                "output_tokens": int(parsed_usage.get("output_tokens", 0) or 0),
-                "cache_creation_input_tokens": int(
-                    parsed_usage.get("cache_creation_input_tokens", 0) or 0
-                ),
-                "cache_read_input_tokens": int(parsed_usage.get("cache_read_input_tokens", 0) or 0),
-                "web_search_requests": int(
-                    (
-                        (parsed_usage.get("server_tool_use") or {}).get("web_search_requests", 0)
-                        if isinstance(parsed_usage.get("server_tool_use"), dict)
-                        else parsed_usage.get("web_search_requests", 0)
-                    )
-                    or 0
-                ),
-                "web_fetch_requests": int(
-                    (
-                        (parsed_usage.get("server_tool_use") or {}).get("web_fetch_requests", 0)
-                        if isinstance(parsed_usage.get("server_tool_use"), dict)
-                        else parsed_usage.get("web_fetch_requests", 0)
-                    )
-                    or 0
-                ),
-            }
-
-        raw_cost = parsed.get("total_cost_usd")
-        if raw_cost is None and isinstance(parsed.get("message"), dict):
-            raw_cost = parsed["message"].get("total_cost_usd")
-        try:
-            total_cost_usd = float(raw_cost) if raw_cost is not None else None
-        except (TypeError, ValueError):
-            total_cost_usd = None
-
-        raw_model = parsed.get("model")
-        if raw_model is None and isinstance(parsed.get("message"), dict):
-            raw_model = parsed["message"].get("model")
-        if isinstance(raw_model, str) and raw_model.strip():
-            model_used = raw_model
-
-        return result_text, usage, total_cost_usd, model_used, usage_source
-
-    @staticmethod
-    def _extract_text_from_message(message: dict) -> str:
-        """Extract concatenated text blocks from a Claude message object."""
-        content = message.get("content")
-        if not isinstance(content, list):
-            return ""
-        chunks = []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            if block.get("type") == "text" and isinstance(block.get("text"), str):
-                chunks.append(block["text"])
-        return "".join(chunks)
+    # Metadata parsing lives in claude_cli_metadata.py; these stubs preserve
+    # the historical ClaudeCLI._extract_*  call surface used by tests and
+    # by execute_prompt.
+    _extract_cli_metadata = staticmethod(_extract_cli_metadata_impl)
+    _extract_text_from_message = staticmethod(_extract_text_from_message_impl)
 
     @staticmethod
     def _request_graceful_stop(proc: subprocess.Popen) -> None:
