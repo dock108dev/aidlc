@@ -26,6 +26,8 @@ class RunPhase(Enum):
     INIT = "init"
     AUDITING = "auditing"
     SCANNING = "scanning"
+    DISCOVERY = "discovery"
+    RESEARCH = "research"
     PLANNING = "planning"
     PLAN_FINALIZATION = "plan_finalization"
     IMPLEMENTING = "implementing"
@@ -107,6 +109,11 @@ class RunState:
     audit_depth: str = "none"  # none, quick, full
     audit_conflicts: list = field(default_factory=list)
     audit_completed: bool = False
+
+    # Discovery + Research (pre-planning phases)
+    discovery_completed: bool = False
+    research_topics_total: int = 0
+    research_topics_completed: int = 0
 
     # Validation loop
     validation_cycles: int = 0
@@ -228,6 +235,9 @@ class RunState:
             "audit_depth": self.audit_depth,
             "audit_conflicts": self.audit_conflicts,
             "audit_completed": self.audit_completed,
+            "discovery_completed": self.discovery_completed,
+            "research_topics_total": self.research_topics_total,
+            "research_topics_completed": self.research_topics_completed,
             "validation_cycles": self.validation_cycles,
             "validation_issues_created": self.validation_issues_created,
             "validation_test_results": self.validation_test_results,
@@ -248,7 +258,12 @@ class RunState:
         )
         state.project_root = data.get("project_root", "")
         state.status = RunStatus(data.get("status", "pending"))
-        state.phase = RunPhase(data.get("phase", "init"))
+        # Old runs paused mid-AUDITING (deprecated phase) forward-migrate to SCANNING
+        # so the new discovery flow picks up cleanly on resume.
+        raw_phase = data.get("phase", "init")
+        if raw_phase == "auditing":
+            raw_phase = "scanning"
+        state.phase = RunPhase(raw_phase)
         state.started_at = data.get("started_at")
         state.last_updated = data.get("last_updated")
         state.elapsed_seconds = data.get("elapsed_seconds", 0.0)
@@ -292,6 +307,9 @@ class RunState:
         state.audit_depth = data.get("audit_depth", "none")
         state.audit_conflicts = data.get("audit_conflicts", [])
         state.audit_completed = data.get("audit_completed", False)
+        state.discovery_completed = data.get("discovery_completed", False)
+        state.research_topics_total = int(data.get("research_topics_total", 0) or 0)
+        state.research_topics_completed = int(data.get("research_topics_completed", 0) or 0)
         state.validation_cycles = data.get("validation_cycles", 0)
         state.validation_issues_created = data.get("validation_issues_created", 0)
         state.validation_test_results = data.get("validation_test_results", [])

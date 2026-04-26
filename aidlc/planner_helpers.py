@@ -2,15 +2,9 @@
 
 import json
 import re
-import time
 from pathlib import Path
 
 from .models import Issue
-from .research_output import (
-    add_research_output_constraints,
-    build_repair_prompt,
-    is_permission_chatter,
-)
 from .schemas import PLANNING_SCHEMA_DESCRIPTION
 
 
@@ -221,10 +215,11 @@ def _render_foundation_docs_section(planner) -> list[str]:
         "\n## BRAINDUMP — Intent Source (authoritative)\n",
         "BRAINDUMP.md is the **intent source** — the owner's black-box description "
         "of what should be true after this cycle. It is not an implementation "
-        "spec. Translate it into issues by reading the repo: file the real work "
-        "needed to deliver the intent, including prereq/infra/refactor/test "
-        "issues and per-concern splits the user couldn't have enumerated. "
-        "Issues do not need 1:1 mapping to bullets.\n\n"
+        "spec. Translate it into issues by consulting the discovery findings "
+        "and research notes below: file the real work needed to deliver the "
+        "intent, including prereq/infra/refactor/test issues and per-concern "
+        "splits the user couldn't have enumerated. Issues do not need 1:1 "
+        "mapping to bullets.\n\n"
         "**Exclusions are binding.** If BRAINDUMP names a cut list, non-goals, "
         "out-of-scope section, or defers items to a later phase, those items "
         "MUST NOT be filed as issues — even if the codebase, audit findings, "
@@ -232,24 +227,54 @@ def _render_foundation_docs_section(planner) -> list[str]:
         "scope rule from BRAINDUMP; additive expansion to deliver stated intent "
         "is the planner's judgment call.\n\n"
         "**Other docs are reference, not scope.** ROADMAP, ARCHITECTURE, DESIGN, "
-        "CLAUDE, audits, ADRs, research notes — read them on demand to shape "
-        "*how* an issue is written (fit existing systems, respect constraints). "
-        "They never override BRAINDUMP exclusions. Audit findings about "
-        "current state are inputs to BRAINDUMP-driven work.\n\n"
-        "**Research:** emit a `research` action this cycle when you need facts "
-        "before filing a sound issue. Two flavors: (1) **external unknowns** — "
-        "third-party APIs, named content, formulas, integrations not in repo "
-        "or `docs/research/`; (2) **repo archaeology** — current behavior, "
-        "call graphs, contracts, data shapes, integration points. Use "
-        'archaeology when BRAINDUMP says "replace X" / "fix X" / "extend X" '
-        "without spec'ing X. `research_scope` may include internal repo files. "
-        "Output lands at `docs/research/<topic>.md` before the dependent "
-        "issues.\n\n"
+        "CLAUDE, audits, ADRs — read them on demand to shape *how* an issue is "
+        "written (fit existing systems, respect constraints). They never "
+        "override BRAINDUMP exclusions.\n\n"
+        "**Discovery and research are complete.** Pre-built artifacts live at "
+        "`docs/discovery/findings.md` (current repo state for BRAINDUMP-relevant "
+        "systems) and `docs/research/*.md` (per-topic answers). Reference them "
+        "in issue descriptions when relied on. The `research` planning action "
+        "has been removed; if a topic is missing, read the file directly with "
+        "your tools.\n\n"
         "**Planning is complete when the filed-or-prior issue set is sufficient "
         "to deliver every BRAINDUMP intent — including discovered prereq/infra "
         'work. "Sufficient" not "literal coverage."**\n',
         f"\n### BRAINDUMP.md (full content)\n```\n{content}\n```",
     ]
+
+
+def _render_discovery_section(planner) -> list[str]:
+    """Inject discovery findings + the list of research files into the prompt.
+
+    Discovery and research run as pre-planning phases; their artifacts live at
+    `docs/discovery/findings.md` and `docs/research/*.md`. This block lets the
+    planner consume them without re-investigating in-cycle.
+    """
+    project_root = planner.project_root
+    findings_path = project_root / "docs" / "discovery" / "findings.md"
+    research_dir = project_root / "docs" / "research"
+
+    if not findings_path.exists() and not research_dir.exists():
+        return []
+
+    lines = ["\n## Discovery & Research (pre-built; consume when filing issues)\n"]
+
+    if findings_path.exists():
+        try:
+            findings_text = findings_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            findings_text = ""
+        if findings_text:
+            lines.append("### docs/discovery/findings.md\n```\n" + findings_text + "\n```")
+
+    if research_dir.exists():
+        research_files = sorted(p.name for p in research_dir.glob("*.md"))
+        if research_files:
+            lines.append("\n### docs/research/ (read on demand)")
+            for name in research_files:
+                lines.append(f"- docs/research/{name}")
+
+    return lines
 
 
 def _enforce_prompt_budget(prompt: str, planner) -> str:
@@ -335,11 +360,21 @@ def write_planning_index(planner) -> Path:
             lines.append(f"- {name}")
         lines.append("")
 
+    discovery_findings = planner.project_root / "docs" / "discovery" / "findings.md"
+    discovery_topics = planner.project_root / "docs" / "discovery" / "topics.json"
+    if discovery_findings.exists() or discovery_topics.exists():
+        lines.append("## Discovery (pre-built — current repo state)")
+        if discovery_findings.exists():
+            lines.append("- docs/discovery/findings.md")
+        if discovery_topics.exists():
+            lines.append("- docs/discovery/topics.json")
+        lines.append("")
+
     research_dir = planner.project_root / "docs" / "research"
     if research_dir.exists():
         research_files = sorted(research_dir.glob("*.md"))
         if research_files:
-            lines.append("## Completed Research (do NOT re-request)")
+            lines.append("## Research (pre-built — answers to discovery topics)")
             for rf in research_files:
                 lines.append(f"- docs/research/{rf.name}")
             lines.append("")
@@ -489,6 +524,8 @@ def build_prompt(planner, is_finalization: bool) -> str:
     volatile_parts.extend(_render_prior_run_issues_section(planner))
     # Foundation docs: dropped 3rd. ISSUE-006.
     volatile_parts.extend(_render_foundation_docs_section(planner))
+    # Discovery + research artifacts (pre-built): dropped under same budget pressure.
+    volatile_parts.extend(_render_discovery_section(planner))
 
     if planner.doc_gaps:
         critical_gaps = [g for g in planner.doc_gaps if g.severity == "critical"]
@@ -515,168 +552,6 @@ def build_prompt(planner, is_finalization: bool) -> str:
     prompt = _enforce_prompt_budget(prompt, planner)
     planner.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
     return prompt
-
-
-def execute_research(planner, action) -> None:
-    """Execute a research action for planner."""
-    max_per_cycle = planner.config.get("research_max_per_cycle", 2)
-    if planner._cycle_research_count >= max_per_cycle:
-        planner.logger.info(
-            f"Research cycle cap reached ({max_per_cycle}), deferring: {action.research_topic} "
-            "(will be available next cycle)"
-        )
-        return
-
-    sanitized = re.sub(r"[^a-z0-9_-]", "-", action.research_topic.lower())
-    sanitized = re.sub(r"-+", "-", sanitized).strip("-")[:80]
-    output_path = planner.project_root / "docs" / "research" / f"{sanitized}.md"
-    if output_path.exists():
-        planner.logger.info(f"Research already exists: docs/research/{sanitized}.md — skipping")
-        return
-
-    planner.logger.info(f"Researching: {action.research_topic}")
-    max_files = planner.config.get("research_max_scope_files", 10)
-    max_chars = planner.config.get("research_max_source_chars", 15000)
-    scope_content = []
-    for scope_path in (action.research_scope or [])[:max_files]:
-        full_path = planner.project_root / scope_path
-        if full_path.exists() and full_path.is_file():
-            try:
-                content = full_path.read_text(errors="replace")
-                if len(content) > max_chars:
-                    content = content[:max_chars] + "\n\n... (truncated)"
-                scope_content.append(f"### {scope_path}\n```\n{content}\n```")
-            except OSError:
-                planner.logger.warning(f"Could not read scope file: {scope_path}")
-        else:
-            planner.logger.warning(f"Scope file not found: {scope_path}")
-
-    prompt_parts = [
-        f"# Research: {action.research_topic}",
-        "",
-        "## Question",
-        action.research_question,
-        "",
-    ]
-    if scope_content:
-        prompt_parts.append("## Relevant Source Files\n")
-        prompt_parts.extend(scope_content)
-        prompt_parts.append("")
-
-    prompt_parts.extend(
-        [
-            "## Instructions",
-            "",
-            "Write a thorough, CONCRETE research document. This document will be used",
-            "directly by an implementation agent, so it must contain specific, usable content.",
-            "",
-            "If this is content design (items, levels, characters, cards, etc.):",
-            "- Create the ACTUAL content, not just guidelines",
-            "- List every item/level/card with specific names, stats, descriptions, and properties",
-            "- Include data that could be directly converted into JSON/config files",
-            "- Be creative and thorough — design ALL the content, not a sample",
-            "",
-            "If this is system design (mechanics, formulas, algorithms):",
-            "- Provide actual formulas with variables defined",
-            "- Include worked examples with real numbers",
-            "- Define edge cases and boundary conditions",
-            "- Specify data structures and state transitions",
-            "",
-            "If this is creative design (names, themes, flavor text):",
-            "- Generate ALL the names/themes/text needed, not just examples",
-            "- Be specific and consistent with the project's tone",
-            "",
-            "IMPORTANT — Copyright and originality:",
-            "- All content MUST be original. Never use real brand names, product names,",
-            "  character names, or copyrighted material.",
-            "- If the project parodies or spoofs real-world things, create ORIGINAL",
-            "  parody names and content that are clearly transformative.",
-            "- Fictional brands, characters, and products must be your own creations.",
-            "",
-            "The document should contain:",
-            "- Answers the research question with specific, actionable content",
-            "- References relevant code sections if scope files were provided",
-            "- Identifies trade-offs between alternatives",
-            "- Provides concrete implementation guidance",
-            "- Includes formulas, algorithms, or design patterns as applicable",
-            "",
-            "Output your response as a markdown document. No JSON wrapping needed.",
-        ]
-    )
-
-    prompt = add_research_output_constraints("\n".join(prompt_parts))
-    start_time = time.time()
-    result = planner.cli.execute_prompt(prompt, planner.project_root)
-    planner.state.record_provider_result(result, planner.config, phase="research")
-    duration = time.time() - start_time
-    planner.state.plan_elapsed_seconds += duration
-    planner.state.elapsed_seconds += duration
-
-    if not result["success"]:
-        planner.logger.error(f"Research failed for {action.research_topic}: {result.get('error')}")
-        return
-
-    output = result.get("output", "")
-    if not output:
-        planner.logger.warning(f"Research returned empty output for {action.research_topic}")
-        return
-    if is_permission_chatter(output):
-        planner.logger.warning(
-            "Research output requested write permissions; retrying with stricter constraints"
-        )
-        retry_prompt = build_repair_prompt(
-            action.research_topic,
-            action.research_question,
-            output,
-        )
-        retry_start = time.time()
-        retry_result = planner.cli.execute_prompt(
-            retry_prompt,
-            planner.project_root,
-        )
-        planner.state.record_provider_result(retry_result, planner.config, phase="research")
-        retry_duration = time.time() - retry_start
-        planner.state.plan_elapsed_seconds += retry_duration
-        planner.state.elapsed_seconds += retry_duration
-        if not retry_result["success"] or not retry_result.get("output"):
-            planner.logger.error(
-                f"Research retry failed for {action.research_topic}: {retry_result.get('error')}"
-            )
-            return
-        output = retry_result["output"]
-        if is_permission_chatter(output):
-            planner.logger.error(
-                f"Research output for {action.research_topic} still contains permission chatter; skipping write"
-            )
-            return
-
-    research_dir = planner.project_root / "docs" / "research"
-    research_dir.mkdir(parents=True, exist_ok=True)
-
-    full_content = (
-        f"# Research: {action.research_topic}\n\n"
-        "*Auto-generated by AIDLC research phase*\n\n"
-        f"**Question:** {action.research_question}\n\n"
-        "---\n\n"
-        f"{output}"
-    )
-    output_path.write_text(full_content)
-
-    planner.state.files_created += 1
-    planner.state.created_artifacts.append(
-        {
-            "path": f"docs/research/{sanitized}.md",
-            "type": "research",
-            "action": "create",
-        }
-    )
-    planner._research_count += 1
-    planner._cycle_research_count += 1
-    planner.logger.info(f"Research complete: docs/research/{sanitized}.md")
-
-    output_dir = planner.run_dir / "claude_outputs"
-    output_dir.mkdir(exist_ok=True)
-    (output_dir / f"research_{sanitized}.md").write_text(output)
 
 
 def render_issue_md(issue: Issue) -> str:

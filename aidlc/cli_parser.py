@@ -34,7 +34,7 @@ def build_parser(version: str) -> argparse.ArgumentParser:
 
             For existing repos:
               aidlc init                Scaffolds BRAINDUMP.md (edit it, then run)
-              aidlc run --audit         Run a code audit before planning
+              aidlc run                 Discovery + research run before planning
 
             More info: https://github.com/highlyprofitable108/aidlc
         """
@@ -106,13 +106,6 @@ def build_parser(version: str) -> argparse.ArgumentParser:
         help="Max implementation cycles (0=unlimited)",
     )
     run_parser.add_argument("--verbose", "-v", action="store_true", help="Debug logging")
-    run_parser.add_argument(
-        "--audit",
-        nargs="?",
-        const="quick",
-        choices=["quick", "full"],
-        help="Audit existing code before planning (default: quick)",
-    )
     run_parser.add_argument(
         "--skip-validation",
         action="store_true",

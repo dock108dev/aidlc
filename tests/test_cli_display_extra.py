@@ -55,7 +55,9 @@ def test_print_precheck_ready_when_braindump_present(capsys):
     assert "BRAINDUMP.md" in out
 
 
-def test_print_precheck_has_source_and_audit_hint(capsys):
+def test_print_precheck_has_source_hint(capsys):
+    """When source code is detected, the precheck hint should mention the
+    pre-planning discovery pass so users know the planner sees current state."""
     result = MagicMock()
     result.config_created = False
     result.has_source_code = True
@@ -64,4 +66,4 @@ def test_print_precheck_has_source_and_audit_hint(capsys):
     result.ready = True
     display.print_precheck(result, Path("/tmp"), verbose=False)
     out = capsys.readouterr().out
-    assert "audit" in out.lower()
+    assert "discovery" in out.lower()

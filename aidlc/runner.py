@@ -1,10 +1,12 @@
 """Main runner for AIDLC — orchestrates the full lifecycle.
 
 Flow:
-    1. SCAN — Discover project docs and build context
-    2. PLAN — Time-constrained planning session (creates issues)
-    3. IMPLEMENT — Loop through issues until all are done
-    4. REPORT — Generate final summary
+    1. SCAN      — Discover project docs and build context
+    2. DISCOVERY — Pre-planning model pass: write findings.md + topics.json
+    3. RESEARCH  — Execute the topic list discovery produced
+    4. PLAN      — Time-constrained planning session (creates issues)
+    5. IMPLEMENT — Loop through issues until all are done
+    6. REPORT    — Generate final summary
 
 Usage:
     aidlc run                              # full lifecycle, 4h planning budget
@@ -255,7 +257,6 @@ def run_full(
     plan_only: bool = False,
     implement_only: bool = False,
     verbose: bool = False,
-    audit: str | None = None,
     skip_finalize: bool = False,
     skip_validation: bool = False,
     finalize_passes: list[str] | None = None,
@@ -295,40 +296,6 @@ def run_full(
     phase_before_scan = state.phase
 
     try:
-        # AUDIT (optional) — analyze existing code before planning
-        if audit and not implement_only:
-            if state.phase in (RunPhase.INIT, RunPhase.AUDITING):
-                from .auditor import CodeAuditor
-
-                state.phase = RunPhase.AUDITING
-                cli.set_phase("audit")
-                state.audit_depth = audit
-                logger.info(f"Running {audit} code audit...")
-
-                auditor = CodeAuditor(
-                    project_root=Path(config["_project_root"]),
-                    config=config,
-                    cli=cli if audit == "full" else None,
-                    logger=logger,
-                )
-                audit_result = auditor.run(depth=audit)
-                state.audit_completed = True
-
-                if audit_result.conflicts:
-                    state.audit_conflicts = [c.to_dict() for c in audit_result.conflicts]
-                    state.status = RunStatus.PAUSED
-                    state.stop_reason = (
-                        f"Audit found {len(audit_result.conflicts)} conflict(s). "
-                        f"Review .aidlc/CONFLICTS.md and run 'aidlc run --resume'."
-                    )
-                    save_state(state, run_dir)
-                    logger.warning(state.stop_reason)
-                    lock.release()
-                    return
-
-                save_state(state, run_dir)
-                logger.info("Audit complete, proceeding to scan.")
-
         # SCAN — always scan (even on resume, to get fresh context)
         project_context, scan_result = scan_project(state, config, logger, cli=cli)
         hydrate_existing_issues(state, scan_result, logger)
@@ -363,11 +330,53 @@ def run_full(
                     f"({critical} critical, {len(doc_gaps) - critical} other)"
                 )
 
+        # DISCOVERY — pre-planning model pass: writes findings.md + topics.json
+        if not implement_only and not resume_skip_planning:
+            if state.phase in (
+                RunPhase.INIT,
+                RunPhase.AUDITING,  # forward-migrated old runs
+                RunPhase.SCANNING,
+                RunPhase.DISCOVERY,
+            ):
+                from .discovery import run_discovery
+
+                state.phase = RunPhase.DISCOVERY
+                save_state(state, run_dir)
+                run_discovery(
+                    state,
+                    config,
+                    cli,
+                    Path(config["_project_root"]),
+                    run_dir,
+                    logger,
+                    scan_result=scan_result,
+                )
+                state.phase = RunPhase.RESEARCH
+                save_state(state, run_dir)
+
+        # RESEARCH — execute the topic list discovery produced
+        if not implement_only and not resume_skip_planning:
+            if state.phase in (RunPhase.RESEARCH,):
+                from .research_phase import run_research_phase
+
+                run_research_phase(
+                    state,
+                    config,
+                    cli,
+                    Path(config["_project_root"]),
+                    run_dir,
+                    logger,
+                )
+                state.phase = RunPhase.PLANNING
+                save_state(state, run_dir)
+
         # PLAN
         if not implement_only:
             if state.phase in (
                 RunPhase.INIT,
                 RunPhase.SCANNING,
+                RunPhase.DISCOVERY,
+                RunPhase.RESEARCH,
                 RunPhase.PLANNING,
                 RunPhase.PLAN_FINALIZATION,
             ):

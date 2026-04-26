@@ -14,7 +14,6 @@ from typing import Optional
 PLANNING_ACTION_TYPES = {
     "create_issue",  # Create a new issue for implementation
     "update_issue",  # Refine an existing issue
-    "research",  # Investigate a topic before creating issues
 }
 
 
@@ -35,11 +34,6 @@ class PlanningAction:
     labels: list = field(default_factory=list)
     dependencies: list = field(default_factory=list)
     acceptance_criteria: list = field(default_factory=list)
-
-    # For research operations
-    research_topic: Optional[str] = None
-    research_question: Optional[str] = None
-    research_scope: list = field(default_factory=list)  # file paths to examine
 
     def validate(
         self,
@@ -94,12 +88,6 @@ class PlanningAction:
             if all_valid_ids and self.issue_id and self.issue_id not in all_valid_ids:
                 errors.append(f"cannot update unknown issue: {self.issue_id}")
 
-        if self.action_type == "research":
-            if not self.research_topic:
-                errors.append("research requires research_topic")
-            if not self.research_question:
-                errors.append("research requires research_question")
-
         return errors
 
     @classmethod
@@ -114,9 +102,6 @@ class PlanningAction:
             labels=data.get("labels", []),
             dependencies=data.get("dependencies", []),
             acceptance_criteria=data.get("acceptance_criteria", []),
-            research_topic=data.get("research_topic"),
-            research_question=data.get("research_question"),
-            research_scope=data.get("research_scope", []),
         )
 
 
@@ -298,18 +283,16 @@ Action shapes (canonical keys only — unknown keys are ignored, missing require
  "description": "...", "priority": "medium",
  "labels": [], "dependencies": [], "acceptance_criteria": ["..."]}
 ```
-```
-{"action_type": "research", "research_topic": "pricing-formula",
- "research_question": "How should condition modifiers stack?",
- "research_scope": ["game/systems/pricing.gd"]}
-```
 
 Rules:
 - ISSUE-NNN format; deps must already exist (in backlog or same batch).
 - Finalization cycle: `create_issue` only if `critical_gap: true` and `priority: "high"`.
-- `research` writes `docs/research/<topic>.md` for later cycles to reference.
+- Discovery and research are pre-planning phases. `docs/discovery/findings.md`
+  and `docs/research/*.md` are already on disk — read them to shape issues. Do
+  not propose `research` as a planning action; that action type is removed.
 - Doc authoring is not a planning action. Source code and BRAINDUMP.md are the
-  only inputs; do not file `create_doc`/`update_doc` actions — they are removed.
+  inputs alongside discovery/research artifacts; do not file
+  `create_doc`/`update_doc` actions — they are removed.
 """
 
 IMPLEMENTATION_SCHEMA_DESCRIPTION = """\

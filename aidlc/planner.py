@@ -14,7 +14,6 @@ from .logger import log_checkpoint
 from .models import Issue, RunPhase, RunState
 from .planner_helpers import (
     build_prompt,
-    execute_research,
     load_last_cycle_notes,
     render_issue_md,
     save_cycle_notes,
@@ -57,7 +56,6 @@ class Planner:
         self.doc_gaps = doc_gaps or []
         self.doc_files = doc_files or []
         self.existing_issues = existing_issues or []
-        self._research_count = 0
         self._last_cycle_notes = load_last_cycle_notes(self.run_dir)
         self.logger = logger
         self.project_root = Path(config["_project_root"])
@@ -263,7 +261,6 @@ class Planner:
         If Claude signals planning_complete, it's stored in
         self._pending_completion_reason for the run() loop to evaluate.
         """
-        self._cycle_research_count = 0
         self.state.planning_cycles += 1
         cycle_num = self.state.planning_cycles
         is_finalization = self.state.phase == RunPhase.PLAN_FINALIZATION
@@ -522,13 +519,6 @@ class Planner:
                 self.logger.info(f"Updated issue: {action.issue_id}")
             else:
                 self.logger.warning(f"Cannot update unknown issue: {action.issue_id}")
-
-        elif action.action_type == "research":
-            self._execute_research(action)
-
-    def _execute_research(self, action: PlanningAction) -> None:
-        """Execute a research action."""
-        execute_research(self, action)
 
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""

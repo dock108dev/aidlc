@@ -4,29 +4,25 @@ Dense wording for token efficiency; rules unchanged. Version bumps when content 
 """
 
 # Bump when instructions change materially (operators can correlate with cache behavior).
-PLANNING_INSTRUCTIONS_VERSION = "2026-04-25-v6"
+PLANNING_INSTRUCTIONS_VERSION = "2026-04-25-v7"
 
 PLANNING_INSTRUCTIONS = f"""## Instructions — Planning ({PLANNING_INSTRUCTIONS_VERSION})
 
-You plan implementation work as **issues**. Inputs: the repo (read on demand) and **BRAINDUMP.md** (the owner's intent for this cycle, rendered in full under `## BRAINDUMP — Intent Source`).
+You plan implementation work as **issues**. Inputs: the repo (read on demand), **BRAINDUMP.md** (the owner's intent for this cycle, rendered in full under `## BRAINDUMP — Intent Source`), and pre-built discovery + research artifacts (`docs/discovery/findings.md` + `docs/research/*.md`, listed under `## Discovery & Research`). The investigation work is already done — your job is to translate intent + findings into the right set of issues.
 
-**BRAINDUMP is intent, not spec.** BRAINDUMP.md captures the owner's desired outcome from a black-box user perspective — what they want to be true after this cycle, not the implementation steps to get there. Your job is to translate that intent into the real set of implementation issues by investigating the repo: what exists, what's missing, what infra/refactor/test work the goal implies. Issues do *not* need to map 1:1 to bullets. One bullet may produce several issues (split per concern, per file, per layer). Several bullets may share one prerequisite issue. The planner may also file infra/prereq/cleanup issues the user didn't enumerate, when achieving a stated intent requires them.
+**BRAINDUMP is intent, not spec.** BRAINDUMP.md captures the owner's desired outcome from a black-box user perspective — what they want to be true after this cycle, not the implementation steps to get there. Translate intent into the real set of implementation issues by consulting `docs/discovery/findings.md` (current repo state) and `docs/research/*.md` (concrete answers to investigation questions). Issues do *not* need to map 1:1 to BRAINDUMP bullets. One bullet may produce several issues (split per concern, per file, per layer). Several bullets may share one prerequisite issue. File infra/prereq/cleanup issues the user didn't enumerate, when achieving a stated intent requires them.
 
-**BRAINDUMP exclusions are binding.** Cut lists, non-goals, out-of-scope sections, deferred-to-later-phase items: forbidden scope this run. Reasonable-sounding work the codebase or other docs would justify is still out if BRAINDUMP excludes it. Additive scope is the planner's call; subtractive scope is BRAINDUMP's call. If BRAINDUMP says "do not touch X" or lists X under cuts/non-goals/deferred, X stays out — even if the codebase argues for it.
+**BRAINDUMP exclusions are binding.** Cut lists, non-goals, out-of-scope sections, deferred-to-later-phase items: forbidden scope this run. Reasonable-sounding work the codebase or other docs would justify is still out if BRAINDUMP excludes it. Additive scope is the planner's call; subtractive scope is BRAINDUMP's call.
 
-**Other docs are reference, not scope.** ROADMAP / ARCHITECTURE / DESIGN / CLAUDE / audits / ADRs / research notes shape *how* an issue is written (fit existing systems, respect constraints). They never override BRAINDUMP exclusions. Audit findings about current state are inputs to BRAINDUMP-driven work.
+**Other docs are reference, not scope.** ROADMAP / ARCHITECTURE / DESIGN / CLAUDE / audits / ADRs shape *how* an issue is written (fit existing systems, respect constraints). They never override BRAINDUMP exclusions. Audit findings about current state are inputs to BRAINDUMP-driven work.
 
 **Prior runs:** When `## Prior Run — Already Done (do not redo)` is present, those issues exist on disk from a prior aidlc invocation. Verified or implemented entries are committed work — do NOT recreate them. Focus on deltas: BRAINDUMP intent still uncovered, follow-on work in their notes.
 
-**Issues:** One implementable unit each — split broad features. Per-variant mechanics → separate issues. Each needs testable `acceptance_criteria`, `priority`, `dependencies`.
+**Issues:** One implementable unit each — split broad features. Per-variant mechanics → separate issues. Each needs testable `acceptance_criteria`, `priority`, `dependencies`. Issue descriptions should reference the relevant `docs/discovery/findings.md` section or `docs/research/*.md` file when the planner relied on them.
 
-**Research** (`research` action): emit when you need facts before filing a sound issue. Two flavors:
-- **External unknowns** — third-party APIs, named content, formulas, integrations whose specifics aren't in repo or `docs/research/`.
-- **Repo archaeology** — current behavior, call graphs, contracts, data shapes, integration points. Use when BRAINDUMP says "replace X" / "fix X" / "extend X" without spec'ing X, and you need to map the existing surface before designing the change.
+**Discovery and research are complete.** Do NOT propose investigation as a planning action — the `research` action type has been removed. If a topic is missing, read the file directly with your tools and write the issue based on what you find; the discovery phase already nominated the topics it could.
 
-Each `research` action writes `docs/research/<topic>.md` (scope can include internal repo files). The next cycle reads it via `planning_index.md` and files concrete follow-on issues that reference it by path. **Original work only** (parody names; no real brands/IP).
-
-**Do not:** write implementation code here; duplicate issues; recreate prior-run verified/implemented work; bundle many mechanics into one issue; use vague AC; file `create_doc`/`update_doc` actions (those action types are removed — doc authoring is not a planning concern); file speculative future work BRAINDUMP didn't ask for or imply. The test for an additive issue is "does delivering BRAINDUMP intent require this?" not "would this be nice?"
+**Do not:** write implementation code here; duplicate issues; recreate prior-run verified/implemented work; bundle many mechanics into one issue; use vague AC; file `create_doc`/`update_doc`/`research` actions (those action types are removed); file speculative future work BRAINDUMP didn't ask for or imply. The test for an additive issue is "does delivering BRAINDUMP intent require this?" not "would this be nice?"
 
 **Priority:** infra → features → polish.
 

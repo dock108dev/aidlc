@@ -4,7 +4,6 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-from aidlc.audit_models import AuditResult, DocGap
 from aidlc.issue_model import Issue
 from aidlc.models import IssueStatus, RunPhase, RunState
 from aidlc.runner import hydrate_existing_issues, init_run, run_full, scan_project
@@ -236,20 +235,21 @@ class TestRunFull:
 
     @patch("aidlc.doc_gap_detector.detect_doc_gaps")
     @patch("aidlc.runner.scan_project")
-    @patch("aidlc.auditor.CodeAuditor")
     @patch("aidlc.runner.ProviderRouter")
     @patch("aidlc.runner.RunLock")
-    def test_run_full_quick_audit_no_conflicts_plan_only(
+    def test_run_full_runs_discovery_then_research_then_planning(
         self,
         MockLock,
         MockRouter,
-        MockAuditor,
         mock_scan,
         mock_doc_gaps,
         config,
         tmp_path,
     ):
+        """Plan-only run should drive scan → discovery → research → planning
+        in order, in line with the new pre-planning phase shape."""
         (tmp_path / "README.md").write_text("# T")
+        (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- do thing")
         cfg = {
             **config,
             "dry_run": True,
@@ -260,12 +260,6 @@ class TestRunFull:
         mock_cli = MagicMock()
         mock_cli.check_available.return_value = True
         MockRouter.return_value = mock_cli
-
-        res = AuditResult()
-        res.conflicts = []
-        aud = MagicMock()
-        aud.run.return_value = res
-        MockAuditor.return_value = aud
 
         def _fake_scan(state, cfg, logger, cli=None):
             state.phase = RunPhase.SCANNING
@@ -282,17 +276,18 @@ class TestRunFull:
             )
 
         mock_scan.side_effect = _fake_scan
-        mock_doc_gaps.return_value = [
-            DocGap("a.md", 1, "TBD", "text", severity="critical"),
-            DocGap("b.md", 2, "x", "y", severity="warning"),
-        ]
+        mock_doc_gaps.return_value = []
 
-        with patch("aidlc.runner.Planner") as MockPlanner:
+        with (
+            patch("aidlc.discovery.run_discovery") as MockDiscovery,
+            patch("aidlc.research_phase.run_research_phase") as MockResearch,
+            patch("aidlc.runner.Planner") as MockPlanner,
+        ):
             MockPlanner.return_value.run = MagicMock()
-            run_full(config=cfg, dry_run=True, plan_only=True, audit="quick", verbose=False)
+            run_full(config=cfg, dry_run=True, plan_only=True, verbose=False)
 
-        aud.run.assert_called_once_with(depth="quick")
-        mock_cli.set_phase.assert_any_call("audit")
+        MockDiscovery.assert_called_once()
+        MockResearch.assert_called_once()
         mock_cli.set_phase.assert_any_call("planning")
 
     @patch("aidlc.runner.scan_project", side_effect=KeyboardInterrupt)

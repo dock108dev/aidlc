@@ -148,7 +148,6 @@ def cmd_run(args: argparse.Namespace) -> None:
     if getattr(args, "retry_failed", False):
         config["_retry_failed_flag"] = True
 
-    audit = getattr(args, "audit", None)
     skip_finalize = getattr(args, "skip_finalize", False)
     skip_validation = getattr(args, "skip_validation", False)
     passes_str = getattr(args, "passes", None)
@@ -169,7 +168,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         plan_only=args.plan_only,
         implement_only=args.implement_only,
         verbose=args.verbose,
-        audit=audit,
         skip_finalize=skip_finalize,
         skip_validation=skip_validation,
         finalize_passes=finalize_passes,

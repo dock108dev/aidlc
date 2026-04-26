@@ -1,7 +1,6 @@
-"""Unit tests for aidlc.planner_helpers — research, prompts, planning index, foundation."""
+"""Unit tests for aidlc.planner_helpers — prompts, planning index, foundation."""
 
 import logging
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -15,13 +14,11 @@ from aidlc.planner_helpers import (
     _render_existing_issues_section,
     _render_foundation_docs_section,
     build_prompt,
-    execute_research,
     load_last_cycle_notes,
     render_issue_md,
     save_cycle_notes,
     write_planning_index,
 )
-from aidlc.schemas import PlanningAction
 
 
 @pytest.fixture
@@ -45,9 +42,6 @@ def _base_config(tmp_path):
         "planning_last_cycle_notes_max_chars": 500,
         "planning_issue_index_max_items": 12,
         "planning_issue_index_include_all_until": 5,
-        "research_max_per_cycle": 5,
-        "research_max_scope_files": 3,
-        "research_max_source_chars": 30,
     }, run_dir
 
 
@@ -141,9 +135,26 @@ def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
     path = write_planning_index(planner)
     assert path.exists()
     body = path.read_text()
-    assert "Completed Research" in body
+    assert "Research" in body
+    assert "docs/research/a.md" in body
     assert "Other Project Docs" in body
     assert "and 5 more" in body or "more" in body
+
+
+def test_write_planning_index_includes_discovery_section(logger, tmp_path):
+    """Discovery findings + topics.json should be listed in the index when present."""
+    cfg, run_dir = _base_config(tmp_path)
+    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir.mkdir(parents=True)
+    (discovery_dir / "findings.md").write_text("# Findings\nstuff")
+    (discovery_dir / "topics.json").write_text("[]")
+    state = RunState(run_id="r", config_name="c")
+    planner = Planner(state, run_dir, cfg, MagicMock(), "ctx", logger)
+    path = write_planning_index(planner)
+    body = path.read_text()
+    assert "## Discovery" in body
+    assert "docs/discovery/findings.md" in body
+    assert "docs/discovery/topics.json" in body
 
 
 def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
@@ -167,289 +178,25 @@ def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
     assert "completion" in prompt.lower() or "offer" in prompt.lower()
 
 
-def _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg, **cfg_over):
-    merged = {**cfg, **cfg_over}
-    return SimpleNamespace(
-        project_root=tmp_path,
-        run_dir=run_dir,
-        config=merged,
-        logger=MagicMock(),
-        cli=cli,
-        state=state,
-        _cycle_research_count=0,
-        _research_count=0,
-    )
-
-
-def test_execute_research_deferred_when_cap(tmp_path):
+def test_build_prompt_includes_discovery_and_research(logger, tmp_path):
+    """When discovery/research artifacts exist on disk, build_prompt should
+    splice them into the prompt so the planner consumes them inline."""
     cfg, run_dir = _base_config(tmp_path)
+    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir.mkdir(parents=True)
+    (discovery_dir / "findings.md").write_text("# Findings\ntutorial system has 11 steps wired")
+    research_dir = tmp_path / "docs" / "research"
+    research_dir.mkdir(parents=True)
+    (research_dir / "tutorial-graph-shape.md").write_text("# Research")
     state = RunState(run_id="r", config_name="c")
+    state.phase = RunPhase.PLANNING
     cli = MagicMock()
-    planner = SimpleNamespace(
-        project_root=tmp_path,
-        run_dir=run_dir,
-        config={**cfg, "research_max_per_cycle": 0},
-        logger=MagicMock(),
-        cli=cli,
-        state=state,
-        _cycle_research_count=1,
-        _research_count=0,
-    )
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Topic",
-        research_question="Q?",
-    )
-    execute_research(planner, action)
-    planner.cli.execute_prompt.assert_not_called()
-
-
-def test_execute_research_skips_when_file_exists(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    rdir = tmp_path / "docs" / "research"
-    rdir.mkdir(parents=True)
-    (rdir / "topic-one.md").write_text("exists")
-    state = RunState(run_id="r", config_name="c")
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, MagicMock(), cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Topic One!",
-        research_question="Q?",
-    )
-    execute_research(planner, action)
-    planner.cli.execute_prompt.assert_not_called()
-
-
-def test_execute_research_success_writes_files(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    scope_rel = "src/scope.txt"
-    (tmp_path / "src").mkdir()
-    (tmp_path / scope_rel).write_text("line\n" * 20)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": True,
-        "output": "# Findings\nBody here.",
-        "error": None,
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="My Topic",
-        research_question="What?",
-        research_scope=[scope_rel],
-    )
-    execute_research(planner, action)
-    out = tmp_path / "docs" / "research" / "my-topic.md"
-    assert out.exists()
-    assert "Findings" in out.read_text()
-    assert any("research" in a.get("type", "") for a in state.created_artifacts)
-    assert (run_dir / "claude_outputs" / "research_my-topic.md").exists()
-
-
-def test_execute_research_accepts_internal_repo_paths_for_archaeology(tmp_path):
-    """Repo-archaeology research is a first-class flavor: research_scope may
-    point at internal repo source files (call graphs, current behavior,
-    contracts), not just external/docs URLs. Their content must reach the
-    prompt body and the run must complete normally."""
-    cfg, run_dir = _base_config(tmp_path)
-    (tmp_path / "game" / "systems").mkdir(parents=True)
-    archaeology_target = tmp_path / "game" / "systems" / "tutorial.gd"
-    archaeology_target.write_text("# 11-step tutorial graph\nfunc step_1():\n    pass\n")
-
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": True,
-        "output": "# Findings\nThe current graph has 11 steps.",
-        "error": None,
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="tutorial-current-behavior",
-        research_question="How is the current 11-step tutorial graph wired?",
-        research_scope=["game/systems/tutorial.gd"],
-    )
-    initial_count = planner._cycle_research_count
-    execute_research(planner, action)
-
-    out = tmp_path / "docs" / "research" / "tutorial-current-behavior.md"
-    assert out.exists()
-    assert "11 steps" in out.read_text()
-    assert planner._cycle_research_count == initial_count + 1
-    cli.execute_prompt.assert_called_once()
-    prompt_arg = cli.execute_prompt.call_args[0][0]
-    assert "game/systems/tutorial.gd" in prompt_arg
-    assert "11-step tutorial graph" in prompt_arg
-
-
-def test_execute_research_truncates_scope_and_warns_missing(tmp_path, caplog):
-    cfg, run_dir = _base_config(tmp_path)
-    (tmp_path / "a.txt").write_text("Z" * 200)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": True,
-        "output": "ok",
-        "error": None,
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Trunc",
-        research_question="Q",
-        research_scope=["a.txt", "missing.txt"],
-    )
-    with caplog.at_level(logging.WARNING):
-        execute_research(planner, action)
-    assert "Scope file not found" in caplog.text or planner.logger.warning.called
-    cli.execute_prompt.assert_called_once()
-
-
-def test_execute_research_scope_read_oserror(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    scope_rel = "err.txt"
-    p = tmp_path / scope_rel
-    p.write_text("x")
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": True,
-        "output": "body",
-        "error": None,
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="ErrRead",
-        research_question="Q",
-        research_scope=[scope_rel],
-    )
-    real_read = Path.read_text
-
-    def boom(self, *a, **kw):
-        if self.resolve() == p.resolve():
-            raise OSError("read fail")
-        return real_read(self, *a, **kw)
-
-    with patch.object(Path, "read_text", boom):
-        execute_research(planner, action)
-    planner.logger.warning.assert_called()
-
-
-def test_execute_research_cli_fails(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": False,
-        "output": "",
-        "error": "boom",
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="FailCli",
-        research_question="Q",
-    )
-    execute_research(planner, action)
-    planner.logger.error.assert_called()
-
-
-def test_execute_research_empty_output(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    cli.execute_prompt.return_value = {
-        "success": True,
-        "output": "",
-        "error": None,
-        "retries": 0,
-        "usage": {},
-    }
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="EmptyOut",
-        research_question="Q",
-    )
-    execute_research(planner, action)
-    planner.logger.warning.assert_called()
-
-
-def test_execute_research_permission_chatter_retry_then_ok(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    chatter = "The write tool needs your permission to save docs/research/x.md"
-    cli.execute_prompt.side_effect = [
-        {"success": True, "output": chatter, "error": None, "retries": 0, "usage": {}},
-        {
-            "success": True,
-            "output": "# Real\nResearch",
-            "error": None,
-            "retries": 0,
-            "usage": {},
-        },
-    ]
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Perm Retry",
-        research_question="Q?",
-    )
-    execute_research(planner, action)
-    assert cli.execute_prompt.call_count == 2
-    assert (tmp_path / "docs" / "research" / "perm-retry.md").exists()
-
-
-def test_execute_research_retry_still_fails(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    bad = "approve the write permission"
-    cli.execute_prompt.side_effect = [
-        {"success": True, "output": bad, "error": None, "retries": 0, "usage": {}},
-        {"success": False, "output": "", "error": "nope", "retries": 0, "usage": {}},
-    ]
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Bad Retry",
-        research_question="Q?",
-    )
-    execute_research(planner, action)
-    planner.logger.error.assert_called()
-
-
-def test_execute_research_retry_still_chatter(tmp_path):
-    cfg, run_dir = _base_config(tmp_path)
-    state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
-    bad = "needs your write permission"
-    cli.execute_prompt.side_effect = [
-        {"success": True, "output": bad, "error": None, "retries": 0, "usage": {}},
-        {"success": True, "output": bad, "error": None, "retries": 0, "usage": {}},
-    ]
-    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
-    action = PlanningAction(
-        action_type="research",
-        research_topic="Chatter2",
-        research_question="Q?",
-    )
-    execute_research(planner, action)
-    planner.logger.error.assert_called()
+    planner = Planner(state, run_dir, cfg, cli, "ctx", logger)
+    with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
+        prompt = build_prompt(planner, is_finalization=False)
+    assert "Discovery & Research" in prompt
+    assert "tutorial system has 11 steps wired" in prompt
+    assert "docs/research/tutorial-graph-shape.md" in prompt
 
 
 def test_render_foundation_section_renders_root_braindump(logger, tmp_path):
@@ -515,7 +262,3 @@ def test_load_last_cycle_notes_corrupt(tmp_path):
 def test_save_cycle_notes_roundtrip(tmp_path):
     save_cycle_notes(tmp_path, "frontier ok", "notes here", 3)
     assert "planning cycle (3)" in load_last_cycle_notes(tmp_path)
-
-
-# `upsert_doc_file` was removed along with the foundation-doc framework —
-# the planner no longer authors or recomputes status for support docs.

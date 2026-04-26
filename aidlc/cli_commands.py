@@ -116,7 +116,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
     print("Next steps:")
     print(f"  1. Open {_cyan('BRAINDUMP.md')} and describe what this cycle should deliver")
     print(
-        f"  2. Run {_cyan('aidlc run')}  (use {_cyan('--audit')} so the planner sees current state)"
+        f"  2. Run {_cyan('aidlc run')}  (discovery + research run automatically before planning)"
     )
 
     # Provider setup wizard (--providers flag)

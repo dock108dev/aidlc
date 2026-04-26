@@ -70,8 +70,8 @@ def print_precheck(result, project_root: Path, verbose: bool = False) -> None:
     if result.has_source_code:
         print(f"  {bold('Project:')} {result.project_type} {dim('(source code detected)')}")
         print(
-            f"    Tip: run {cyan('aidlc run --audit')} so the planner sees current state, "
-            "not a stale snapshot"
+            f"    {cyan('aidlc run')} runs a discovery pass before planning so the "
+            "planner sees current state, not a stale snapshot"
         )
     else:
         print(f"  {bold('Project:')} {dim('no source code detected (new project?)')}")

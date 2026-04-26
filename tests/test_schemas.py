@@ -182,11 +182,14 @@ class TestPlanningAction:
                 f"{action_type} should be rejected as unknown"
             )
 
-    def test_research_missing_topic_and_question(self):
+    def test_research_action_removed(self):
+        """research action_type is removed — discovery + research are pre-planning phases."""
+        from aidlc.schemas import PLANNING_ACTION_TYPES
+
+        assert "research" not in PLANNING_ACTION_TYPES
         action = PlanningAction(action_type="research")
         errors = action.validate()
-        assert any("research_topic" in e for e in errors)
-        assert any("research_question" in e for e in errors)
+        assert any("Unknown action_type" in e for e in errors)
 
     def test_unknown_action_type(self):
         action = PlanningAction(action_type="delete_issue")
