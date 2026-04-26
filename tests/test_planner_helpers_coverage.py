@@ -249,6 +249,45 @@ def test_execute_research_success_writes_files(tmp_path):
     assert (run_dir / "claude_outputs" / "research_my-topic.md").exists()
 
 
+def test_execute_research_accepts_internal_repo_paths_for_archaeology(tmp_path):
+    """Repo-archaeology research is a first-class flavor: research_scope may
+    point at internal repo source files (call graphs, current behavior,
+    contracts), not just external/docs URLs. Their content must reach the
+    prompt body and the run must complete normally."""
+    cfg, run_dir = _base_config(tmp_path)
+    (tmp_path / "game" / "systems").mkdir(parents=True)
+    archaeology_target = tmp_path / "game" / "systems" / "tutorial.gd"
+    archaeology_target.write_text("# 11-step tutorial graph\nfunc step_1():\n    pass\n")
+
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\nThe current graph has 11 steps.",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    planner = _fake_planner_for_research(tmp_path, run_dir, state, cli, cfg)
+    action = PlanningAction(
+        action_type="research",
+        research_topic="tutorial-current-behavior",
+        research_question="How is the current 11-step tutorial graph wired?",
+        research_scope=["game/systems/tutorial.gd"],
+    )
+    initial_count = planner._cycle_research_count
+    execute_research(planner, action)
+
+    out = tmp_path / "docs" / "research" / "tutorial-current-behavior.md"
+    assert out.exists()
+    assert "11 steps" in out.read_text()
+    assert planner._cycle_research_count == initial_count + 1
+    cli.execute_prompt.assert_called_once()
+    prompt_arg = cli.execute_prompt.call_args[0][0]
+    assert "game/systems/tutorial.gd" in prompt_arg
+    assert "11-step tutorial graph" in prompt_arg
+
+
 def test_execute_research_truncates_scope_and_warns_missing(tmp_path, caplog):
     cfg, run_dir = _base_config(tmp_path)
     (tmp_path / "a.txt").write_text("Z" * 200)

@@ -186,7 +186,7 @@ def _render_prior_run_issues_section(planner) -> list[str]:
 
 
 def _render_foundation_docs_section(planner) -> list[str]:
-    """Render the root-level BRAINDUMP.md in full as the cycle's scope source.
+    """Render the root-level BRAINDUMP.md in full as the cycle's intent source.
 
     This is the only doc the planner injects into the prompt. The repo itself
     is authoritative for "what is" (the model has file access — it can read
@@ -218,27 +218,36 @@ def _render_foundation_docs_section(planner) -> list[str]:
         return []
 
     return [
-        "\n## BRAINDUMP — Scope Source (authoritative)\n",
-        "BRAINDUMP.md is the **only** scope source. Every issue must trace to a "
-        "concrete ask in it. Before filing an issue, name the BRAINDUMP section, "
-        "bullet, or checklist row it satisfies — if you can't, the issue is out "
-        "of scope this cycle regardless of how reasonable it sounds.\n\n"
+        "\n## BRAINDUMP — Intent Source (authoritative)\n",
+        "BRAINDUMP.md is the **intent source** — the owner's black-box description "
+        "of what should be true after this cycle. It is not an implementation "
+        "spec. Translate it into issues by reading the repo: file the real work "
+        "needed to deliver the intent, including prereq/infra/refactor/test "
+        "issues and per-concern splits the user couldn't have enumerated. "
+        "Issues do not need 1:1 mapping to bullets.\n\n"
         "**Exclusions are binding.** If BRAINDUMP names a cut list, non-goals, "
         "out-of-scope section, or defers items to a later phase, those items "
         "MUST NOT be filed as issues — even if the codebase, audit findings, "
-        "or other docs argue they're needed. BRAINDUMP's exclusions override "
-        "everything else.\n\n"
+        "or other docs argue they're needed. Exclusions are the *only* hard "
+        "scope rule from BRAINDUMP; additive expansion to deliver stated intent "
+        "is the planner's judgment call.\n\n"
         "**Other docs are reference, not scope.** ROADMAP, ARCHITECTURE, DESIGN, "
         "CLAUDE, audits, ADRs, research notes — read them on demand to shape "
-        "*how* an issue is written (fit existing systems, respect constraints), "
-        "never to expand the backlog beyond BRAINDUMP. Audit findings about "
-        "current state are inputs to issues that BRAINDUMP asks for — not "
-        "license to file new categories of work.\n\n"
-        "**Research:** when a BRAINDUMP ask needs specifics you can't find in "
-        "the repo, emit a `research` action this cycle so `docs/research/<topic>.md` "
-        "lands before the dependent issue.\n\n"
-        "**Planning is complete when every concrete BRAINDUMP ask maps to a filed "
-        "or prior-run issue.**\n",
+        "*how* an issue is written (fit existing systems, respect constraints). "
+        "They never override BRAINDUMP exclusions. Audit findings about "
+        "current state are inputs to BRAINDUMP-driven work.\n\n"
+        "**Research:** emit a `research` action this cycle when you need facts "
+        "before filing a sound issue. Two flavors: (1) **external unknowns** — "
+        "third-party APIs, named content, formulas, integrations not in repo "
+        "or `docs/research/`; (2) **repo archaeology** — current behavior, "
+        "call graphs, contracts, data shapes, integration points. Use "
+        "archaeology when BRAINDUMP says \"replace X\" / \"fix X\" / \"extend X\" "
+        "without spec'ing X. `research_scope` may include internal repo files. "
+        "Output lands at `docs/research/<topic>.md` before the dependent "
+        "issues.\n\n"
+        "**Planning is complete when the filed-or-prior issue set is sufficient "
+        "to deliver every BRAINDUMP intent — including discovered prereq/infra "
+        "work. \"Sufficient\" not \"literal coverage.\"**\n",
         f"\n### BRAINDUMP.md (full content)\n```\n{content}\n```",
     ]
 
@@ -250,7 +259,7 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
       1. ## Existing Issues (current-run)
       2. ## Prior Run — Already Done (prior-run issues from disk)
       3. ## Previous Cycle
-      4. ## BRAINDUMP — Scope Source (last-resort drop; pointer is left behind)
+      4. ## BRAINDUMP — Intent Source (last-resort drop; pointer is left behind)
     Schema, instructions, and Run State are never dropped.
     """
     max_chars = max(4000, int(planner.config.get("max_planning_prompt_chars", 60000) or 60000))
@@ -289,8 +298,8 @@ def _enforce_prompt_budget(prompt: str, planner) -> str:
         return shrunk
 
     shrunk = re.sub(
-        r"\n## BRAINDUMP — Scope Source \(authoritative\)[\s\S]*?(?=\n## |\Z)",
-        "\n## BRAINDUMP — Scope Source (authoritative)\nRead BRAINDUMP.md at the project root for the full scope source. Only items it asks for are in scope; cut-list items are forbidden.",
+        r"\n## BRAINDUMP — Intent Source \(authoritative\)[\s\S]*?(?=\n## |\Z)",
+        "\n## BRAINDUMP — Intent Source (authoritative)\nRead BRAINDUMP.md at the project root for the full intent source. Translate intent into issues (1:N OK; file infra/prereq work as needed); cut-list items are forbidden.",
         shrunk,
         count=1,
     )
@@ -307,7 +316,7 @@ def write_planning_index(planner) -> Path:
     index_path = planner.run_dir.parent.parent / "planning_index.md"
     lines = ["# AIDLC Planning Index", ""]
 
-    lines.append("## Scope Source (authoritative)")
+    lines.append("## Intent Source (authoritative)")
     lines.append("- BRAINDUMP.md")
     lines.append("")
 

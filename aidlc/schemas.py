@@ -27,6 +27,10 @@ class PlanningAction:
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
+    # critical_gap: intent that won't be deliverable from the current issue set
+    # — either an uncovered BRAINDUMP ask, or a discovered prereq/infra issue
+    # without which a covered ask can't ship. Required to file create_issue
+    # during finalization.
     critical_gap: bool = False
     labels: list = field(default_factory=list)
     dependencies: list = field(default_factory=list)

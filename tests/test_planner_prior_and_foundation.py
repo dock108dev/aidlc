@@ -141,7 +141,7 @@ def test_foundation_section_only_renders_root_braindump(tmp_path):
         ],
     )
     out = "\n".join(_render_foundation_docs_section(p))
-    assert "BRAINDUMP — Scope Source" in out
+    assert "BRAINDUMP — Intent Source" in out
     assert "9-hole mini-golf" in out
     # Support docs are NOT inlined.
     assert "Three.js" not in out
@@ -220,7 +220,7 @@ def test_budget_drops_existing_first_then_prior_then_cycle_then_braindump(tmp_pa
         f"## Existing Issues\nlongbody {big}\n"
         f"## Prior Run — Already Done\nlongbody {big}\n"
         f"## Previous Cycle\nlongbody {big}\n"
-        f"## BRAINDUMP — Scope Source (authoritative)\nlongbody {big}\n"
+        f"## BRAINDUMP — Intent Source (authoritative)\nlongbody {big}\n"
         "## Run State\nkeep me too\n"
     )
     assert len(prompt) > 4000

@@ -94,6 +94,23 @@ class TestPlanningAction:
         errors = action.validate(is_finalization=True)
         assert errors == []
 
+    def test_create_issue_critical_gap_accepts_discovered_infra_prereq(self):
+        """An infra/prereq issue (one that doesn't directly satisfy a BRAINDUMP
+        bullet but unblocks one that does) is a valid critical_gap filing under
+        the intent-not-spec framing — schema should accept it."""
+        action = PlanningAction(
+            action_type="create_issue",
+            issue_id="ISSUE-042",
+            title="Add ShelfSlot mesh visibility helper (prereq for ISSUE-003)",
+            description="Discovered prereq: ISSUE-003 needs a shared visibility helper that doesn't exist yet.",
+            priority="high",
+            critical_gap=True,
+            acceptance_criteria=["Helper exists and ISSUE-003 can call it"],
+            dependencies=[],
+        )
+        errors = action.validate(is_finalization=True)
+        assert errors == []
+
     def test_create_issue_critical_gap_requires_high_priority(self):
         action = PlanningAction(
             action_type="create_issue",
