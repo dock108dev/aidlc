@@ -141,5 +141,3 @@ def _accumulate_usage(totals: dict, key: str, usage: dict) -> None:
     t["output_tokens"] += usage.get("output_tokens", 0)
     t["cost_usd_exact"] += usage.get("cost_usd_exact", 0.0) or 0.0
     t["cost_usd_estimated"] += usage.get("cost_usd_estimated", 0.0) or 0.0
-
-

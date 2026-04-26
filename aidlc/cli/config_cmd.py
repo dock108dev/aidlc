@@ -268,8 +268,10 @@ def print_effective_preview(config: dict, project_root: Path) -> None:
         manager = AccountManager()
         router.set_account_manager(manager)
     except Exception as exc:  # noqa: BLE001 — preview is interactive/diagnostic; never let a manager-init bug crash the command
-        logger.warning(f"AccountManager unavailable for preview ({exc}); "
-                       "account-scoped routing details will be omitted")
+        logger.warning(
+            f"AccountManager unavailable for preview ({exc}); "
+            "account-scoped routing details will be omitted"
+        )
         manager = None
 
     print(f"  {bold('Effective Runtime Preview')}")

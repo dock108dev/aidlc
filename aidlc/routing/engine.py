@@ -186,9 +186,7 @@ class ProviderRouter:
                     try:
                         self._account_manager.mark_used(decision.account_id)
                     except Exception as mark_err:  # noqa: BLE001 — 3rd-party AccountManager may raise anything; usage tracking is non-fatal
-                        self.logger.debug(
-                            f"mark_used failed for {decision.account_id}: {mark_err}"
-                        )
+                        self.logger.debug(f"mark_used failed for {decision.account_id}: {mark_err}")
 
                 if result.get("success"):
                     self._provider_cooldowns.pop(decision.provider_id, None)

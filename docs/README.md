@@ -1,6 +1,17 @@
 # Documentation index
 
-Project documentation for the **AIDLC** CLI (this repository). Planning templates copied into **consumer** repositories ship under `aidlc/project_template/` and are documented in [TEMPLATE_GUIDE.md](../aidlc/project_template/TEMPLATE_GUIDE.md).
+Project documentation for the **AIDLC** CLI (this repository). Planning
+templates copied into **consumer** repositories ship under
+[`aidlc/project_template/`](../aidlc/project_template/).
+
+## Project overview
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | High-level design: what the system is, how the pieces fit |
+| [DESIGN.md](DESIGN.md) | Per-issue design rationale (Problem → Approach → Touchpoints → Tests) |
+| [ROADMAP.md](ROADMAP.md) | Active issue list with acceptance criteria |
+| [CHANGELOG.md](CHANGELOG.md) | Per-fix change log, grouped by tier |
 
 ## Guides
 
