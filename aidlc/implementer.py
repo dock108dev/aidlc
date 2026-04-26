@@ -431,21 +431,35 @@ class Implementer:
             try:
                 impl_result = parse_implementation_result(output_text)
             except ValueError as e:
+                # Claude did not return parseable JSON. The structured-JSON
+                # contract is for communication (telling us what changed,
+                # why); git diff is the source of truth for verification.
+                # When the model wrote files but the JSON envelope is
+                # missing/garbled (e.g. mid-output timeout, trailing
+                # prose), trust the diff and proceed — the next test step
+                # is the real gate. Throwing the work away and retrying
+                # the entire issue is wildly expensive (~$5/attempt in
+                # cache reads) and almost never produces a different
+                # outcome.
                 self.logger.warning(f"No structured JSON result for {issue.id}: {e}")
-                # Check if Claude actually changed files via git diff
                 changed_files, detection_ok = self._get_changed_files(with_status=True)
                 if changed_files and detection_ok:
-                    self.logger.info(
-                        f"No JSON result but {len(changed_files)} files changed — "
-                        "rejecting unstructured implementation path"
+                    self.logger.warning(
+                        f"{issue.id}: accepting {len(changed_files)} file change(s) from git "
+                        "diff despite missing/garbled JSON envelope; tests will gate."
                     )
                     impl_result = ImplementationResult(
                         issue_id=issue.id,
-                        success=False,
-                        summary="Unstructured output with file changes is not accepted",
+                        success=True,
+                        summary=(
+                            f"Synthesized from git diff: {len(changed_files)} file(s) "
+                            "changed (no JSON envelope from model)"
+                        ),
                         files_changed=changed_files,
+                        # tests_passed is set by the test step below; default
+                        # False so a missing test step doesn't silently mark verified.
                         tests_passed=False,
-                        notes="Structured JSON output is required",
+                        notes=f"JSON parse failed ({e}); accepted via git-diff verification",
                     )
                 elif changed_files and not detection_ok:
                     self.logger.error(

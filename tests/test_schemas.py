@@ -46,6 +46,44 @@ Some text after"""
         result = parse_json_output(raw)
         assert result["actions"][0]["data"]["nested"] is True
 
+    def test_extra_data_after_json_object_is_ignored(self):
+        """Regression: greedy `\\{.*\\}` regex used to glue the first JSON
+        object to a trailing JSON block / prose, causing
+        ``json.JSONDecodeError: Extra data`` failures. raw_decode now stops
+        at the end of the first balanced object and ignores trailing data."""
+        raw = (
+            'Here is the result: {"issue_id": "ISSUE-001", "success": true}\n\n'
+            '{"unrelated": "second JSON the model added"}\n'
+            "And some prose explaining what was done.\n"
+        )
+        result = parse_json_output(raw)
+        assert result == {"issue_id": "ISSUE-001", "success": True}
+
+    def test_trailing_prose_after_json_object_is_ignored(self):
+        """Claude often writes prose AFTER the JSON result block; the
+        parser must accept the JSON and drop the trailing text."""
+        raw = (
+            '{"issue_id": "ISSUE-002", "success": true, "summary": "done"}\n'
+            "I have implemented the required functionality across 3 files.\n"
+        )
+        result = parse_json_output(raw)
+        assert result["issue_id"] == "ISSUE-002"
+
+    def test_fenced_block_takes_priority_over_trailing_object(self):
+        """When both a ```json fenced block and a separate raw object are
+        present, the fenced block wins (it's the model's explicit
+        "this is the structured result" marker)."""
+        raw = 'Notes:\n```json\n{"chosen": "fenced"}\n```\nAnd then: {"chosen": "trailing"}\n'
+        result = parse_json_output(raw)
+        assert result == {"chosen": "fenced"}
+
+    def test_array_at_top_level_rejected(self):
+        """The schema callers all expect a JSON object; reject arrays
+        explicitly rather than letting a list silently pass through."""
+        raw = '[{"some": "list"}, {"of": "objects"}]'
+        with pytest.raises(ValueError, match="Expected JSON object"):
+            parse_json_output(raw)
+
 
 class TestPlanningAction:
     def test_valid_create_issue(self):

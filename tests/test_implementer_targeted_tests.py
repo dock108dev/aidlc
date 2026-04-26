@@ -111,6 +111,71 @@ def test_effective_implementation_test_command_template(tmp_path):
     assert out == "echo res://tests/gut/test_x.gd"
 
 
+def test_sibling_expansion_capped_to_avoid_running_whole_suite(tmp_path):
+    """Regression: in flat test directories the sibling expansion used to
+    produce the entire suite (10+ paths), which then timed out at the
+    test_timeout_seconds gate. Above the cap we drop the expansion and
+    run only the explicitly-changed test files."""
+    gut = tmp_path / "tests" / "gut"
+    gut.mkdir(parents=True)
+    # 12 sibling test files, one of which the issue actually changed.
+    for i in range(12):
+        (gut / f"test_feature_{i}.gd").write_text("")
+    expanded = expand_same_directory_gut_tests(
+        tmp_path,
+        ["res://tests/gut/test_feature_0.gd"],
+        cap=8,
+    )
+    # Cap is 8; 12 + 1 explicit > 8, so expansion is skipped and the
+    # explicitly-changed path is the only thing returned.
+    assert expanded == ["res://tests/gut/test_feature_0.gd"]
+
+
+def test_sibling_expansion_keeps_small_dirs_intact(tmp_path):
+    """When the resulting set fits under the cap, the expansion still
+    runs — preserving the original "lightweight deps" intent for small
+    test directories."""
+    gut = tmp_path / "tests" / "gut" / "feature_a"
+    gut.mkdir(parents=True)
+    (gut / "test_x.gd").write_text("")
+    (gut / "test_y.gd").write_text("")
+    (gut / "test_z.gd").write_text("")
+    expanded = expand_same_directory_gut_tests(
+        tmp_path,
+        ["res://tests/gut/feature_a/test_x.gd"],
+        cap=8,
+    )
+    assert set(expanded) == {
+        "res://tests/gut/feature_a/test_x.gd",
+        "res://tests/gut/feature_a/test_y.gd",
+        "res://tests/gut/feature_a/test_z.gd",
+    }
+
+
+def test_config_cap_threads_through_effective_command(tmp_path):
+    """``implementation_targeted_test_sibling_expansion_cap`` from config
+    is honored by the effective-command builder."""
+    gut = tmp_path / "tests" / "gut"
+    gut.mkdir(parents=True)
+    for i in range(10):
+        (gut / f"test_t_{i}.gd").write_text("")
+    base = "godot --headless -s addons/gut/gut_cmdln.gd"
+    cfg = {
+        "implementation_use_targeted_tests_when_suite_unstable": True,
+        "implementation_targeted_test_sibling_expansion_cap": 4,
+    }
+    out = effective_implementation_test_command(
+        tmp_path,
+        base,
+        ["tests/gut/test_t_0.gd"],
+        project_wide_tests_unstable=True,
+        config=cfg,
+    )
+    # Cap=4; 10 siblings would balloon, so only the explicit file is in the gtest list.
+    assert out.count("res://") == 1
+    assert "-gtest=res://tests/gut/test_t_0.gd" in out
+
+
 def test_effective_implementation_test_command_opt_out(tmp_path):
     base = "godot -s addons/gut/gut_cmdln.gd"
     cfg = {"implementation_use_targeted_tests_when_suite_unstable": False}

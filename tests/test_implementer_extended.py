@@ -187,8 +187,14 @@ class TestImplementIssueSuccess:
         assert state.issues_implemented == 1
 
     @patch("aidlc.implementer_workspace.subprocess.run")
-    def test_no_json_but_files_changed(self, mock_git, config, logger, tmp_path):
-        """Non-JSON output with file changes should fail (legacy path removed)."""
+    def test_no_json_but_files_changed_is_accepted_via_git_diff(
+        self, mock_git, config, logger, tmp_path
+    ):
+        """When Claude wrote files via tools but the JSON envelope is
+        missing/garbled (mid-output timeout, trailing prose), the
+        implementer trusts the git diff and accepts the work — the test
+        step is the real gate. The previous reject-and-retry policy cost
+        ~$5/attempt for nothing."""
         mock_git.return_value = MagicMock(returncode=0, stdout="src/main.py\n")
         cli = MagicMock()
         cli.execute_prompt.return_value = {
@@ -206,7 +212,9 @@ class TestImplementIssueSuccess:
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
-        assert result is False
+        assert result is True
+        assert state.issues[0]["status"] == "implemented"
+        assert state.issues[0]["files_changed"] == ["src/main.py"]
 
     @patch("aidlc.implementer_workspace.subprocess.run")
     def test_no_json_no_files_fails(self, mock_git, config, logger, tmp_path):
@@ -812,9 +820,11 @@ class TestImplementerMoreBranches:
     @patch("aidlc.implementer.parse_implementation_result")
     @patch.object(Implementer, "_get_changed_files")
     @patch.object(Implementer, "_run_tests", return_value=True)
-    def test_implement_issue_bad_json_with_file_changes_rejected(
+    def test_implement_issue_bad_json_with_file_changes_accepted_via_git(
         self, _rt, mock_gcf, mock_parse, config, logger, tmp_path
     ):
+        """Bad JSON + git diff shows files changed → accept and proceed.
+        Tests gate the outcome (not the JSON envelope)."""
         mock_parse.side_effect = ValueError("bad")
         mock_gcf.return_value = (["x.py"], True)
         config["dry_run"] = False
@@ -834,7 +844,9 @@ class TestImplementerMoreBranches:
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = None
         issue = Issue.from_dict(state.issues[0])
-        assert impl._implement_issue(issue) is False
+        assert impl._implement_issue(issue) is True
+        assert state.issues[0]["status"] == "implemented"
+        assert state.issues[0]["files_changed"] == ["x.py"]
 
     @patch("aidlc.implementer.parse_implementation_result")
     @patch.object(Implementer, "_get_changed_files")

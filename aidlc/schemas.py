@@ -214,23 +214,45 @@ class ImplementationResult:
 
 
 def parse_json_output(raw_text: str) -> dict:
-    """Extract JSON from Claude's response. Handles ```json blocks and raw JSON."""
-    # Try ```json block first
+    """Extract the first JSON object from Claude's response.
+
+    Accepts either a ```json fenced block or raw text containing a JSON
+    object. When the response includes content **after** the JSON object
+    (a second JSON block, a trailing prose explanation, log lines emitted
+    after a graceful timeout-stop, etc.), the trailing content is
+    ignored — only the first balanced JSON object is returned.
+
+    Raises ``ValueError`` when no JSON object is found or the first
+    candidate cannot be parsed.
+    """
+    # Try ```json fenced block first — when present it's the model's
+    # explicit "this is the structured result" marker, so honor it.
     json_match = re.search(r"```json\s*\n(.*?)\n\s*```", raw_text, re.DOTALL)
     if json_match:
-        json_str = json_match.group(1)
-    else:
-        # Try raw JSON object
-        brace_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if brace_match:
-            json_str = brace_match.group(0)
-        else:
-            raise ValueError(f"No JSON found in response. Starts with: {raw_text[:200]}")
+        candidate = json_match.group(1).strip()
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON: {e}")
 
+    # Otherwise scan the raw text for the earliest top-level JSON marker
+    # ('{' or '[') and let raw_decode consume exactly one balanced value.
+    # raw_decode returns (parsed_value, end_index) and silently leaves any
+    # trailing data alone — the historical greedy regex used to glue
+    # multiple JSON blocks together and produce "Extra data" failures.
+    candidates = [i for i in (raw_text.find("{"), raw_text.find("[")) if i != -1]
+    if not candidates:
+        raise ValueError(f"No JSON found in response. Starts with: {raw_text[:200]}")
+    start = min(candidates)
     try:
-        return json.loads(json_str)
+        data, _end = json.JSONDecoder().raw_decode(raw_text[start:])
     except json.JSONDecodeError as e:
         raise ValueError(f"Failed to parse JSON: {e}")
+    if not isinstance(data, dict):
+        # Every caller of parse_json_output expects an object; reject
+        # arrays/scalars explicitly rather than passing them through.
+        raise ValueError(f"Expected JSON object, got {type(data).__name__}")
+    return data
 
 
 def parse_planning_output(raw_text: str) -> PlanningOutput:

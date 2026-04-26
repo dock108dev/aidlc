@@ -192,6 +192,12 @@ DEFAULTS = {
     "implementation_use_targeted_tests_when_suite_unstable": True,
     # Optional shell template; {gtest_paths} or {paths} = comma-separated res://... test .gd files.
     "implementation_targeted_test_command": None,
+    # When the targeted-test heuristic adds sibling test_*.gd files in the same
+    # directory ("lightweight deps"), cap the resulting list. In flat test
+    # directories (e.g. tests/gut/ with 20+ files) the expansion would otherwise
+    # produce a list large enough to time out the test command. Above this cap
+    # we skip the expansion and run only the explicitly-changed test files.
+    "implementation_targeted_test_sibling_expansion_cap": 8,
     "implementation_complexity_acceptance_criteria_threshold": 12,
     "implementation_complexity_dependencies_threshold": 5,
     "implementation_complexity_description_chars_threshold": 5000,

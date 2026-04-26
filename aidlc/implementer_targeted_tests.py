@@ -36,8 +36,24 @@ def collect_gut_paths_from_changes(project_root: Path, files_changed: list[str])
     return list(seen.keys())
 
 
-def expand_same_directory_gut_tests(project_root: Path, gut_paths: list[str]) -> list[str]:
-    """Add sibling `test_*.gd` in the same directory as any listed path (lightweight deps)."""
+_DEFAULT_SIBLING_EXPANSION_CAP = 8
+
+
+def expand_same_directory_gut_tests(
+    project_root: Path,
+    gut_paths: list[str],
+    *,
+    cap: int = _DEFAULT_SIBLING_EXPANSION_CAP,
+) -> list[str]:
+    """Add sibling ``test_*.gd`` in the same directory as any listed path.
+
+    The intent is "lightweight deps" — if a test changes, also run other
+    tests in the same directory that may share fixtures. In flat test
+    directories (e.g. ``tests/gut/`` with 20+ files) this expansion blows
+    the gtest list into the entire suite, which then times out and burns
+    money. When the expansion would exceed ``cap`` total paths we fall
+    back to the explicitly-changed paths and skip the expansion.
+    """
     out: dict[str, None] = {p: None for p in gut_paths}
     for res in gut_paths:
         rel = res.replace("res://", "").strip("/")
@@ -50,6 +66,10 @@ def expand_same_directory_gut_tests(project_root: Path, gut_paths: list[str]) ->
                 out[f"res://{rel2.as_posix()}"] = None
             except ValueError:
                 continue
+    if len(out) > cap:
+        # Too many siblings — running them all would time out. Keep the
+        # explicitly-changed paths and drop the expansion.
+        return list(gut_paths)
     return list(out.keys())
 
 
@@ -66,6 +86,8 @@ def build_automatic_targeted_command(
     project_root: Path,
     base_cmd: str,
     files_changed: list[str],
+    *,
+    sibling_expansion_cap: int = _DEFAULT_SIBLING_EXPANSION_CAP,
 ) -> str | None:
     """If base looks like GUT cmdln and we have test paths, return cmd with -gtest=... only."""
     base = (base_cmd or "").strip()
@@ -75,7 +97,7 @@ def build_automatic_targeted_command(
     if "gut" not in low and "-gtest" not in low:
         return None
     paths = collect_gut_paths_from_changes(project_root, files_changed)
-    paths = expand_same_directory_gut_tests(project_root, paths)
+    paths = expand_same_directory_gut_tests(project_root, paths, cap=sibling_expansion_cap)
     if len(paths) < 1:
         return None
     joined = ",".join(paths)
@@ -100,11 +122,23 @@ def effective_implementation_test_command(
     if not bool(config.get("implementation_use_targeted_tests_when_suite_unstable", True)):
         return base
 
+    cap = max(
+        1,
+        int(
+            config.get(
+                "implementation_targeted_test_sibling_expansion_cap",
+                _DEFAULT_SIBLING_EXPANSION_CAP,
+            )
+            or _DEFAULT_SIBLING_EXPANSION_CAP
+        ),
+    )
+
     tmpl = config.get("implementation_targeted_test_command")
     if isinstance(tmpl, str) and tmpl.strip():
         paths = expand_same_directory_gut_tests(
             project_root,
             collect_gut_paths_from_changes(project_root, files_changed or []),
+            cap=cap,
         )
         joined = ",".join(paths) if paths else ""
         try:
@@ -112,5 +146,10 @@ def effective_implementation_test_command(
         except (KeyError, ValueError):
             return base
 
-    auto = build_automatic_targeted_command(project_root, base, list(files_changed or []))
+    auto = build_automatic_targeted_command(
+        project_root,
+        base,
+        list(files_changed or []),
+        sibling_expansion_cap=cap,
+    )
     return auto if auto else base

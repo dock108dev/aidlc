@@ -149,6 +149,136 @@ class TestImplementer:
         assert state_with_issues.implementation_cycles <= 1
 
 
+class TestImplementUnstructuredOutput:
+    """Regression: when Claude wrote files via tools but the JSON envelope
+    is missing/garbled (mid-output timeout, trailing prose, second JSON
+    block confusing the parser), the implementer accepts the files via
+    git-diff verification rather than throwing the work away and burning
+    another full-cost attempt."""
+
+    @pytest.fixture
+    def issue_state(self):
+        s = RunState(run_id="t-unstructured", config_name="default")
+        s.issues = [
+            {
+                "id": "ISSUE-042",
+                "title": "test issue",
+                "description": "do thing",
+                "priority": "medium",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": ["AC1"],
+                "status": "pending",
+                "implementation_notes": "",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 0,
+                "max_attempts": 3,
+            },
+        ]
+        s.total_issues = 1
+        return s
+
+    def _build_impl(self, issue_state, tmp_path, logger, *, run_tests_command=None):
+        config = {
+            "_project_root": str(tmp_path),
+            "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
+            "_reports_dir": str(tmp_path / ".aidlc" / "reports"),
+            "checkpoint_interval_minutes": 999,
+            "max_consecutive_failures": 3,
+            "max_implementation_attempts": 3,
+            "test_timeout_seconds": 30,
+            "max_implementation_context_chars": 30000,
+            "dry_run": False,
+            "run_tests_command": run_tests_command,
+        }
+        (tmp_path / ".aidlc" / "issues").mkdir(parents=True, exist_ok=True)
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            # Two top-level JSON blocks glued together — the historical
+            # bug — used to cause "Extra data" parse failures. Plus
+            # trailing prose to simulate a mid-output timeout stop.
+            "output": (
+                '{"issue_id": "ISSUE-042", "success": true, "summary": "first"}\n\n'
+                '{"unrelated": "second block"}\n'
+                "And then some prose that should be ignored.\n"
+            ),
+            "success": True,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        return Implementer(issue_state, run_dir, config, cli, "context", logger)
+
+    def test_first_json_object_parses_when_followed_by_extra_data(
+        self, issue_state, tmp_path, logger
+    ):
+        """parse_implementation_result handles ``{...} {...} prose`` cleanly now.
+        This is the inner-parser regression test for the implementer path."""
+        impl = self._build_impl(issue_state, tmp_path, logger)
+        with patch.object(
+            impl,
+            "_get_changed_files",
+            return_value=(["a.py", "b.py"], True),
+        ):
+            issue = Issue.from_dict(issue_state.issues[0])
+            ok = impl._implement_issue(issue)
+        # The output had a clean first JSON block; that's the one we honor.
+        # success=True from JSON; tests skipped (no run_tests_command), so
+        # the issue lands as IMPLEMENTED.
+        assert ok is True
+
+    def test_truly_unparseable_output_with_files_changed_is_accepted_via_git(
+        self, issue_state, tmp_path, logger
+    ):
+        """When JSON is genuinely unparseable but git diff shows files
+        changed, accept the work and let tests gate. Previous behavior
+        rejected and forced a full retry — costing ~$5/attempt for nothing."""
+        impl = self._build_impl(issue_state, tmp_path, logger)
+        impl.cli.execute_prompt.return_value = {
+            "output": "I made some changes but forgot the JSON envelope.",
+            "success": True,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        with patch.object(
+            impl,
+            "_get_changed_files",
+            return_value=(["a.py", "b.py", "c.py"], True),
+        ):
+            issue = Issue.from_dict(issue_state.issues[0])
+            ok = impl._implement_issue(issue)
+        assert ok is True
+        updated = issue_state.issues[0]
+        assert updated["status"] == "implemented"
+        assert updated["files_changed"] == ["a.py", "b.py", "c.py"]
+
+    def test_unparseable_output_with_no_files_changed_still_fails(
+        self, issue_state, tmp_path, logger
+    ):
+        """No JSON AND no files changed is still a real failure — that's
+        Claude producing nothing, not a communication-format glitch."""
+        impl = self._build_impl(issue_state, tmp_path, logger)
+        impl.cli.execute_prompt.return_value = {
+            "output": "I considered the problem but did nothing.",
+            "success": True,
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 0.0,
+            "retries": 0,
+        }
+        with patch.object(impl, "_get_changed_files", return_value=([], True)):
+            issue = Issue.from_dict(issue_state.issues[0])
+            ok = impl._implement_issue(issue)
+        assert ok is False
+
+
 class TestSortIssues:
     def test_priority_ordering(self, config, cli, logger, tmp_path):
         state = RunState(run_id="t", config_name="c")

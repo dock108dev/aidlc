@@ -176,8 +176,15 @@ default** because it created spurious issues on mature repos.
   `aidlc/implementer_issue_order.py:sort_issues_for_implementation`, which
   topologically orders and **automatically breaks any remaining cycles**
   (one edge per cycle, with a `logger.warning`).
-- implementation success requires structured JSON output, including the
-  optional `existing_callers_checked: [<file:line>, …]` field.
+- implementation success normally comes from the model's structured JSON
+  output, which includes the optional `existing_callers_checked: [<file:line>, …]`
+  field. **Fallback:** when the model wrote files via tools but the JSON
+  envelope is missing or garbled (mid-output timeout, trailing prose,
+  duplicated JSON blocks), the implementer trusts the git diff and
+  proceeds — `files_changed` is populated from `git diff` and the test
+  step decides success. Throwing the work away and retrying the entire
+  issue would cost ~$5 per attempt for no functional benefit; the test
+  step is the real gate.
 - tests are run when configured or auto-detected.
 - final verification marks implemented issues as verified and can fail/pause
   on test failures (`fail_on_final_test_failure`).
