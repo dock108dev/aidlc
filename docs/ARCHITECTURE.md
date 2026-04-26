@@ -1,10 +1,10 @@
 # Architecture
 
 `aidlc` is a stateful CLI that runs an AI-assisted development life-cycle inside
-a target repository. A single run progresses through phases — scan, plan,
-implement, validate, finalize — emitting issues, code changes, and reports.
-Every Claude/Copilot/OpenAI call is dispatched through one router so model and
-account selection is centralized.
+a target repository. A single run progresses through phases — scan, discover,
+research, plan, implement, validate, finalize — emitting issues, code changes,
+and reports. Every Claude/Copilot/OpenAI call is dispatched through one router
+so model and account selection is centralized.
 
 The product surface is intentionally narrow: the customer writes
 `BRAINDUMP.md`, runs `aidlc run`, and the lifecycle does the rest. There are
@@ -15,53 +15,107 @@ core-focus audit.
 ## High-level flow
 
 ```
-aidlc init      (scaffolds .aidlc/ + BRAINDUMP.md)
+aidlc init      (scaffolds .aidlc/ + BRAINDUMP.md template)
 aidlc run
-   ├── scan         (ProjectScanner — read repo, detect type, find existing issues/docs)
-   ├── audit        (optional, --audit; produces STATUS.md + audit_result.json — read-only)
-   ├── plan         (Planner — repeated cycles → create_issue / create_doc / research)
+   ├── scan                (ProjectScanner — read repo, detect type, find existing issues/docs)
+   ├── discovery           (single pre-planning model pass — writes docs/discovery/findings.md + topics.json)
+   ├── research            (one model call per discovery-nominated topic — writes docs/research/<slug>.md)
+   ├── plan                (Planner — repeated cycles emit create_issue / update_issue actions)
    │   └── plan_finalization (wind-down near budget end)
-   ├── implement    (Implementer — one issue at a time, dependency-sorted)
-   ├── verify       (Final pass over implemented issues)
-   ├── validate     (test/fix loop, optional)
-   ├── finalize     (docs / cleanup passes)
+   ├── implement           (Implementer — one issue at a time, dependency-sorted)
+   ├── verify              (Final pass over implemented issues)
+   ├── validate            (test/fix loop, optional, --skip-validation to skip)
+   ├── finalize            (docs / cleanup passes, optional, --skip-finalize to skip)
    └── report
 ```
 
-State for the run lives at `.aidlc/runs/<run_id>/state.json` and is checkpointed
-on every cycle so the run is resumable.
+State for the run lives at `.aidlc/runs/<run_id>/state.json` and is
+checkpointed on every cycle so the run is resumable. The run phases tracked in
+state are defined by the `RunPhase` enum in `aidlc/models.py`:
+`init, scanning, discovery, research, planning, plan_finalization,
+implementing, verifying, validating, finalizing, reporting, done`.
 
 ## BRAINDUMP.md is the contract
 
 `BRAINDUMP.md` is the single source of truth for what the user wants built. It
 sits at the project root, is owned by the user, and is **never overwritten by
-the tool**. The auditor used to generate a workload-capped BRAINDUMP from
-runtime checks and overwrite the user's file; that inverted the design and was
-removed. The auditor still runs (via `aidlc run --audit`) but only writes
-`STATUS.md` (a generated artifact) and `.aidlc/audit_result.json`.
+the tool**. `aidlc/precheck.py` requires it before any run; without it,
+`aidlc run` exits early.
 
-`aidlc init` scaffolds an empty `BRAINDUMP.md` template if missing. The user
-fills it in, then runs `aidlc run`.
+`aidlc init` scaffolds an empty template if missing. The user fills it in,
+then runs `aidlc run`.
 
 ## Module map
+
+### Core lifecycle
 
 | Module | Role |
 |---|---|
 | `aidlc/runner.py` | Orchestrates the full lifecycle; owns the run loop and phase transitions. |
 | `aidlc/scanner.py` | Reads the project: docs, source files, prior `.aidlc/issues/`, audit cache. Builds the context blob the planner sees first. |
-| `aidlc/planner.py` | Iterative planning loop — emits `create_issue`, `update_issue`, `create_doc`, `update_doc`, `research` actions. Decides when planning is done. |
-| `aidlc/planner_helpers.py` | Prompt construction (`build_prompt`), prompt-budget enforcement, `_render_existing_issues_section`. The cache-friendly static prefix lives here. |
+| `aidlc/discovery.py` + `aidlc/discovery_prompt.py` | Single pre-planning model pass: writes `docs/discovery/findings.md` + `docs/discovery/topics.json`. |
+| `aidlc/research_phase.py` + `aidlc/research_output.py` | Executes the discovery-nominated topic list, writing `docs/research/<slug>.md` per entry. |
+| `aidlc/planner.py` | Iterative planning loop — emits `create_issue` / `update_issue` actions. Decides when planning is done. |
+| `aidlc/planner_dependency_graph.py` | Pure dependency-graph normalization: edge scrubbing + cycle detection + automatic cycle breaking (one edge per pass). |
+| `aidlc/planner_helpers.py` | Prompt construction (`build_prompt`), prompt-budget enforcement, cache-friendly static prefix. |
+| `aidlc/planner_text.py` | Static instruction blocks for the planning prompts. |
 | `aidlc/implementer.py` | Drives implementation cycles, one issue per CLI call. Owns the early-stop logic (token exhaustion, dep cycles, consecutive failures). |
-| `aidlc/implementer_helpers.py` | Implementation prompt builder. |
+| `aidlc/implementer_helpers.py` | Implementation prompt builder, test detection, transient-failure reopen. |
+| `aidlc/implementer_workspace.py` | Git probes (`git_has_changes`, `git_current_branch`), autosync commit/push, run-cache pruning. |
 | `aidlc/implementer_signals.py` | Predicates over CLI results — `is_all_models_token_exhausted`, `should_stop_for_provider_availability`. |
-| `aidlc/finalizer.py` | Runs finalization passes (`docs`, `cleanup`). |
+| `aidlc/implementer_issue_order.py` | Topological issue ordering with automatic cycle breaking. |
+| `aidlc/implementer_targeted_tests.py` | Targeted-test command construction when the project-wide suite is unstable. |
+| `aidlc/implementer_finalize.py` | Periodic-cleanup + pre-push finalize orchestration mid-run. |
+| `aidlc/finalizer.py` + `aidlc/finalize_prompts.py` | Runs finalization passes (`docs`, `cleanup`). |
 | `aidlc/validator.py` | Test/fix loop after implementation. |
-| `aidlc/auditor.py` + `aidlc/audit/` | Read-only code analysis. Triggered via `aidlc run --audit`; writes STATUS.md + audit_result.json. |
-| `aidlc/doc_gap_detector.py` | TBD/placeholder scanner. **Opt-in** (`doc_gap_detection_enabled: true`); off by default to avoid spurious issues on mature repos. |
-| `aidlc/state_manager.py` | `save_state` / `load_state`, `find_latest_run`. Run lock at `.aidlc/run.lock`. |
+| `aidlc/doc_gap_detector.py` | TBD/placeholder scanner. **Opt-in** (`doc_gap_detection_enabled: true`); off by default. |
+
+### CLI infrastructure
+
+| Module | Role |
+|---|---|
+| `aidlc/__main__.py`, `aidlc/cli_parser.py`, `aidlc/cli_commands.py` | argparse + per-subcommand handlers. |
+| `aidlc/cli/` | Per-command modules: `accounts`, `provider`, `usage_cmd`, `config_cmd`, `display`. |
+
+### Routing
+
+| Module | Role |
+|---|---|
+| `aidlc/routing/engine.py` | `ProviderRouter` — drop-in replacement for a single CLI; selects provider/account/model per call; runs the resolve+execute loop. |
+| `aidlc/routing/strategy_resolution.py` | Strategies (`balanced`, `cheapest`, `best_quality`, `custom`) decide *which provider*. |
+| `aidlc/routing/context.py` | Provider ordering, account selection, model resolution, `fallback_decision`. |
+| `aidlc/routing/cooldown.py` | Per-provider/per-model cooldown bookkeeping + exponential rate-limit buffer. |
+| `aidlc/routing/result_signals.py` | Classifies CLI results: `is_token_exhaustion_result`, `is_rate_limited_result`, `is_model_exhausted_result`. |
+| `aidlc/routing/adapter_registry.py` | Builds `{provider_id → adapter}` from config. |
+| `aidlc/routing/helpers.py` | Phase classification (`get_quality_sensitive_phases`, `implementation_phases`, `get_budget_providers`). |
+| `aidlc/routing/types.py` | `RouteDecision`, `RoutingStrategy`, `UsagePressure` data shapes. |
+
+### Provider adapters
+
+| Module | Role |
+|---|---|
+| `aidlc/providers/base.py` | Common adapter interface + heartbeat-aware subprocess wait. |
+| `aidlc/providers/claude_adapter.py` | Wraps `aidlc/claude_cli.py`. |
+| `aidlc/providers/copilot_adapter.py`, `aidlc/providers/openai_adapter.py` | Other CLI integrations. |
+| `aidlc/claude_cli.py` | Subprocess + retry/outage budget for the `claude` CLI. |
+| `aidlc/claude_cli_metadata.py` | Parses Claude CLI stream-json output into `(text, usage, cost, model_used, source)`. |
+
+### Accounts
+
+| Module | Role |
+|---|---|
+| `aidlc/accounts/manager.py` | `AccountManager`: register/list/validate provider accounts. |
+| `aidlc/accounts/credentials.py` | Keyring-first credential store with plaintext fallback (`~/.aidlc/credentials.json`). |
+| `aidlc/accounts/models.py` | `Account`, `AuthState`, `MembershipTier` data shapes. |
+
+### State, config, audit
+
+| Module | Role |
+|---|---|
+| `aidlc/state_manager.py` | `save_state` / `load_state`, `find_latest_run`, run lock at `.aidlc/run.lock`. |
 | `aidlc/config.py` | `DEFAULTS` dict, `_merge_user_config`, `load_config`, `write_default_config`. |
-| `aidlc/routing/` | `ProviderRouter` — drop-in replacement for a single CLI; selects provider/account/model per call. |
-| `aidlc/cli/`, `aidlc/cli_parser.py`, `aidlc/cli_commands.py` | argparse + per-subcommand handlers. |
+| `aidlc/config_detect.py` | Auto-detect test/lint commands from project markers. |
+| `aidlc/auditor.py` + `aidlc/audit/` | Read-only code analysis as a Python API. **No CLI surface today** — see [deprecations.md](deprecations.md). When `.aidlc/audit_result.json` is present (e.g. produced externally), `scanner.py` consumes it as planner context. |
 
 ## CLI surface
 
@@ -72,30 +126,28 @@ Core lifecycle:
 - `aidlc status` — last run summary
 - `aidlc reset` — clear `.aidlc/` working state
 
-Admin sugar:
+Admin:
 - `aidlc accounts` — manage provider accounts
 - `aidlc provider` — enable/disable/auth providers
 - `aidlc usage` — token + cost reporting
 - `aidlc config` — show/edit config
 
-Removed in the core-focus audit (see `CHANGELOG.md`):
-- `aidlc audit` — folded into `aidlc run --audit`
-- `aidlc finalize` — now runs as part of `aidlc run`
-- `aidlc improve` — duplicated `aidlc run`; concerns now go in `BRAINDUMP.md`
-- `aidlc plan` — interactive multi-doc generator was orthogonal to the core flow
-- `aidlc validate` — runs as part of `aidlc run`
+Removed in the core-focus audit (see [deprecations.md](deprecations.md)):
+`aidlc audit`, `aidlc finalize`, `aidlc improve`, `aidlc plan`, `aidlc validate`.
 
 ## The router
 
-`aidlc/routing/` resolves *one decision per call*: `RouteDecision(provider_id,
-account_id, adapter, model, reasoning)`.
+`aidlc/routing/` resolves *one decision per call*:
+`RouteDecision(provider_id, account_id, adapter, model, reasoning, ...)`.
 
 - `engine.py` — `ProviderRouter.execute_prompt()`: the entry point. Wraps a
-  retry loop that handles rate limits, token exhaustion, and provider failures.
+  retry loop that handles rate limits, token exhaustion, and provider
+  failures. Cooldown bookkeeping lives in `cooldown.py`.
 - `strategy_resolution.py` — strategies (`balanced`, `cheapest`, `best_quality`,
   `custom`) decide *which provider*.
 - `context.py:resolve_model_for_phase` — given a chosen provider, picks the
-  *model* by phase: `phase_models[phase]` → `default_model` → adapter default.
+  *model* by phase: user `phase_models[phase]` → user `default_model` →
+  DEFAULT `phase_models[phase]` → DEFAULT `default_model` → adapter default.
 - `result_signals.py` — classifies CLI results: `is_token_exhaustion_result`,
   `is_rate_limited_result`, `is_model_exhausted_result` (per-model vs.
   per-provider exhaustion).
@@ -109,10 +161,8 @@ Two key invariants:
    exhausted does the loop move to the next enabled provider.
 2. **User config wins over baked-in defaults.** A user setting
    `providers.claude.default_model: "opus"` in `.aidlc/config.json` overrides
-   the DEFAULT `phase_models.<phase>` entries. Precedence is: user
-   `phase_models[phase]` → user `default_model` → DEFAULT `phase_models[phase]`
-   → DEFAULT `default_model` → adapter default. See `docs/configuration.md` for
-   the full table.
+   the DEFAULT `phase_models.<phase>` entries. See
+   [configuration.md](configuration.md) for the full precedence table.
 
 ## Planning prompt assembly
 
@@ -125,14 +175,28 @@ under prompt-budget pressure (`_enforce_prompt_budget`):
 |---|---|
 | Instructions / schema (static prefix) | never |
 | Run state (phase, cycle, elapsed/budget) | never |
+| Discovery findings + research file index (when present) | never |
 | Doc-gap summary (when opt-in is enabled) | last |
-| Foundation docs (BRAINDUMP / ROADMAP / ARCHITECTURE / DESIGN excerpts) | 3rd |
+| Foundation docs (BRAINDUMP / ROADMAP / ARCHITECTURE / DESIGN excerpts at the **target repo root**) | 3rd |
 | Prior cycle notes | 2nd |
 | Existing issues (current run + prior runs with status) | 1st (drop first) |
 
 The "prior issues" and "foundation docs" sections are what stop a re-run
-against an already-aidlc'd repo from re-planning from scratch. A planner with
-no memory of prior decisions tends to rewrite working systems.
+against an already-aidlc'd repo from re-planning from scratch.
+
+## Planning action types
+
+The planner is constrained to two action types (defined in
+`aidlc/schemas.py:PLANNING_ACTION_TYPES`):
+
+| Action | Effect |
+|---|---|
+| `create_issue` | Create a new issue for implementation |
+| `update_issue` | Refine an existing issue |
+
+The historical `create_doc` / `update_doc` / `research` action types were
+removed; discovery and research are now standalone phases that run before
+planning, not planning actions.
 
 ## Implementation prompt assembly
 
@@ -143,7 +207,9 @@ prompt per issue containing:
 - Project context blob (from the scanner)
 - Previous-attempt notes (`issue.implementation_notes`) on retries
 - A `Must / Must not` block — including: "if a file/system already exists and
-  works (has tests, has callers), modify in place; rewriting is a last resort".
+  works (has tests, has callers), modify in place; rewriting is a last resort"
+- A list of `docs/research/*.md` filenames so the implementer reads relevant
+  research before designing a change
 
 The CLI returns structured JSON: `{issue_id, success, summary, files_changed,
 tests_passed, notes, existing_callers_checked}`. The implementer parses this,
@@ -153,19 +219,22 @@ updates the issue status, and continues to the next.
 
 `PASS_PROMPTS` is intentionally narrow: `docs`, `cleanup`. The legacy `ssot`,
 `security`, and `abend` passes were removed because their semantics had
-drifted (vague objectives, no clear definition of done) and the code shipped
-prompts no one was confident in. New passes will be reintroduced once their
-prompts and acceptance criteria are nailed down. See `aidlc/finalize_prompts.py`.
+drifted (vague objectives, no clear definition of done). New passes will be
+reintroduced once their prompts and acceptance criteria are nailed down. See
+`aidlc/finalize_prompts.py`.
 
 ## Lifecycle of a run's working directory
 
 ```
 <project_root>/
 ├── BRAINDUMP.md                      # customer's voice — never overwritten
-├── STATUS.md                         # auto-generated by audit (optional)
+├── docs/discovery/                   # generated by discovery phase
+│   ├── findings.md
+│   └── topics.json
+├── docs/research/<slug>.md           # one per discovery-nominated topic
 └── .aidlc/
     ├── config.json                   # user + auth config (preserved by `aidlc reset`)
-    ├── audit_result.json             # cached audit (deleted by reset)
+    ├── audit_result.json             # consumed if present; not produced by `aidlc run`
     ├── planning_index.md             # docs/issues index for the planner
     ├── issues/                       # ISSUE-<N>.md files (deleted by reset unless --keep-issues)
     ├── runs/<run_id>/                # per-run: state.json, claude_outputs/, cycle_snapshots/
@@ -194,12 +263,13 @@ The planner and implementer each have explicit stop conditions.
 **Implementer** (`implementer.py`):
 - All issues resolved.
 - All remaining issues blocked by unmet dependencies.
-- Dependency cycle.
+- Dependency cycle that survives auto-break (rare — both planner and
+  implementer-issue-ordering remove cycle edges automatically).
 - 3 consecutive failures (re-sort and try; second cycle of failures exits).
 - `should_stop_for_provider_availability(stop_reason)` → True (token
   exhaustion that survived the router's fallback chain, or no provider
   available).
-- Max-cycle cap (typically only set in dry-run, default 0 = unlimited).
+- Max-cycle cap (typically only set in dry-run; default 0 = unlimited).
 
 When the implementer stops with work remaining, finalization is **not**
 auto-run. The user opts in via `implementation_finalize_on_early_stop: true`
@@ -210,19 +280,28 @@ moment of failure.
 ## Status & abandoned-run handling
 
 A run that exits cleanly leaves `state.status = complete` (or `failed`,
-`paused`). A run killed externally (Ctrl-C, OOM, SIGTERM) used to leave
-`status = running`, indistinguishable from a still-active run. The runner now
-registers `atexit` + `SIGINT`/`SIGTERM` handlers that flip `status =
-interrupted` on non-clean exit. On resume, any `running`/`interrupted` run
-older than 1 hour is surfaced as `abandoned`, and the user is offered resume
-or fresh-start.
+`paused`). The runner registers `atexit` + `SIGINT`/`SIGTERM` handlers that
+flip `status = interrupted` on non-clean exit. On resume, any
+`running`/`interrupted` run older than 1 hour is surfaced as `abandoned`, and
+the user is offered resume or fresh-start.
 
 ## Test surface
 
-Tests live under `tests/`. They cover:
-- `tests/routing/` — strategy selection, fallback chain, rate-limit cooldown.
-- `tests/planner/` — prompt construction, budget enforcement, prior-issues
-  rendering.
-- `tests/implementer/` — early-stop conditions, retry policy, JSON parsing.
-- `tests/cli/` — argparse, `aidlc reset` flag combinations.
-- `tests/integration/` — end-to-end with stubbed CLI.
+Tests live as a flat directory under `tests/` (no subpackages). Areas covered
+(by file prefix):
+
+- `test_routing_*`, `test_strategy_*`, `test_context_*` —
+  routing, strategy selection, cooldown.
+- `test_planner*` — prompt construction, budget enforcement,
+  dependency-graph normalization (covered by `test_planner.py`'s
+  `_sanitize_issue_dependencies` tests).
+- `test_implementer*`, `test_implementer_extended.py` — early-stop conditions,
+  retry policy, JSON parsing, issue ordering.
+- `test_cli_*` — argparse, `aidlc reset` flag combinations, accounts/provider
+  subcommands.
+- `test_discovery*`, `test_research_phase.py` — pre-planning phases.
+- `test_audit_*`, `test_auditor.py` — read-only auditor (Python API).
+- `test_validation.py` — test/fix loop.
+
+CI runs `make lint` (ruff check + format check) and the full pytest suite
+with coverage.

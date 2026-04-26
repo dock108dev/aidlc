@@ -43,7 +43,7 @@ make format  # write formatting changes to aidlc/ and tests/
 
 ## Documentation
 
-All guides and reference material (commands, config, auditing, coverage, deployment) are in **`[docs/](docs/README.md)`**. Start at the **[documentation index](docs/README.md)**.
+All guides and reference material (architecture, lifecycle, config, deployment, migration) are in **[`docs/`](docs/README.md)**. Start at the **[documentation index](docs/README.md)**.
 
 ## Deploy / distribute
 

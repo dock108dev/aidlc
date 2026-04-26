@@ -7,46 +7,47 @@ The CLI is intentionally narrow:
 | Command | Purpose |
 |---|---|
 | `aidlc init` | Scaffold `.aidlc/` and `BRAINDUMP.md` (the customer's voice) |
-| `aidlc precheck` | Verify docs and config are in place |
+| `aidlc precheck` | Verify `BRAINDUMP.md` and `.aidlc/` are in place |
 | `aidlc run` | Run the full lifecycle |
 | `aidlc status` | Show last run summary |
 | `aidlc reset` | Clear stale `.aidlc/` working state |
-| `aidlc accounts` / `provider` / `usage` / `config` | Admin sugar |
+| `aidlc accounts` / `provider` / `usage` / `config` | Admin |
 
 `audit`, `finalize`, `improve`, `plan`, and `validate` were removed in the
 core-focus audit:
-- audit and finalize run inside `aidlc run` (use `--audit` to enable the
-  pre-planning audit; use `--skip-finalize` to skip cleanup passes)
+- `finalize` runs inside `aidlc run` (use `--skip-finalize` to skip cleanup
+  passes; pick a subset with `--passes`).
+- `validate` runs inside `aidlc run` (use `--skip-validation` to skip).
 - `improve` duplicated `run`; the way to focus a run on a concern is to
-  write it into `BRAINDUMP.md`
-- `plan` was an orthogonal multi-doc generator that overwrote
-  ARCHITECTURE/ROADMAP/DESIGN/CLAUDE; users now write `BRAINDUMP.md` and
-  optionally fill in templates with `aidlc init --with-docs`
-- `validate` ran the test/fix loop standalone; it now only runs as part of
-  `run` (use `--skip-validation` to skip)
+  write it into `BRAINDUMP.md`.
+- `plan` was an orthogonal multi-doc generator; users now write
+  `BRAINDUMP.md` and the planner phase consumes it.
+- `audit` had no equivalent integration into `aidlc run`. The auditor module
+  (`aidlc/auditor.py`) remains as an internal Python API but has no current
+  CLI surface — see [deprecations.md](deprecations.md).
 
 ## `aidlc run` Phase Order
 
 `aidlc run` orchestrates a stateful run. Phase values persisted in state match
-`RunPhase` in **`aidlc.models`** (enum values are lowercase with underscores,
+`RunPhase` in `aidlc.models` (enum values are lowercase with underscores,
 e.g. `plan_finalization`).
 
 Typical progression:
 
-1. **`auditing`** (optional): only when `--audit` or `--audit full` is used.
-   Read-only — produces `STATUS.md` + `.aidlc/audit_result.json`. Never
-   writes user-owned docs (`BRAINDUMP.md`, `ARCHITECTURE.md`, etc.).
-2. **`scanning`**: documentation and repo structure scan
-3. **`planning`**: iterative issue/doc/research action cycles
-4. **`plan_finalization`**: planning wind-down near budget end
-5. **`implementing`**: issue-by-issue implementation
-6. **`verifying`**: verification pass over implemented issues
-7. **`validating`** (optional): test/fix loop
-8. **`finalizing`** (optional): `docs` and `cleanup` passes
-9. **`reporting`** → **`done`**
-
-There is also an initial **`init`** phase before the first substantive work in
-a new run.
+1. **`init`** — initial phase before any substantive work in a fresh run
+2. **`scanning`** — repo + documentation scan via `ProjectScanner`
+3. **`discovery`** — single pre-planning model pass; reads `BRAINDUMP.md`
+   and the repo, writes `docs/discovery/findings.md` + `docs/discovery/topics.json`.
+   **Idempotent**: skipped on resume if both artifacts already exist.
+4. **`research`** — one model call per discovery-nominated topic; writes
+   `docs/research/<slug>.md` per entry. **Skip-if-exists per topic**.
+5. **`planning`** — iterative `create_issue` / `update_issue` action cycles
+6. **`plan_finalization`** — planning wind-down near budget end
+7. **`implementing`** — issue-by-issue implementation
+8. **`verifying`** — verification pass over implemented issues
+9. **`validating`** (optional) — test/fix loop
+10. **`finalizing`** (optional) — `docs` and `cleanup` passes
+11. **`reporting`** → **`done`**
 
 ## Run Modes
 
@@ -68,7 +69,6 @@ a new run.
   before resuming. Issues with cause `failed_dependency` or
   `failed_test_regression` are left for manual review.
 - **Dry run (no provider execution):** `aidlc run --dry-run`
-- **Audit before planning:** `aidlc run --audit` or `aidlc run --audit full`
 - **Skip optional stages:** `--skip-validation`, `--skip-finalize` (not
   allowed in production profile)
 - **Pick finalization passes:** `--passes docs` or `--passes docs,cleanup`
@@ -93,19 +93,38 @@ Use this instead of `rm -rf .aidlc/`.
 
 - Precheck runs automatically before `run` except in `--resume` and
   `--implement-only`.
+- `BRAINDUMP.md` at the project root is **required**. Without it, the run
+  exits early — see `aidlc/precheck.py`.
 - `.aidlc/` and `.aidlc/config.json` are auto-created when missing.
 - `--skip-precheck` is intentionally unsupported.
-- Current required-doc set is empty; readiness scoring is based on
-  recommended/optional docs. `BRAINDUMP.md` is recommended (it's the entry
-  point for the lifecycle).
+
+## Discovery and Research
+
+Discovery and research are pre-planning model passes that write
+**user-visible artifacts** under `docs/`:
+
+- **Discovery** (`aidlc/discovery.py`): one model call. Reads `BRAINDUMP.md`
+  + a repo summary. Writes:
+  - `docs/discovery/findings.md` — markdown findings
+  - `docs/discovery/topics.json` — JSON list of `{topic, question, scope}`
+    entries the research phase should investigate
+- **Research** (`aidlc/research_phase.py`): one model call per topic in
+  `topics.json`. Writes `docs/research/<slug>.md`. Per-topic failures log a
+  warning but do not fail the run; the next topic continues.
+
+Both phases are **idempotent**: existing artifacts are not regenerated unless
+deleted. This is what makes resume cheap.
+
+The planner reads the discovery findings and lists `docs/research/*.md`
+filenames in its prompt so it can reference researched answers without
+re-deriving them.
 
 ## Planning Semantics
 
-Planning can emit:
+The planner emits two action types (defined in `PLANNING_ACTION_TYPES`):
 
-- `create_issue` / `update_issue`
-- `create_doc` / `update_doc`
-- `research`
+- `create_issue`
+- `update_issue`
 
 Planner completion is controlled by cycle outcomes and guards:
 
@@ -118,41 +137,52 @@ Planner completion is controlled by cycle outcomes and guards:
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)
 - action-failure ratio threshold (`planning_action_failure_ratio_threshold`)
 
-Core planning foundation currently means `ARCHITECTURE.md`, `DESIGN.md`, and
-`CLAUDE.md` meeting size/quality checks. `BRAINDUMP.md` is the primary input —
-the planner reads it as the customer's intent.
+The planner's prompt also includes:
 
-The planning prompt also includes:
-
+- **Discovery findings + research file index** when present (always retained
+  under prompt-budget pressure).
 - **Prior Run — Already Done (do not redo)**: a section listing prior
   `.aidlc/issues/` with status (verified / implemented / failed / pending)
-  and a one-line implementation-notes excerpt. Tells the planner not to
-  re-create work that's already shipped.
+  and a one-line implementation-notes excerpt.
 - **Foundation Docs (committed — incremental changes only)**: the first
   ~2 KB of each of `ROADMAP.md`, `ARCHITECTURE.md`, `DESIGN.md` if present
-  at project root.
+  at the **target repo root**. Other optional context refs the planner reads
+  if present: `README.md`, `STATUS.md`, `CLAUDE.md`.
 
-Both sections are dropped first under prompt-budget pressure (so the
-schema/instructions remain intact).
+The "prior issues" and "foundation docs" sections are dropped first under
+prompt-budget pressure (so the schema/instructions remain intact).
+
+### Dependency-graph normalization
+
+Each planning cycle ends with `_sanitize_issue_dependencies()`, which:
+
+- drops non-string / empty / self / unknown / duplicate dependency edges
+- detects cycles
+- breaks each cycle by removing one edge (heuristic: pick the
+  lower-priority / heavier-dependency source)
+
+A `logger.warning` is emitted for every change. Issue markdown is rewritten
+to reflect the cleaned graph. See `aidlc/planner_dependency_graph.py`.
 
 ### Doc-gap detection (opt-in)
 
 Set `doc_gap_detection_enabled: true` in `.aidlc/config.json` to let the
-scanner surface TBD/placeholder markers as planning input. Off by default
-because it created spurious issues on mature repos.
+scanner surface TBD/placeholder markers as planning input. **Off by
+default** because it created spurious issues on mature repos.
 
 ## Implementation and Verification
 
-- issues are sorted by dependency and priority
-- dependency cycles are treated as stop conditions
+- issues are sorted by dependency and priority via
+  `aidlc/implementer_issue_order.py:sort_issues_for_implementation`, which
+  topologically orders and **automatically breaks any remaining cycles**
+  (one edge per cycle, with a `logger.warning`).
 - implementation success requires structured JSON output, including the
-  optional `existing_callers_checked: [<file:line>, …]` field for issues
-  that touch a system with existing callers
-- tests are run when configured or auto-detected
+  optional `existing_callers_checked: [<file:line>, …]` field.
+- tests are run when configured or auto-detected.
 - final verification marks implemented issues as verified and can fail/pause
-  on test failures (`fail_on_final_test_failure`)
+  on test failures (`fail_on_final_test_failure`).
 - optional strict git change verification can fail implementations
-  (`strict_change_detection`)
+  (`strict_change_detection`).
 
 ### Early stop and resume
 
@@ -166,11 +196,19 @@ behavior burned more budget at exactly the moment we wanted to stop cleanly.
 To opt back in, set `implementation_finalize_on_early_stop: true` in
 `.aidlc/config.json`; that runs the `cleanup` pass.
 
-Failed issues record a `failure_cause` (`failed_token_exhausted`,
-`failed_dependency`, `failed_test_regression`, `failed_unknown`). On the next
-implementation cycle, transient causes (`token_exhausted`, `unknown`) are
-auto-reopened to `pending`. Use `--retry-failed` to force-reopen all causes
-regardless.
+Failed issues record a `failure_cause`: `failed_token_exhausted`,
+`failed_dependency`, `failed_test_regression`, or `failed_unknown`. On the
+next implementation cycle, transient causes (`failed_token_exhausted`,
+`failed_unknown`) are auto-reopened to `pending`. Use `--retry-failed` to
+force-reopen all causes.
+
+### Periodic cleanup
+
+When `cleanup_passes_every_cycles > 0` (default 10) and `finalize_enabled`
+is true, the implementer runs the configured `cleanup_passes_periodic`
+subset (default `["abend", "cleanup"]`) every N cycles. This runs the
+finalizer mid-implementation to keep code health high. See
+`aidlc/implementer_finalize.py`.
 
 ## Validation Loop
 
@@ -185,38 +223,22 @@ When enabled, validator runs test tiers (`build`, `unit`, `integration`,
 Validation mode is SSOT-only:
 
 - `test_profile_mode` must be `"progressive"`
-- non-progressive modes are rejected at runtime
+- non-progressive modes raise at construction time
 
 In strict settings, unstable validation pauses the run.
 
 ## Finalization
 
-`finalize` pass order defaults to:
-
-`docs -> cleanup`
-
-(The legacy `ssot`, `security`, and `abend` passes were removed in the
-core-focus audit because their semantics had drifted; new passes will be
-reintroduced once their prompts and acceptance criteria are nailed down.)
+`finalize_passes` defaults to `null` (run all available passes). Available
+passes: `docs`, `cleanup`. The legacy `ssot`, `security`, `abend` passes
+were removed in the core-focus audit because their semantics had drifted;
+new passes will be reintroduced once their prompts and acceptance criteria
+are nailed down.
 
 During finalization, AIDLC also:
 
 - refreshes config detections into `.aidlc/config.json`
 - writes `AIDLC_FUTURES.md`
-
-## Audit Behavior
-
-`aidlc run --audit` runs the auditor before planning. The auditor is
-**read-only** for user-owned docs:
-
-- writes `STATUS.md` (a generated artifact) at project root
-- writes `.aidlc/audit_result.json`
-- detects conflicts between findings and existing `ARCHITECTURE.md` /
-  `ROADMAP.md` / `DESIGN.md` and reports them in `.aidlc/CONFLICTS.md`
-- **never** writes or overwrites `BRAINDUMP.md` or `ARCHITECTURE.md`
-
-`--audit full` additionally runs Claude-assisted analysis and (optionally)
-runtime checks (`build`/`unit`/`integration`/`e2e`).
 
 ## Concurrency and State
 

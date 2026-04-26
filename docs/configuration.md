@@ -50,9 +50,10 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
       "max_capacity_weight": 20,
       "default_model": "sonnet",
       "phase_models": {
+        "discovery": "sonnet",
         "planning": "sonnet",
         "research": "sonnet",
-        "implementation": "sonnet",
+        "implementation": "opus",
         "implementation_complex": "opus",
         "finalization": "sonnet",
         "audit": "sonnet"
@@ -70,7 +71,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 | `max_capacity` | Mark a backend as **high token capacity** (vs. Copilot/OpenAI-style). Default `true` for `claude`, `false` otherwise. |
 | `max_capacity_weight` | On planning/research/audit, balanced mode rotates by weighted fairness: lower `calls ÷ weight` is preferred, so a weight-20 provider gets ~20× the first-choice share over time. Default `20` when `max_capacity` is true. |
 | `default_model` | Fallback model when no `phase_models[phase]` entry resolves. **A user-set value overrides DEFAULT `phase_models` entries** — see precedence below. |
-| `phase_models` | Per-phase model selection. Keys: `planning`, `research`, `implementation`, `implementation_complex`, `finalization`, `audit`. |
+| `phase_models` | Per-phase model selection. Keys: `discovery`, `planning`, `research`, `implementation`, `implementation_complex`, `finalization`, `audit`. |
 | `model_fallback_chain` | Ordered list of models to try on the same provider when one returns "out of tokens". Default for Claude: `["sonnet", "opus", "haiku"]`. Empty/missing chain disables intra-provider fallback (router excludes the provider on first exhaustion). |
 
 For **`implementation`** and **`implementation_complex`**, every provider with `max_capacity: true` is ordered **before** other providers (stable order: claude → copilot → openai among those enabled). Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
@@ -103,8 +104,10 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 
 | Key | Default |
 |---|---|
-| `claude_long_run_warn_seconds` | `300` (warn every N seconds if Claude is still running) |
-| `claude_hard_timeout_seconds` | `1800` (30 minutes) |
+| `claude_long_run_warn_seconds` | `300` (heartbeat-log cadence while Claude is still running) |
+| `claude_hard_timeout_seconds` | `0` (disabled — stream-json gives an activity signal so wall-clock isn't the only liveness check). Production profile sets `1800`. |
+| `claude_stall_warn_seconds` | `300` (flip the heartbeat log from INFO to WARNING after this much silence; never kills) |
+| `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs) |
 | `claude_timeout_grace_seconds` | `30` (graceful shutdown window before SIGKILL) |
 | `telemetry_cost_mode` | `"auto"` |
 | `telemetry_estimate_usd` | `false` |
@@ -138,7 +141,8 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | `planning_action_failure_ratio_threshold` | `0.6` |
 | `max_doc_chars` | `10000` |
 | `max_context_chars` | `40000` |
-| `max_implementation_context_chars` | `12000` |
+| `max_implementation_context_chars` | `9000` |
+| `implementation_max_doc_chars` | `4000` |
 | `project_brief_max_chars` | `20000` |
 | `phase_context_max_chars` | `20000` |
 | `max_planning_prompt_chars` | `60000` |
@@ -201,7 +205,12 @@ When that happens, the run records that the **project-wide test gate is unstable
 | `e2e_test_command` | `null` |
 | `build_validation_command` | `null` |
 
-### Audit
+### Audit (Python API only — no CLI surface)
+
+The auditor module (`aidlc/auditor.py`) is read-only and invocable from
+Python; there is no `aidlc` CLI subcommand for it. When `.aidlc/audit_result.json`
+is present (e.g. produced externally), the scanner consumes it as planner
+context.
 
 | Key | Default |
 |---|---|
@@ -216,7 +225,12 @@ When that happens, the run records that the **project-wide test gate is unstable
 | `audit_playwright_headless` | `true` |
 | `audit_playwright_command_override` | `null` |
 
-The auditor used to write `BRAINDUMP.md` and a workload-capped seed plan based on `audit_braindump_*` / `audit_planning_workload_*` / `audit_*_estimate_*` knobs. Those knobs were removed in the core-focus audit because the auditor was overwriting the customer's `BRAINDUMP.md`. The auditor is now read-only for user-owned docs; it writes only `STATUS.md` and `.aidlc/audit_result.json`.
+The auditor used to write `BRAINDUMP.md` and a workload-capped seed plan
+based on `audit_braindump_*` / `audit_planning_workload_*` / `audit_*_estimate_*`
+knobs. Those knobs were removed in the core-focus audit because the auditor
+was overwriting the customer's `BRAINDUMP.md`. The auditor is now read-only
+for user-owned docs; it writes only `STATUS.md` and
+`.aidlc/audit_result.json`.
 
 ### Research
 
@@ -250,9 +264,17 @@ When `autosync_finalize_before_push` is `true` and `finalize_enabled` is `true`,
 | Key | Default |
 |---|---|
 | `finalize_enabled` | `true` |
-| `finalize_passes` | `null` (all default passes) |
+| `finalize_passes` | `null` (run all available passes: `docs`, `cleanup`) |
 | `finalize_timeout_seconds` | `900` |
 | `finalize_project_context_max_chars` | `22000` |
+| `cleanup_passes_every_cycles` | `10` (run a periodic cleanup subset every N implementation cycles; `0` disables) |
+| `cleanup_passes_periodic` | `["abend", "cleanup"]` (passes invoked by the periodic-cleanup hook) |
+
+**Periodic cleanup** runs the `cleanup_passes_periodic` subset of finalize
+passes every `cleanup_passes_every_cycles` implementation cycles. It is
+independent of autosync (which controls commit/push). The hook is wired in
+`aidlc/implementer_finalize.py`; pass selection is independent of
+`finalize_passes`, so you can run a smaller mid-run set than at end-of-run.
 
 ### Resume / reconcile
 

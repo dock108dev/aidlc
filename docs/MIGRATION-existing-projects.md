@@ -8,7 +8,7 @@ backward-compatible; two require user action.
 
 | You will notice | Why | What to do |
 |---|---|---|
-| `aidlc improve`, `aidlc plan`, `aidlc audit`, `aidlc finalize`, `aidlc validate` no longer exist | Core-focus audit | Audit + finalize run as part of `aidlc run`. To "improve" a specific concern, write it into `BRAINDUMP.md` and run `aidlc run`. |
+| `aidlc improve`, `aidlc plan`, `aidlc audit`, `aidlc finalize`, `aidlc validate` no longer exist | Core-focus audit | `finalize` and `validate` run as part of `aidlc run`. The `audit` engine remains as a Python module (`aidlc/auditor.py`) but has no CLI surface. To "improve" a specific concern, write it into `BRAINDUMP.md` and run `aidlc run`. |
 | The auditor no longer writes `BRAINDUMP.md` or `ARCHITECTURE.md` | Core-focus audit | If your `BRAINDUMP.md` was previously auto-generated, replace it with what you actually want built. `aidlc init` scaffolds a starter template. |
 | Finalization passes `ssot`, `security`, `abend` are gone | Core-focus audit | Their prompts had drifted. If you relied on them, expect smaller finalization output (just `docs` + `cleanup`). New passes will return once their prompts are nailed down. |
 | Doc-gap detection is now off by default | Core-focus audit | Set `doc_gap_detection_enabled: true` to opt back in (useful on greenfield projects). |
@@ -85,7 +85,8 @@ cp .aidlc/session/<ts>/ARCHITECTURE.md .
 ```
 
 Going forward there is no automated wizard for these docs — they are the
-user's voice. Use `aidlc init --with-docs` to copy starter templates.
+user's voice. `aidlc init` scaffolds `BRAINDUMP.md` from a template at
+`aidlc/project_template/BRAINDUMP.md`; other docs are user-authored.
 
 ### Failed issues from the no-fallback era
 

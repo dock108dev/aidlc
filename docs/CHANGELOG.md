@@ -1,7 +1,7 @@
 # Changelog
 
-Format: short entry per issue, grouped by tier. See `ROADMAP.md` for the
-issue list and `DESIGN.md` for per-fix rationale.
+Format: short entry per issue, grouped by tier. See [DESIGN.md](DESIGN.md)
+for per-fix rationale.
 
 ## Unreleased
 
@@ -29,8 +29,9 @@ back to the core flow.
   `aidlc init` now scaffolds a `BRAINDUMP.md` template by default; other
   doc templates remain available via `aidlc init --with-docs`.
 - **`aidlc audit`, `aidlc finalize`, `aidlc validate` standalone commands
-  removed.** Audit runs via `aidlc run --audit`; finalize and validate run
-  inside `aidlc run`. The underlying engines are unchanged.
+  removed.** `finalize` and `validate` engines run inside `aidlc run`. The
+  `audit` engine remains as a Python module (`aidlc/auditor.py`) but has no
+  current CLI surface — see [deprecations.md](deprecations.md).
 - **Doc-gap detection is now opt-in** (`doc_gap_detection_enabled: false`
   by default). On mature repos it created spurious planning issues from
   TBD/placeholder markers that were not meaningful gaps.
@@ -113,7 +114,8 @@ back to the core flow.
   `planning_diminishing_returns_min_threshold` (default 3) and `_max_threshold`
   (default 6). The legacy `diminishing_returns_threshold` config key has been
   removed; remove it from any existing config files.
-- **ISSUE-013** — `.aidlc/session/` subdirs are now pruned to the most recent
-  `session_dir_max_keep` (default 10) at start of each `aidlc plan`. Doc-gap
-  scan results are cached within a run keyed on doc-mtime hash; subsequent
-  planning cycles in the same run skip the rescan unless docs change.
+- **ISSUE-013** — Doc-gap scan results are cached within a run keyed on
+  doc-mtime hash; subsequent planning cycles in the same run skip the rescan
+  unless docs change. (The accompanying `.aidlc/session/` pruning shipped
+  for the original `aidlc plan` wizard, which has since been retired in the
+  core-focus audit; the `session_dir_max_keep` knob no longer exists.)

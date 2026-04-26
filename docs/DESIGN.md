@@ -1,16 +1,26 @@
 # Design
 
-Per-fix design notes for the prior remediation effort. Each section maps 1:1
-to an issue in `ROADMAP.md`. Format per section: **Problem** → **Approach** →
-**Alternatives considered** → **Touchpoints** → **Tests**.
+Per-fix design notes for the prior remediation effort
+(ISSUE-001..ISSUE-013, all closed). Format per section:
+**Problem** → **Approach** → **Alternatives considered** → **Touchpoints** →
+**Tests**.
 
-> **Note (post-core-focus audit):** ISSUE-002 (the `aidlc plan` wizard
-> overwrite bug) and ISSUE-013 (`session_dir_max_keep` pruning) describe
-> behavior in the now-retired `plan_session.py`. Likewise ISSUE-009's
-> "automatic ssot/abend/cleanup on early stop" refers to passes that have
-> since been removed (early-stop opt-in now runs `cleanup` only). The notes
-> are retained for historical context. See `CHANGELOG.md` for the
-> core-focus audit changeset.
+> **Historical record.** This document captures the design rationale for
+> a closed remediation effort. Some sections describe behavior that has
+> since been further changed by the core-focus audit and subsequent SSOT
+> cleanup:
+> - ISSUE-002 and ISSUE-013 describe behavior in the now-retired
+>   `aidlc plan` wizard / `plan_session.py`.
+> - ISSUE-009's "automatic ssot/abend/cleanup on early stop" refers to
+>   passes that have since been removed; the early-stop opt-in now runs
+>   `cleanup` only.
+> - ISSUE-011's "deprecated `diminishing_returns_threshold` retained as
+>   fallback" no longer holds — that key was removed entirely in the SSOT
+>   cleanup pass.
+>
+> The notes are kept here as engineering context for anyone re-touching
+> the same code paths. See [CHANGELOG.md](CHANGELOG.md) for the canonical
+> change history.
 
 ---
 
