@@ -1,4 +1,24 @@
-"""Best-effort reconciliation when resuming implementation — detect done work without replanning."""
+"""Best-effort reconciliation when resuming implementation — detect done work without replanning.
+
+The heuristic is **deliberately conservative** because the cost of a
+false positive (silently flipping an issue to ``implemented`` when it
+was actually still in progress) is very high: validation later runs
+against a stale "done" status, the implementer never re-attempts, and
+the user has to discover and unpick the mistake by hand.
+
+Concrete guard rails (all must hold for a flip):
+
+  1. Current status is ``pending`` or ``in_progress``. ``failed`` /
+     ``implemented`` / ``verified`` / ``skipped`` are left alone.
+  2. ``attempt_count == 0``. An issue with attempts already recorded was
+     actively being worked on this run; trust the recorded status (it
+     usually means a failure or interrupt mid-attempt).
+  3. The issue id appears in **at least one non-test file** in the git
+     tree. Tests and fixtures often carry the issue id in filenames
+     (e.g. ``tests/test_retro_games_scene_issue_006.gd``) before the
+     implementation has finished — so finding the id only in test paths
+     is not evidence of completion.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +27,21 @@ from pathlib import Path
 
 from .models import Issue, IssueStatus, RunState
 
-_RECONCILE_NOTE = "[aidlc resume] Auto-implemented (issue id found in repo outside .aidlc/)."
+_RECONCILE_NOTE = (
+    "[aidlc resume] Auto-implemented (issue id found in source files outside .aidlc/)."
+)
+
+# Path components treated as "test scaffolding" — references here do not
+# count as evidence of a completed implementation. Matched against
+# normalized directory segments (so ``__tests__/foo.test.ts`` matches via
+# the ``__tests__`` segment regardless of leading slash).
+_TEST_DIR_SEGMENTS = frozenset(
+    {"test", "tests", "spec", "specs", "__tests__", "__test__", "gut", "testing"}
+)
+_TEST_FILENAME_PREFIXES = ("test_", "spec_")
+# Common test-suffix patterns (Go: ``foo_test.go``; JS/TS: ``foo.test.ts``,
+# ``foo.spec.ts``).
+_TEST_FILENAME_INFIXES = (".test.", ".spec.", "_test.", "_spec.")
 
 
 def _git_repo_root(project_root: Path) -> Path | None:
@@ -27,8 +61,26 @@ def _git_repo_root(project_root: Path) -> Path | None:
         return None
 
 
-def _issue_id_referenced_in_tree(project_root: Path, issue_id: str) -> bool:
-    """True when `git grep` finds a fixed-string issue id outside ``.aidlc/``."""
+def _looks_like_test_path(path: str) -> bool:
+    """True when ``path`` is a test file or lives under a test directory."""
+    p = (path or "").lower().replace("\\", "/").strip("/")
+    if not p:
+        return True  # treat empty as "ignore" — defensively conservative
+    parts = p.split("/")
+    name = parts[-1]
+    if any(name.startswith(prefix) for prefix in _TEST_FILENAME_PREFIXES):
+        return True
+    if any(infix in name for infix in _TEST_FILENAME_INFIXES):
+        return True
+    # Any directory segment matching a known test path component.
+    for seg in parts[:-1]:
+        if seg in _TEST_DIR_SEGMENTS:
+            return True
+    return False
+
+
+def _issue_id_in_non_test_source(project_root: Path, issue_id: str) -> bool:
+    """True when ``git grep`` finds the issue id in at least one non-test file."""
     root = _git_repo_root(project_root)
     if root is None:
         return False
@@ -49,9 +101,12 @@ def _issue_id_referenced_in_tree(project_root: Path, issue_id: str) -> bool:
             text=True,
             timeout=120,
         )
-        return proc.returncode == 0 and bool(proc.stdout.strip())
     except (OSError, subprocess.TimeoutExpired):
         return False
+    if proc.returncode != 0:
+        return False
+    paths = [p for p in proc.stdout.splitlines() if p.strip()]
+    return any(not _looks_like_test_path(p) for p in paths)
 
 
 def reconcile_issues_on_resume(
@@ -62,10 +117,8 @@ def reconcile_issues_on_resume(
 ) -> int:
     """Mark likely-completed issues so implementation can continue without new planning.
 
-    Conservative heuristic: if the issue id appears in the tracked tree outside ``.aidlc/``,
-    flip **pending** / **in_progress** to **implemented** and append a resume note.
-
-    Returns the number of issues updated.
+    See module docstring for the (deliberately tight) guard rails. Returns
+    the number of issues updated.
     """
     cfg = config or {}
     if not cfg.get("resume_reconcile_enabled", True):
@@ -73,16 +126,28 @@ def reconcile_issues_on_resume(
 
     updated = 0
     updated_ids: list[str] = []
+    skipped_with_attempts = 0
+    skipped_test_only = 0
     for d in list(state.issues):
         if not isinstance(d, dict):
             continue
         st = d.get("status")
         if st not in ("pending", "in_progress"):
             continue
+        # Don't override issues that were actively being worked on in
+        # this run. attempt_count > 0 means the implementer touched it;
+        # trust the status it recorded (failure, partial, etc.).
+        attempts = int(d.get("attempt_count") or 0)
+        if attempts > 0:
+            skipped_with_attempts += 1
+            continue
         issue_id = d.get("id")
         if not issue_id or not isinstance(issue_id, str):
             continue
-        if not _issue_id_referenced_in_tree(project_root, issue_id):
+        if not _issue_id_in_non_test_source(project_root, issue_id):
+            # The id may still appear under tests/ — just not enough
+            # evidence to claim the implementation finished.
+            skipped_test_only += 1
             continue
 
         issue = Issue.from_dict(d)
@@ -100,11 +165,23 @@ def reconcile_issues_on_resume(
         sample = ", ".join(updated_ids[:5])
         more = f" (+{updated - 5} more)" if updated > 5 else ""
         logger.info(
-            "Resume reconcile: marked %s issue(s) implemented (id found in git tree outside .aidlc/) "
-            "— e.g. %s%s",
+            "Resume reconcile: marked %s issue(s) implemented "
+            "(id found in non-test source outside .aidlc/) — e.g. %s%s",
             updated,
             sample,
             more,
+        )
+    if skipped_with_attempts:
+        logger.info(
+            "Resume reconcile: left %s issue(s) alone because they have prior attempts "
+            "(trust recorded status over heuristic).",
+            skipped_with_attempts,
+        )
+    if skipped_test_only:
+        logger.debug(
+            "Resume reconcile: %s issue(s) had id references only in test files — not enough "
+            "evidence to flip; left as-is.",
+            skipped_test_only,
         )
 
     return updated

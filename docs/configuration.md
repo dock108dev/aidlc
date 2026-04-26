@@ -294,7 +294,13 @@ independent of autosync (which controls commit/push). The hook is wired in
 |---|---|
 | `resume_reconcile_enabled` | `true` |
 
-When you resume a run that's past planning, AIDLC will best-effort mark issues as implemented when their ID appears in the git tree outside `.aidlc/`. Disable with `resume_reconcile_enabled: false`.
+When you resume a run that's past planning, AIDLC will best-effort mark issues as implemented based on a deliberately tight heuristic. Three guard rails (all required for a flip):
+
+1. The issue's current status is `pending` or `in_progress` (`failed`, `implemented`, `verified`, `skipped` are left alone).
+2. **`attempt_count == 0`.** Issues with prior attempts in this run carry recorded status (failed, partially complete) — the reconcile path trusts that recorded status and does not flip it.
+3. The issue id appears in **at least one non-test source file** in the git tree. Test files often carry the issue id in their filename (e.g. `tests/gut/test_retro_scene_issue_006.gd`) before the implementation has finished, so a tests-only reference is not evidence of completion.
+
+Disable entirely with `resume_reconcile_enabled: false` in config.
 
 ## Production Profile Behavior
 
