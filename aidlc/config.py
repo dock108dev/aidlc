@@ -28,9 +28,10 @@ DEFAULTS = {
             "max_capacity_weight": 20,
             "default_model": "sonnet",
             "phase_models": {
+                "discovery": "sonnet",
                 "planning": "sonnet",
                 "research": "sonnet",
-                "implementation": "sonnet",
+                "implementation": "opus",
                 "implementation_complex": "opus",
                 "finalization": "sonnet",
                 "audit": "sonnet",
@@ -45,6 +46,7 @@ DEFAULTS = {
             "cli_command": "copilot",
             "default_model": "",
             "phase_models": {
+                "discovery": "",
                 "planning": "",
                 "research": "",
                 "implementation": "",
@@ -59,6 +61,7 @@ DEFAULTS = {
             "cli_command": "codex",
             "default_model": "gpt-5.4",
             "phase_models": {
+                "discovery": "gpt-5.4-mini",
                 "planning": "gpt-5.4-mini",
                 "research": "gpt-5.4-mini",
                 "implementation": "gpt-5.4",
