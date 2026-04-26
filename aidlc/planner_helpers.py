@@ -241,13 +241,13 @@ def _render_foundation_docs_section(planner) -> list[str]:
         "third-party APIs, named content, formulas, integrations not in repo "
         "or `docs/research/`; (2) **repo archaeology** — current behavior, "
         "call graphs, contracts, data shapes, integration points. Use "
-        "archaeology when BRAINDUMP says \"replace X\" / \"fix X\" / \"extend X\" "
+        'archaeology when BRAINDUMP says "replace X" / "fix X" / "extend X" '
         "without spec'ing X. `research_scope` may include internal repo files. "
         "Output lands at `docs/research/<topic>.md` before the dependent "
         "issues.\n\n"
         "**Planning is complete when the filed-or-prior issue set is sufficient "
         "to deliver every BRAINDUMP intent — including discovered prereq/infra "
-        "work. \"Sufficient\" not \"literal coverage.\"**\n",
+        'work. "Sufficient" not "literal coverage."**\n',
         f"\n### BRAINDUMP.md (full content)\n```\n{content}\n```",
     ]
 
