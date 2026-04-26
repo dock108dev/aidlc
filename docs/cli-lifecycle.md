@@ -112,8 +112,7 @@ Planner completion is controlled by cycle outcomes and guards:
 - budget/cycle caps
 - repeated no-new-issue cycles (**adaptive** diminishing returns: threshold
   = `clamp(min, ceil(num_issues_so_far / 10), max)`, configured via
-  `planning_diminishing_returns_min_threshold` / `_max_threshold`; legacy
-  `diminishing_returns_threshold` still read with a deprecation log)
+  `planning_diminishing_returns_min_threshold` / `_max_threshold`)
 - explicit `planning_complete` accepted only when completion is offered and
   core planning docs are sufficient
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)

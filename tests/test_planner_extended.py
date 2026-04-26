@@ -102,7 +102,7 @@ class TestPlanningCycleWithRealOutput:
         state.plan_budget_seconds = 3600
         state.issues_created = 1
         config["max_planning_cycles"] = 20
-        config["diminishing_returns_threshold"] = 3
+        config["planning_diminishing_returns_min_threshold"] = 3
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()

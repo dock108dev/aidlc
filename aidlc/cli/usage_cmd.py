@@ -64,38 +64,26 @@ def cmd_usage(args: argparse.Namespace, version: str) -> None:
         run_count += 1
 
         if by == "provider":
-            pdata = getattr(state, "provider_account_usage", {}) or {}
-            if pdata:
-                for provider_id, acct_map in pdata.items():
-                    for _acct_id, usage in acct_map.items():
-                        _accumulate_usage(totals, provider_id, usage)
-            else:
-                _accumulate_legacy_usage(totals, "claude", state)
+            for provider_id, acct_map in (
+                getattr(state, "provider_account_usage", {}) or {}
+            ).items():
+                for _acct_id, usage in acct_map.items():
+                    _accumulate_usage(totals, provider_id, usage)
 
         elif by == "account":
-            pdata = getattr(state, "provider_account_usage", {}) or {}
-            if pdata:
-                for provider_id, acct_map in pdata.items():
-                    for acct_id, usage in acct_map.items():
-                        _accumulate_usage(totals, f"{provider_id}/{acct_id}", usage)
-            else:
-                _accumulate_legacy_usage(totals, "claude/default", state)
+            for provider_id, acct_map in (
+                getattr(state, "provider_account_usage", {}) or {}
+            ).items():
+                for acct_id, usage in acct_map.items():
+                    _accumulate_usage(totals, f"{provider_id}/{acct_id}", usage)
 
         elif by == "phase":
-            phase_data = getattr(state, "phase_usage", {}) or {}
-            if phase_data:
-                for phase, usage in phase_data.items():
-                    _accumulate_usage(totals, phase, usage)
-            else:
-                _accumulate_legacy_usage(totals, "all_phases", state)
+            for phase, usage in (getattr(state, "phase_usage", {}) or {}).items():
+                _accumulate_usage(totals, phase, usage)
 
         elif by == "model":
-            model_data = getattr(state, "claude_model_usage", {}) or {}
-            if model_data:
-                for model, usage in model_data.items():
-                    _accumulate_usage(totals, model, usage)
-            else:
-                _accumulate_legacy_usage(totals, "unknown_model", state)
+            for model, usage in (getattr(state, "claude_model_usage", {}) or {}).items():
+                _accumulate_usage(totals, model, usage)
 
     if not totals:
         print("  No usage data found in selected run(s).")
@@ -155,13 +143,3 @@ def _accumulate_usage(totals: dict, key: str, usage: dict) -> None:
     t["cost_usd_estimated"] += usage.get("cost_usd_estimated", 0.0) or 0.0
 
 
-def _accumulate_legacy_usage(totals: dict, key: str, state) -> None:
-    usage = {
-        "calls": getattr(state, "claude_calls_total", 0),
-        "calls_succeeded": getattr(state, "claude_calls_succeeded", 0),
-        "input_tokens": getattr(state, "claude_total_input_tokens", 0),
-        "output_tokens": getattr(state, "claude_output_tokens", 0),
-        "cost_usd_exact": getattr(state, "claude_cost_usd_exact", 0.0) or 0.0,
-        "cost_usd_estimated": getattr(state, "claude_cost_usd_estimated", 0.0) or 0.0,
-    }
-    _accumulate_usage(totals, key, usage)

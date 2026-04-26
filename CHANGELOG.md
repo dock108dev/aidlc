@@ -109,10 +109,10 @@ back to the core flow.
   signal) and `abandoned` (stale `running`/`interrupted` older than 1 hour)
   from `running`. Resume surfaces abandoned runs.
 - **ISSUE-011** — Planning's diminishing-returns threshold is now adaptive to
-  issue count: `clamp(min, ceil(num_issues/10), max)` with new config keys
+  issue count: `clamp(min, ceil(num_issues/10), max)` with config keys
   `planning_diminishing_returns_min_threshold` (default 3) and `_max_threshold`
-  (default 6). The legacy `diminishing_returns_threshold` is still read with
-  a deprecation log.
+  (default 6). The legacy `diminishing_returns_threshold` config key has been
+  removed; remove it from any existing config files.
 - **ISSUE-013** — `.aidlc/session/` subdirs are now pruned to the most recent
   `session_dir_max_keep` (default 10) at start of each `aidlc plan`. Doc-gap
   scan results are cached within a run keyed on doc-mtime hash; subsequent

@@ -20,9 +20,6 @@ def resolve_balanced(
     is_complex = complexity_level == "complex"
     is_quality_phase = phase in helpers.get_quality_sensitive_phases() or is_complex
     is_impl = phase in helpers.implementation_phases()
-    is_legacy_premium = phase in helpers.get_premium_phases() or (
-        phase == "implementation" and is_complex
-    )
 
     provider_order = router._tier_aware_provider_order(phase, complexity_level)
 
@@ -95,12 +92,6 @@ def resolve_balanced(
                     f"implementation: {provider_id}/{model} — no max_capacity provider; "
                     "set providers.<id>.max_capacity for premium-first ordering"
                 )
-        elif is_legacy_premium and provider_id == "claude":
-            quality_note = f"legacy Claude-first phase ({phase}) → {provider_id}/{model}"
-        elif is_legacy_premium and provider_id != "claude":
-            quality_note = (
-                f"Claude unavailable for {phase} (legacy phase), fallback {provider_id}/{model}"
-            )
         elif max_cap and not is_impl:
             w = provider_max_capacity_weight(router.config, provider_id)
             quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}×)"

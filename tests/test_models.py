@@ -80,6 +80,21 @@ class TestIssue:
         assert restored.attempt_count == issue.attempt_count
 
 
+def test_legacy_auditing_phase_is_absent():
+    """SSOT: pre-planning intent flows through DISCOVERY → RESEARCH → PLANNING.
+    The deprecated AUDITING phase and its forward-migration shim were removed;
+    state.json files referencing 'auditing' will fail to deserialize."""
+    assert not hasattr(RunPhase, "AUDITING")
+    with pytest.raises(ValueError):
+        RunState.from_dict(
+            {
+                "run_id": "x",
+                "config_name": "default",
+                "phase": "auditing",
+            }
+        )
+
+
 class TestRunState:
     """Tests for the RunState dataclass."""
 

@@ -39,11 +39,6 @@ def get_quality_sensitive_phases() -> frozenset[str]:
     return frozenset({"planning", "implementation_complex", "finalization", "audit"})
 
 
-def get_premium_phases() -> frozenset[str]:
-    """Return phases that historically preferred Claude first (legacy; prefer ``max_capacity`` providers)."""
-    return frozenset({"implementation_complex"})
-
-
 def implementation_phases() -> frozenset[str]:
     """Phases that implement code — prefer config ``max_capacity`` providers."""
     return frozenset({"implementation", "implementation_complex"})
@@ -57,13 +52,3 @@ def get_balanced_provider_order() -> list[str]:
 def get_budget_providers() -> list[str]:
     """Return budget provider pair for round-robin distribution."""
     return ["copilot", "openai"]
-
-
-def is_premium_phase(phase: str, complexity: str = "normal") -> bool:
-    """Check if a phase should use premium tier (Claude)."""
-    premium = get_premium_phases()
-    quality_sensitive = get_quality_sensitive_phases()
-    is_complex = complexity == "complex"
-    impl_as_complex = phase == "implementation" and is_complex
-    quality_phase_complex = phase in quality_sensitive and is_complex
-    return phase in premium or impl_as_complex or quality_phase_complex

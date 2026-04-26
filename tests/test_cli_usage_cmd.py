@@ -3,10 +3,9 @@
 import argparse
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-from aidlc.cli.usage_cmd import _accumulate_legacy_usage, _accumulate_usage, cmd_usage
+from aidlc.cli.usage_cmd import _accumulate_usage, cmd_usage
 from aidlc.models import RunState
 from aidlc.state_manager import save_state
 
@@ -28,14 +27,16 @@ def test_cmd_usage_no_runs_dir(tmp_path, capsys):
     assert "No runs" in out or "runs" in out.lower()
 
 
-def test_cmd_usage_legacy_provider(tmp_path, capsys):
+def test_cmd_usage_legacy_state_without_ssot_fields_reports_no_data(tmp_path, capsys):
+    """SSOT: legacy state.json files predating provider_account_usage no longer
+    synthesize claude-only fallback rows; they report 'No usage data' instead."""
     runs = tmp_path / ".aidlc" / "runs"
     runs.mkdir(parents=True)
     _write_run(tmp_path, "run_a", claude_calls_total=2, claude_calls_succeeded=2)
     args = argparse.Namespace(project=str(tmp_path), by="provider", last=5, since=None)
     cmd_usage(args, "0.0.0")
     out = capsys.readouterr().out
-    assert "claude" in out.lower() or "Usage" in out
+    assert "No usage data" in out
 
 
 def test_cmd_usage_by_account_with_provider_map(tmp_path, capsys):
@@ -141,14 +142,9 @@ def test_accumulate_usage_creates_and_merges():
     assert t["a"]["input_tokens"] == 3
 
 
-def test_accumulate_legacy_usage():
-    st = MagicMock()
-    st.claude_calls_total = 1
-    st.claude_calls_succeeded = 1
-    st.claude_total_input_tokens = 3
-    st.claude_output_tokens = 2
-    st.claude_cost_usd_exact = 0.1
-    st.claude_cost_usd_estimated = 0.0
-    t = {}
-    _accumulate_legacy_usage(t, "claude", st)
-    assert t["claude"]["calls"] == 1
+def test_legacy_accumulator_helper_is_absent():
+    """SSOT: legacy fallback accumulator was removed; runs without
+    provider_account_usage report 0 totals, not synthesized claude-only counts."""
+    import aidlc.cli.usage_cmd as usage_cmd
+
+    assert not hasattr(usage_cmd, "_accumulate_legacy_usage")

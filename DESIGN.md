@@ -419,12 +419,12 @@ user can't tell whether the prior run finished or crashed.
 
 ## ISSUE-011 — Adaptive diminishing-returns threshold
 
-**Problem.** `planner.py` exits planning after `diminishing_returns_threshold`
-(default 2 in DEFAULTS, 3 in some paths) consecutive empty cycles. On a large
-repo with many issues already drafted, a stall in the middle of work can
-cross the threshold and force-exit even when scope remains.
+**Problem.** `planner.py` previously exited planning after a fixed
+`diminishing_returns_threshold` consecutive empty cycles. On a large repo
+with many issues already drafted, a stall in the middle of work could cross
+the threshold and force-exit even when scope remained.
 
-**Approach.** New config keys:
+**Approach.** Config keys (SSOT):
 - `planning_diminishing_returns_min_threshold: 3`
 - `planning_diminishing_returns_max_threshold: 6`
 
@@ -445,10 +445,10 @@ When the threshold is hit, log: `Diminishing returns: <N> empty cycles out of
 - Issue-count-driven minimum window for the rolling check. Possible follow-on.
 
 **Touchpoints.**
-- `aidlc/config.py` DEFAULTS — new keys; deprecate existing
-  `diminishing_returns_threshold` (keep reading it as a fallback for
-  backward compat, log a deprecation if set).
-- `aidlc/planner.py:147-235` — compute effective threshold each cycle.
+- `aidlc/config.py` DEFAULTS — only the new keys are read. The legacy
+  `diminishing_returns_threshold` config key has been fully removed (no
+  read, no deprecation log).
+- `aidlc/planner.py` — compute effective threshold each cycle.
 
 **Tests.**
 - `tests/planner/test_adaptive_threshold.py` — table-driven over issue
@@ -556,8 +556,8 @@ those that failed for transient reasons" without manually editing
 **Backward compatibility.**
 - ISSUE-009 changes a default (auto-finalize off). Documented in
   `CHANGELOG.md`; users who relied on the old behavior set the new flag true.
-- ISSUE-011 deprecates `diminishing_returns_threshold` but keeps reading it
-  with a deprecation log.
+- ISSUE-011 removes `diminishing_returns_threshold` entirely; the SSOT keys
+  are `planning_diminishing_returns_min_threshold` / `_max_threshold`.
 - ISSUE-012 adds an optional field to issue models; existing issues without
   it work unchanged.
 

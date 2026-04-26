@@ -24,7 +24,6 @@ class RunStatus(Enum):
 
 class RunPhase(Enum):
     INIT = "init"
-    AUDITING = "auditing"
     SCANNING = "scanning"
     DISCOVERY = "discovery"
     RESEARCH = "research"
@@ -258,12 +257,7 @@ class RunState:
         )
         state.project_root = data.get("project_root", "")
         state.status = RunStatus(data.get("status", "pending"))
-        # Old runs paused mid-AUDITING (deprecated phase) forward-migrate to SCANNING
-        # so the new discovery flow picks up cleanly on resume.
-        raw_phase = data.get("phase", "init")
-        if raw_phase == "auditing":
-            raw_phase = "scanning"
-        state.phase = RunPhase(raw_phase)
+        state.phase = RunPhase(data.get("phase", "init"))
         state.started_at = data.get("started_at")
         state.last_updated = data.get("last_updated")
         state.elapsed_seconds = data.get("elapsed_seconds", 0.0)

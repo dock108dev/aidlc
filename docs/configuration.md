@@ -130,7 +130,6 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | Key | Default |
 |---|---|
 | `diminishing_returns_window` | `5` |
-| `diminishing_returns_threshold` | `2` (deprecated — use the new min/max keys below) |
 | `planning_diminishing_returns_min_threshold` | `3` |
 | `planning_diminishing_returns_max_threshold` | `6` |
 | `finalization_budget_percent` | `10` |
@@ -151,7 +150,7 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | `doc_gap_detection_enabled` | `false` |
 | `doc_gap_max_items` | `50` |
 
-**Adaptive diminishing-returns threshold.** The planner exits when it sees N consecutive cycles with zero new issues. N is now adaptive to issue count: `N = clamp(min, ceil(num_issues_so_far / 10), max)`. So a small project (≤30 issues) uses 3, a large project (≥60 issues) uses 6. The legacy `diminishing_returns_threshold` is still read with a deprecation log; remove it from your config when you're ready.
+**Adaptive diminishing-returns threshold.** The planner exits when it sees N consecutive cycles with zero new issues. N is adaptive to issue count: `N = clamp(min, ceil(num_issues_so_far / 10), max)`. So a small project (≤30 issues) uses 3, a large project (≥60 issues) uses 6. The legacy `diminishing_returns_threshold` config key has been removed; use `planning_diminishing_returns_min_threshold` / `_max_threshold` instead.
 
 **Doc-gap detection (opt-in).** Off by default — on mature repos, scanning every doc for TBD/placeholder markers and turning them into spurious planning issues created noise. Set `doc_gap_detection_enabled: true` on greenfield projects where doc gaps are real planning input.
 

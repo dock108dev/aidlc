@@ -64,14 +64,32 @@ def _make_planner(tmp_path, num_issues: int, config_overrides: dict | None = Non
 )
 def test_adaptive_threshold_scales_with_issue_count(tmp_path, num_issues, expected):
     p = _make_planner(tmp_path, num_issues)
-    assert p._adaptive_diminishing_threshold(legacy_threshold=None) == expected
+    assert p._adaptive_diminishing_threshold() == expected
 
 
-def test_adaptive_threshold_legacy_threshold_acts_as_floor(tmp_path):
-    """When user set the deprecated key, treat it as the floor (no regression)."""
+def test_adaptive_threshold_signature_is_zero_arg(tmp_path):
+    """SSOT: ``_adaptive_diminishing_threshold`` no longer accepts a
+    ``legacy_threshold`` argument. The deprecated ``diminishing_returns_threshold``
+    config key was fully removed; only ``planning_diminishing_returns_min_threshold``
+    / ``_max_threshold`` shape the threshold."""
     p = _make_planner(tmp_path, num_issues=10)
-    # legacy=5 → floor becomes 5; ceil(10/10)=1; clamp(5, 1, 6) = 5
-    assert p._adaptive_diminishing_threshold(legacy_threshold=5) == 5
+    with pytest.raises(TypeError):
+        p._adaptive_diminishing_threshold(legacy_threshold=5)
+
+
+def test_legacy_diminishing_returns_threshold_config_key_is_ignored(tmp_path):
+    """SSOT: setting the legacy ``diminishing_returns_threshold`` has no effect
+    on the computed threshold (no compat shim, no deprecation warning, no read)."""
+    p_with_legacy = _make_planner(
+        tmp_path,
+        num_issues=10,
+        config_overrides={"diminishing_returns_threshold": 99},
+    )
+    p_without = _make_planner(tmp_path, num_issues=10)
+    assert (
+        p_with_legacy._adaptive_diminishing_threshold()
+        == p_without._adaptive_diminishing_threshold()
+    )
 
 
 def test_adaptive_threshold_min_max_overrides(tmp_path):
@@ -84,7 +102,7 @@ def test_adaptive_threshold_min_max_overrides(tmp_path):
         },
     )
     # ceil(100/10)=10; clamp(4, 10, 8) = 8
-    assert p._adaptive_diminishing_threshold(legacy_threshold=None) == 8
+    assert p._adaptive_diminishing_threshold() == 8
 
 
 def test_adaptive_threshold_min_above_default_max_promotes_max(tmp_path):
@@ -98,4 +116,4 @@ def test_adaptive_threshold_min_above_default_max_promotes_max(tmp_path):
         },
     )
     # max promoted to floor; clamp(8, 1, 8) = 8
-    assert p._adaptive_diminishing_threshold(legacy_threshold=None) == 8
+    assert p._adaptive_diminishing_threshold() == 8

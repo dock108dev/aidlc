@@ -76,15 +76,6 @@ class Planner:
         # Diminishing returns tracking — tracks (new_issues, total_actions) per cycle
         recent_cycles = []  # list of (new_issue_count, total_action_count)
         diminishing_returns_window = self.config.get("diminishing_returns_window", 5)
-        # ISSUE-011: legacy fixed threshold is still respected when set, but the
-        # primary control is now the adaptive min/max. The effective threshold
-        # is recomputed each cycle from the current issue count.
-        legacy_threshold = self.config.get("diminishing_returns_threshold")
-        if legacy_threshold is not None:
-            self.logger.info(
-                "config: diminishing_returns_threshold is deprecated; use "
-                "planning_diminishing_returns_min_threshold / _max_threshold instead"
-            )
         self._pending_completion_reason = None
         self._offer_completion = False  # When True, prompt tells Claude it can declare done
 
@@ -166,7 +157,7 @@ class Planner:
                     recent_cycles.append(0)
                     # Check if we've had enough empty cycles to trigger winding down.
                     # ISSUE-011: threshold scales with issue count.
-                    threshold = self._adaptive_diminishing_threshold(legacy_threshold)
+                    threshold = self._adaptive_diminishing_threshold()
                     if (
                         len(recent_cycles) >= threshold
                         and len(self.state.issues) > 0
@@ -206,7 +197,7 @@ class Planner:
 
                 # Check for winding down: last N cycles all had 0 new issues
                 # ISSUE-011: threshold scales with issue count, recomputed each cycle
-                threshold = self._adaptive_diminishing_threshold(legacy_threshold)
+                threshold = self._adaptive_diminishing_threshold()
                 if (
                     len(recent_cycles) >= threshold
                     and len(self.state.issues) > 0
@@ -423,7 +414,7 @@ class Planner:
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
 
-    def _adaptive_diminishing_threshold(self, legacy_threshold: int | None) -> int:
+    def _adaptive_diminishing_threshold(self) -> int:
         """Compute the diminishing-returns threshold for the current issue count.
 
         ISSUE-011: scale the threshold with project size:
@@ -433,16 +424,12 @@ class Planner:
         - Large projects (≥60 issues) use the ceiling (default 6).
         - In between, the threshold steps up by one per ~10 issues so a stall
           mid-planning on a big repo doesn't force-exit prematurely.
-
-        When the deprecated ``diminishing_returns_threshold`` is set, it is
-        used as the floor (so existing user customizations don't regress).
         """
         from math import ceil
 
-        floor_default = 3 if legacy_threshold is None else int(legacy_threshold)
         floor_val = max(
             1,
-            int(self.config.get("planning_diminishing_returns_min_threshold", floor_default)),
+            int(self.config.get("planning_diminishing_returns_min_threshold", 3)),
         )
         ceil_val = max(
             floor_val,

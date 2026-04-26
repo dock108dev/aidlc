@@ -129,14 +129,6 @@ def tier_aware_provider_order(
         # No max_capacity providers — same fairness as other phases
         return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 
-    # Legacy: complex implementation previously mapped to implementation_complex phase only.
-    legacy_premium_first = phase in helpers.get_premium_phases() or (
-        phase == "implementation" and complexity_level == "complex"
-    )
-    if legacy_premium_first and "claude" in enabled:
-        rest = enabled - {"claude"}
-        return ["claude"] + _reference_ordered_subset(rest, ref)
-
     return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 
 

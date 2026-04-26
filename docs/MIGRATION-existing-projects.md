@@ -114,8 +114,9 @@ rm -rf .aidlc/runs/<run_id>/
 
 ### Diminishing-returns config
 
-If you customized `diminishing_returns_threshold` in your config, it still
-works but logs a deprecation. Migrate to:
+The legacy `diminishing_returns_threshold` key has been **removed** — it is
+no longer read from config and produces no deprecation warning. Set the
+SSOT keys instead:
 
 ```json
 {

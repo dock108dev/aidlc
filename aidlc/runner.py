@@ -334,7 +334,6 @@ def run_full(
         if not implement_only and not resume_skip_planning:
             if state.phase in (
                 RunPhase.INIT,
-                RunPhase.AUDITING,  # forward-migrated old runs
                 RunPhase.SCANNING,
                 RunPhase.DISCOVERY,
             ):

@@ -182,9 +182,10 @@ The planner and implementer each have explicit stop conditions.
 
 **Planner** (`planner.py`):
 - Budget exhausted → `plan_finalization` phase, then exit.
-- `diminishing_returns_threshold` consecutive empty cycles → offer completion;
-  if the model declines, force-exit one cycle later. Threshold is **adaptive**
-  to issue count: `clamp(min, ceil(num_issues/10), max)`.
+- N consecutive empty cycles → offer completion; if the model declines,
+  force-exit one cycle later. N is **adaptive** to issue count:
+  `clamp(min, ceil(num_issues/10), max)`, configured via
+  `planning_diminishing_returns_min_threshold` / `_max_threshold`.
 - Explicit `planning_complete` from the model (only honored after completion is
   offered).
 - 3 consecutive failures.

@@ -1,20 +1,11 @@
-"""Cover routing.helpers branch logic (premium phase detection)."""
+"""SSOT enforcement: legacy 'premium phase' helpers must stay removed."""
 
 from aidlc.routing import helpers
 
 
-def test_is_premium_phase_implementation_complex():
-    assert helpers.is_premium_phase("implementation_complex", "normal") is True
-
-
-def test_is_premium_phase_implementation_when_complex():
-    assert helpers.is_premium_phase("implementation", "complex") is True
-
-
-def test_is_premium_phase_quality_sensitive_when_complex():
-    assert helpers.is_premium_phase("planning", "complex") is True
-
-
-def test_is_premium_phase_not_premium_cases():
-    assert helpers.is_premium_phase("implementation", "normal") is False
-    assert helpers.is_premium_phase("planning", "normal") is False
+def test_legacy_premium_phase_helpers_are_absent():
+    """SSOT: provider tier preference is driven by ``providers.<id>.max_capacity``,
+    not by hard-coded 'premium phases'. Reintroducing these helpers would
+    resurrect the legacy Claude-first routing branch."""
+    assert not hasattr(helpers, "get_premium_phases")
+    assert not hasattr(helpers, "is_premium_phase")
