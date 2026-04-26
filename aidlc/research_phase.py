@@ -319,12 +319,19 @@ def run_research_phase(
         state.research_topics_completed = 0
         return 0
 
-    cap = int(config.get("research_phase_max_topics", 20))
-    if cap and len(topics) > cap:
+    # No hard cap on topic count by default — discovery's job is to nominate
+    # exactly the topics that need answering, and the research phase runs the
+    # full list. Operators can still set `research_phase_max_topics` to a
+    # positive integer as a safety net for runaway discoveries; default is 0
+    # (unlimited).
+    cap = int(config.get("research_phase_max_topics", 0) or 0)
+    if cap > 0 and len(topics) > cap:
         logger.warning(
             f"Discovery proposed {len(topics)} topics; capping at {cap} (research_phase_max_topics)."
         )
         topics = topics[:cap]
+    else:
+        logger.info(f"Researching {len(topics)} discovery-nominated topic(s).")
 
     cli.set_phase("research")
     written = 0

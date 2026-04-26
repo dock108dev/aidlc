@@ -33,6 +33,24 @@ def test_build_discovery_prompt_includes_braindump_and_format():
     assert "Repo Summary" in prompt
     assert "Output Format" in prompt
     assert "```json" in prompt
+    # The "would the planner have to guess" bar must be in the prompt — that's
+    # what stops discovery from nominating topics it already knows the answer to.
+    assert "would the planner have to guess" in prompt.lower()
+    # Empty existing-research case still surfaces the section, not silence.
+    assert "Existing Research" in prompt
+
+
+def test_build_discovery_prompt_lists_existing_research_files():
+    """When prior research files exist, the prompt lists them so the model
+    won't re-nominate those topics."""
+    prompt = build_discovery_prompt(
+        "# Brain\n- ask",
+        "- type: py",
+        existing_research=["tutorial-graph-shape.md", "shelf-npc-signal.md"],
+    )
+    assert "Existing Research (already answered" in prompt
+    assert "docs/research/tutorial-graph-shape.md" in prompt
+    assert "docs/research/shelf-npc-signal.md" in prompt
 
 
 def test_parse_discovery_output_splits_findings_and_topics():
@@ -114,6 +132,30 @@ def test_run_discovery_writes_findings_and_topics(tmp_path, logger):
     cli.set_phase.assert_called_with("discovery")
     # Raw output is also persisted under the run dir for inspection.
     assert (run_dir / "claude_outputs" / "discovery.md").exists()
+
+
+def test_run_discovery_passes_existing_research_into_prompt(tmp_path, logger):
+    """If docs/research/*.md is non-empty, run_discovery should inject those
+    filenames into the prompt so the model doesn't re-nominate them."""
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- intent\n")
+    research_dir = tmp_path / "docs" / "research"
+    research_dir.mkdir(parents=True)
+    (research_dir / "already-answered.md").write_text("# Research")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\n\nx\n\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path)}
+    run_discovery(state, config, cli, tmp_path, run_dir, logger)
+    prompt_arg = cli.execute_prompt.call_args[0][0]
+    assert "docs/research/already-answered.md" in prompt_arg
+    assert "Existing Research (already answered" in prompt_arg
 
 
 def test_run_discovery_idempotent_when_artifacts_exist(tmp_path, logger):

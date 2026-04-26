@@ -93,7 +93,11 @@ def run_discovery(
         return findings_path, topics_path
 
     repo_summary = _build_repo_summary(project_root, scan_result)
-    prompt = build_discovery_prompt(braindump, repo_summary)
+    research_dir = project_root / "docs" / "research"
+    existing_research: list[str] = []
+    if research_dir.exists():
+        existing_research = sorted(p.name for p in research_dir.glob("*.md"))
+    prompt = build_discovery_prompt(braindump, repo_summary, existing_research=existing_research)
 
     cli.set_phase("discovery")
     logger.info("Running discovery — investigating repo against BRAINDUMP intent...")
