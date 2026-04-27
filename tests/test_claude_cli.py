@@ -439,7 +439,6 @@ class TestLivenessLoop:
         proc.stderr.readline.side_effect = _line_reader("")
         mock_popen.return_value = proc
 
-        base_config["claude_hard_timeout_seconds"] = 0
         base_config["claude_stall_kill_seconds"] = 1
         base_config["retry_max_attempts"] = 0
         # time advances fast enough that the stall_kill threshold trips.

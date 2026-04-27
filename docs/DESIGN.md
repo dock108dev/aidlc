@@ -15,8 +15,17 @@ Per-fix design notes for the prior remediation effort
 >   passes that have since been removed; the early-stop opt-in now runs
 >   `cleanup` only.
 > - ISSUE-011's "deprecated `diminishing_returns_threshold` retained as
->   fallback" no longer holds — that key was removed entirely in the SSOT
->   cleanup pass.
+>   fallback" no longer holds — that key was removed entirely in an
+>   earlier SSOT cleanup pass. The whole multi-empty-cycle adaptive
+>   threshold mechanism (the `planning_diminishing_returns_min_threshold` /
+>   `_max_threshold` SSOT pair, `_adaptive_diminishing_threshold`,
+>   `_offer_completion`, `recent_cycles[]` tracking) was *also*
+>   subsequently removed and replaced by a one-shot **verify cycle**:
+>   the first cycle that produces 0 new issues triggers a
+>   coverage-check prompt that walks BRAINDUMP + discovery findings +
+>   existing issues. See `aidlc/planner_text.py:VERIFY_INSTRUCTIONS`
+>   and the `_verify_mode` / `_verify_used` flags in
+>   `aidlc/planner.py`.
 >
 > The notes are kept here as engineering context for anyone re-touching
 > the same code paths. See [CHANGELOG.md](CHANGELOG.md) for the canonical

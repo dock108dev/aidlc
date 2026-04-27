@@ -134,6 +134,39 @@ def test_run_discovery_writes_findings_and_topics(tmp_path, logger):
     assert (run_dir / "claude_outputs" / "discovery.md").exists()
 
 
+def test_discovery_artifacts_land_under_aidlc_not_target_repo_docs(tmp_path, logger):
+    """SSOT: discovery findings + topics must land under
+    ``.aidlc/discovery/`` (tool working state), never under the target
+    repo's ``docs/discovery/`` tree (user-authored docs). Reintroducing
+    the legacy path would silently leak generated content into the user's
+    git diff."""
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- ask\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\n\nstuff\n\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path), "_aidlc_dir": str(tmp_path / ".aidlc")}
+    findings_path, topics_path = run_discovery(state, config, cli, tmp_path, run_dir, logger)
+    # Positive: artifacts under .aidlc/.
+    assert findings_path == tmp_path / ".aidlc" / "discovery" / "findings.md"
+    assert topics_path == tmp_path / ".aidlc" / "discovery" / "topics.json"
+    assert findings_path.exists()
+    assert topics_path.exists()
+    # Negative: the legacy path must NOT be created.
+    assert not (tmp_path / "docs" / "discovery").exists()
+    # state.created_artifacts records the path the orchestrator wrote — must
+    # use the new prefix.
+    paths = [a.get("path", "") for a in state.created_artifacts]
+    assert all(p.startswith(".aidlc/") for p in paths if "discovery" in p)
+    assert not any(p.startswith("docs/discovery/") for p in paths)
+
+
 def test_run_discovery_warns_on_truncated_output(tmp_path, caplog):
     """Regression: when discovery is killed mid-output (hard timeout, etc.),
     the model never emits the closing ```json topics fence. The current

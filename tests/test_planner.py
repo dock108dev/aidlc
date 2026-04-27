@@ -311,11 +311,10 @@ class TestPlanner:
             "duration_seconds": 1.0,
             "retries": 0,
         }
-        # With planning_diminishing_returns_min_threshold=3, empty cycles will eventually trigger
-        # the winding down detection after 3 cycles, then offer, then accept
+        # An empty cycle switches the planner into verify mode for the next
+        # cycle; if verify is also empty, planning completes.
         config["max_planning_cycles"] = 10
         config["dry_run"] = False
-        config["planning_diminishing_returns_min_threshold"] = 3
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -478,7 +477,6 @@ class TestPlanner:
         }
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
-        config["planning_diminishing_returns_min_threshold"] = 3
 
         # Pre-seed an existing issue so updates have something to target
         from aidlc.models import Issue
@@ -557,7 +555,6 @@ class TestPlanner:
         }
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
-        config["planning_diminishing_returns_min_threshold"] = 2
 
         from aidlc.models import Issue
 

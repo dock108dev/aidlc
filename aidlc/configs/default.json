@@ -60,7 +60,6 @@
       "accounts": []
     }
   },
-  "claude_hard_timeout_seconds": 600,
   "telemetry_cost_mode": "auto",
   "telemetry_estimate_usd": false,
   "telemetry_model_pricing_usd_per_million_tokens": {

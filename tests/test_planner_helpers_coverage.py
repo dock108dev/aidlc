@@ -170,12 +170,15 @@ def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
     ]
     cli = MagicMock()
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger, doc_gaps=gaps)
-    planner._offer_completion = True
+    # Verify mode is the SSOT for the completion-check prompt path —
+    # `_offer_completion` was removed in the verify-mode pivot.
+    planner._verify_mode = True
     with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
         prompt = build_prompt(planner, is_finalization=False)
     assert "Critical Doc Gaps" in prompt
     assert "non-critical" in prompt
-    assert "completion" in prompt.lower() or "offer" in prompt.lower()
+    # Verify-mode prompt is injected when `_verify_mode=True`.
+    assert "VERIFY MODE" in prompt
 
 
 def test_build_prompt_points_at_discovery_and_research_without_embedding(logger, tmp_path):

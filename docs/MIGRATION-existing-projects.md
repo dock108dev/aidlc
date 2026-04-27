@@ -114,18 +114,34 @@ rm -rf .aidlc/runs/<run_id>/
 
 …or reset entirely.
 
-### Diminishing-returns config
+### Diminishing-returns config (all keys removed)
 
-The legacy `diminishing_returns_threshold` key has been **removed** — it is
-no longer read from config and produces no deprecation warning. Set the
-SSOT keys instead:
+The whole "wait N consecutive empty cycles" wait was replaced with a
+one-shot **verify cycle**. Four config keys are now removed entirely
+and silently ignored if present:
 
-```json
-{
-  "planning_diminishing_returns_min_threshold": 3,
-  "planning_diminishing_returns_max_threshold": 6
-}
-```
+- `diminishing_returns_threshold`
+- `diminishing_returns_window`
+- `planning_diminishing_returns_min_threshold`
+- `planning_diminishing_returns_max_threshold`
 
-The new keys give you a min/max range; the effective threshold scales with
-issue count.
+**What to do:** open `.aidlc/config.json` and delete any of those keys.
+You don't need to replace them. The new behavior fires automatically:
+the first cycle that produces 0 new issues triggers a verify prompt
+that walks `BRAINDUMP.md`, `.aidlc/discovery/findings.md`,
+`.aidlc/research/*.md`, and the existing issue set. If verify is also
+empty, planning ends; if verify surfaces gaps, those issues are filed
+and the next empty cycle ends planning directly.
+
+### Wall-clock kill for Claude CLI removed
+
+The legacy `claude_hard_timeout_seconds` key is gone. It interrupted
+productive multi-hour streaming sessions and produced partial JSON the
+implementer couldn't parse.
+
+**What to do:** open `.aidlc/config.json` and delete
+`claude_hard_timeout_seconds` if present. If you want a runaway-kill
+safety valve, set `claude_stall_kill_seconds` instead — it kills only
+on real silence (no stream output for N seconds), never on wall-clock
+alone. For non-streaming providers (Copilot, OpenAI Codex), the
+request timeout is `provider_call_timeout_seconds` (default `1800`).

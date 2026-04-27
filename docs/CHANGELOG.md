@@ -5,6 +5,31 @@ for per-fix rationale.
 
 ## Unreleased
 
+### Removed (verify-mode planner pivot)
+
+- **Diminishing-returns multi-empty-cycle wait removed.** The planner used
+  to track recent cycles and wait for N consecutive empty cycles before
+  offering completion. Replaced by a one-shot **verify cycle**: the first
+  cycle that produces 0 new issues switches the next cycle into verify
+  mode (a coverage-check prompt that walks BRAINDUMP + discovery findings
+  + research + existing issues). If verify is also empty, planning ends;
+  if verify surfaces gaps, those issues are filed and the next empty
+  cycle ends planning directly without re-verifying. The config keys
+  `diminishing_returns_window`, `planning_diminishing_returns_min_threshold`,
+  `planning_diminishing_returns_max_threshold`, and the legacy
+  `diminishing_returns_threshold` are gone — present-but-set keys in
+  user configs are silently ignored. The `_offer_completion` flag, the
+  `_adaptive_diminishing_threshold` method, and the
+  `COMPLETION_OFFER_INSTRUCTIONS` prompt block are gone too.
+
+- **Wall-clock kill for the Claude CLI removed entirely.** The legacy
+  `claude_hard_timeout_seconds` interrupted productive multi-hour
+  streaming sessions and produced partial JSON that downstream parsers
+  couldn't handle. Activity-based stall detection (`claude_stall_warn_seconds`,
+  `claude_stall_kill_seconds`) is the only kill path now. Non-streaming
+  provider CLIs (Copilot, OpenAI Codex) read `provider_call_timeout_seconds`
+  for their request timeout instead.
+
 ### Removed (core-focus audit)
 
 The lifecycle had drifted: a half-dozen subcommands competed with `aidlc run`

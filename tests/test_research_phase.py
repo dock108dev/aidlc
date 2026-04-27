@@ -61,6 +61,36 @@ def test_execute_research_topic_writes_file(tmp_path, logger):
     assert (run_dir / "claude_outputs" / "research_tutorial-graph.md").exists()
 
 
+def test_research_artifacts_land_under_aidlc_not_target_repo_docs(tmp_path, logger):
+    """SSOT: research artifacts must land under ``.aidlc/research/`` (tool
+    working state), never under the target repo's ``docs/research/`` tree
+    (user-authored docs). Reintroducing the legacy path would silently
+    leak generated content into the user's git diff."""
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = _ok_result("# Findings\nstuff")
+    run_dir = _make_run_dir(tmp_path)
+    execute_research_topic(
+        "ssot-path-check",
+        "Where do research files land?",
+        [],
+        cli,
+        tmp_path,
+        run_dir,
+        state,
+        _config(tmp_path),
+        logger,
+    )
+    assert (tmp_path / ".aidlc" / "research" / "ssot-path-check.md").exists()
+    # Negative: the legacy path must NOT be created.
+    assert not (tmp_path / "docs" / "research").exists()
+    # state.created_artifacts records the path the model wrote — must use
+    # the new prefix.
+    paths = [a.get("path", "") for a in state.created_artifacts]
+    assert all(p.startswith(".aidlc/") for p in paths if "research" in p)
+    assert not any(p.startswith("docs/research/") for p in paths)
+
+
 def test_execute_research_topic_skips_when_file_exists(tmp_path, logger):
     rdir = tmp_path / ".aidlc" / "research"
     rdir.mkdir(parents=True)
