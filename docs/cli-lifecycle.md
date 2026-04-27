@@ -135,12 +135,13 @@ Planner completion is controlled by cycle outcomes and guards:
 
 - budget/cycle caps
 - a no-new-issue cycle (no actions, or only `update_issue` actions)
-  triggers **verify mode** for the next cycle. Verify mode swaps the
-  normal prompt for an explicit coverage-check prompt that walks
+  triggers **verify mode** (one-shot) for the next cycle. Verify swaps
+  the normal prompt for an explicit coverage-check prompt that walks
   through BRAINDUMP, discovery findings, research files, and the
   existing issue set. If verify also returns no new issues, planning
-  completes; if verify surfaces missing work, the planner files those
-  issues and returns to normal mode
+  completes. If verify surfaces missing work, the planner files those
+  issues and returns to normal mode — the next empty cycle then ends
+  planning directly without re-verifying (verify is one-shot per run)
 - explicit `planning_complete` accepted only when completion is offered and
   core planning docs are sufficient
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)

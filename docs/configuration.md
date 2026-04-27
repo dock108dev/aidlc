@@ -161,7 +161,13 @@ on wall-clock alone.
 | `doc_gap_detection_enabled` | `false` |
 | `doc_gap_max_items` | `50` |
 
-**Verify-mode planning exit.** When a planning cycle produces 0 new issues (no actions, or only `update_issue` actions), the planner switches to **verify mode** for the next cycle. The verify prompt explicitly walks through `BRAINDUMP.md`, `.aidlc/discovery/findings.md`, `.aidlc/research/*.md`, and the existing issue set — either filing the missing pieces (gap found → exit verify mode, continue planning) or returning empty (coverage confirmed → planning complete). This replaces the earlier multi-empty-cycle "diminishing returns" wait with a single explicit coverage check; it's much cheaper and a stronger signal. The legacy keys `diminishing_returns_window`, `planning_diminishing_returns_min_threshold`, `planning_diminishing_returns_max_threshold`, and `diminishing_returns_threshold` have all been removed and are silently ignored if present in legacy configs.
+**Verify-mode planning exit (one-shot).** When a planning cycle produces 0 new issues (no actions, or only `update_issue` actions), the planner switches to **verify mode** for the next cycle. The verify prompt explicitly walks through `BRAINDUMP.md`, `.aidlc/discovery/findings.md`, `.aidlc/research/*.md`, and the existing issue set. Three outcomes:
+
+- **Verify finds nothing → planning complete.** Stop reason is the model's `completion_reason` if it set one, else `"Verify cycle confirmed coverage: no new issues needed."`
+- **Verify finds gaps → file them, return to normal mode, mark verify "used".** The next empty cycle ends planning directly without firing verify again — the verify has already given the model its one explicit chance to surface gaps, and a follow-up empty cycle confirms.
+- **Productive cycle declares `planning_complete: true` (only honored on a verify cycle)** → exit immediately.
+
+The legacy keys `diminishing_returns_window`, `planning_diminishing_returns_min_threshold`, `planning_diminishing_returns_max_threshold`, and `diminishing_returns_threshold` have all been removed and are silently ignored if present in legacy configs.
 
 **Doc-gap detection (opt-in).** Off by default — on mature repos, scanning every doc for TBD/placeholder markers and turning them into spurious planning issues created noise. Set `doc_gap_detection_enabled: true` on greenfield projects where doc gaps are real planning input.
 

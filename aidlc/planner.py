@@ -75,15 +75,21 @@ class Planner:
         finalization_grace_used = 0
 
         self._pending_completion_reason = None
-        # Verify mode is set after a cycle proposes no actions. The next cycle
-        # uses an explicit coverage-check prompt (BRAINDUMP + findings + research
-        # + existing issues) instead of re-issuing the same planning prompt.
-        # If the verify cycle is also empty, planning is complete. If it
-        # uncovers gaps, those issues are filed and the next cycle returns
-        # to normal mode. This replaces the earlier multi-empty-cycle
-        # diminishing-returns dance — one verify pass is a stronger signal
-        # than N idle re-prompts and is much cheaper.
+        # Verify is a *one-shot* coverage check that fires after the first
+        # 0-new-issues cycle:
+        #   - `_verify_mode`  : True only on the cycle whose prompt is the
+        #                       VERIFY_INSTRUCTIONS variant. Cleared as soon
+        #                       as the cycle returns.
+        #   - `_verify_used`  : sticky for the rest of the run. Once verify
+        #                       has fired once, we don't fire it again — if
+        #                       the next 0-new cycle happens, planning is
+        #                       complete (the gap that verify surfaced has
+        #                       since been filed; another empty cycle now
+        #                       means we're really done).
+        # This replaces the earlier multi-empty-cycle diminishing-returns
+        # dance: one explicit coverage check, then trust.
         self._verify_mode = False
+        self._verify_used = False
 
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
@@ -154,15 +160,16 @@ class Planner:
             consecutive_failures = 0
 
             if new_this_cycle == 0:
-                # No new issues this cycle — either no actions at all (result is
-                # None), or the model only emitted update_issue actions (still no
-                # progress on coverage). Two outcomes:
-                #   - Already in verify mode → coverage confirmed; done.
-                #   - Normal mode → switch to verify mode for the next cycle.
-                # The verify prompt walks through BRAINDUMP + discovery findings
-                # + existing issues, either filing the missing pieces or
-                # declaring complete. Replaces the earlier multi-empty-cycle
-                # diminishing-returns wait with a single explicit coverage check.
+                # No new issues this cycle — no actions at all OR only
+                # update_issue actions. Three outcomes by state:
+                #   1. Just finished a verify cycle (0 new) → coverage
+                #      confirmed; planning complete.
+                #   2. Already used the one-shot verify earlier this run →
+                #      trust this empty cycle; planning complete. We do
+                #      NOT re-verify; the verify has already given the
+                #      model its one explicit chance to surface gaps.
+                #   3. First 0-new cycle and verify not yet used → switch
+                #      to verify mode for the next cycle.
                 if self._verify_mode:
                     reason = (
                         self._pending_completion_reason
@@ -170,6 +177,13 @@ class Planner:
                     )
                     self.state.stop_reason = reason
                     self.logger.info(f"Planning complete: {reason}")
+                    break
+                elif self._verify_used:
+                    self.state.stop_reason = (
+                        "Planning complete: verify pass already ran earlier this run "
+                        "and this empty cycle confirms no remaining gaps."
+                    )
+                    self.logger.info(self.state.stop_reason)
                     break
                 else:
                     self._verify_mode = True
@@ -179,16 +193,20 @@ class Planner:
                         "+ existing issues to confirm coverage or surface missing pieces."
                     )
             else:
-                # Cycle produced new issues. If we were in verify mode, that's
-                # a real coverage gap the verify pass surfaced — exit verify
-                # mode and let normal cycles continue. If the next cycles
-                # return 0 new issues again, verify fires again and confirms.
+                # Cycle produced new issues. If we were in verify mode,
+                # that's a real coverage gap verify surfaced — file the
+                # issues, exit verify mode, mark verify as used so we
+                # do NOT re-verify on a future empty cycle. Normal cycles
+                # resume; the next 0-new cycle will be the planning-
+                # complete signal directly.
                 if self._verify_mode:
                     self.logger.info(
                         f"Verify cycle surfaced {new_this_cycle} new issue(s) — filed; "
-                        "returning to normal planning."
+                        "returning to normal planning. Verify will not fire again this run; "
+                        "the next empty cycle will end planning."
                     )
                     self._verify_mode = False
+                    self._verify_used = True
                 # Honor an explicit planning_complete from a productive verify
                 # cycle (model said "I filed N issues and now we're done").
                 if self._pending_completion_reason:
