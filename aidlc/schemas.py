@@ -192,9 +192,9 @@ class ImplementationResult:
     files_changed: list = field(default_factory=list)
     tests_passed: bool = False
     notes: str = ""
-    # ISSUE-007: optional list of `<file:line>` refs the agent inspected when
-    # editing a system that already has callers. Empty list = checked, none
-    # found. Absent = not declared (typically net-new code).
+    # Optional list of `<file:line>` refs the agent inspected when editing
+    # a system that already has callers. Empty list = checked, none found.
+    # Absent = not declared (typically net-new code).
     existing_callers_checked: list = field(default_factory=list)
 
     @classmethod
@@ -322,9 +322,9 @@ End with **only** one ```json``` block (minimal prose outside it).
 
 - `summary`: ≤500 chars — what changed + where.
 - `notes`: ≤400 chars — caveats/follow-ups (empty if none).
-- `existing_callers_checked` (ISSUE-007): `<file:line>` refs you inspected when
-  modifying a system with callers. Empty list = checked and none exist. Omit
-  only for net-new code with no callers possible.
+- `existing_callers_checked`: `<file:line>` refs you inspected when modifying
+  a system with callers. Empty list = checked and none exist. Omit only for
+  net-new code with no callers possible.
 
 ```
 {

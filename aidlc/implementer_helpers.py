@@ -71,14 +71,20 @@ def implementation_instructions(test_command: str | None) -> str:
     """Return implementation instruction block (dense; same rules, fewer tokens)."""
     test_line = f"\n- Tests: `{test_command}` — must pass." if test_command else ""
 
-    return f"""## Instructions — Implementation (v4)
+    return f"""## Instructions — Implementation (v5)
 
 Ship production-ready code; post-run audits apply.
 
 **Must:** Match issue scope; follow repo style; handle errors; add/update tests.{test_line}
 **Must not:** Touch unrelated files; break behavior; leave dead code; bare `except`; hardcode secrets.
 
-**Preserve, don't rewrite (ISSUE-007):** If a file/system exists with tests or callers, modify in place and preserve the public surface. Rewriting is a last resort and requires updating every caller in the same change. Before editing a system, list its existing tests in your output. Breaking an out-of-scope test is a regression, not progress — fix or revert.
+**No issue-ID leakage into the target repo.** The `.aidlc/issues/` directory is intentionally gitignored — those issue files exist only in the local AIDLC working state, not in the committed codebase. Therefore:
+- Do **NOT** put issue IDs (e.g. `ISSUE-001`, `issue_007`, `ISSUE-NNN`) in filenames, test names, function names, class names, variable names, or any user-facing output.
+- Do **NOT** add code comments like `# ISSUE-005:` or `// ISSUE-007 fix`. Future readers without the issue files will see a dangling reference.
+- Do **NOT** mention the issue ID in commit messages, docstrings, or generated docs.
+- The issue ID is the *task description's* identifier inside AIDLC — not part of the code's identity. Implement the work; the issue stays in `.aidlc/issues/`.
+
+**Preserve, don't rewrite:** If a file/system exists with tests or callers, modify in place and preserve the public surface. Rewriting is a last resort and requires updating every caller in the same change. Before editing a system, list its existing tests in your output. Breaking an out-of-scope test is a regression, not progress — fix or revert.
 
 **Quality:** Files <500 lines; single responsibility; DRY; validate external input; docstrings on public APIs; comments only for non-obvious *why*.
 
@@ -390,7 +396,7 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
 
 
 def reopen_transient_failures(state, logger, sync_issue_markdown, force_all: bool = False) -> int:
-    """ISSUE-012: reopen failed issues whose cause was transient.
+    """Reopen failed issues whose cause was transient.
 
     Auto-runs at the start of each implementation cycle. Reopens issues with
     ``failure_cause`` in ``TRANSIENT_FAILURE_CAUSES`` (token_exhausted, unknown)

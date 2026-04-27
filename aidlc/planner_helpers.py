@@ -127,11 +127,11 @@ def _render_existing_issues_section(planner) -> list[str]:
 def _render_prior_run_issues_section(planner) -> list[str]:
     """Render prior-run issues (loaded from disk) under "do not redo" framing.
 
-    ISSUE-005: tells the planner that prior verified/implemented issues
-    represent committed work and should not be re-created. Without this, a
-    re-run on an already-aidlc'd repo regenerates the plan from scratch
-    (often rewriting working systems). Drops first under prompt-budget
-    pressure so it cannot starve the schema/instructions section.
+    Tells the planner that prior verified/implemented issues represent
+    committed work and should not be re-created. Without this, a re-run on
+    an already-aidlc'd repo regenerates the plan from scratch (often
+    rewriting working systems). Drops first under prompt-budget pressure
+    so it cannot starve the schema/instructions section.
     """
     prior = list(getattr(planner, "existing_issues", None) or [])
     if not prior:
@@ -521,9 +521,9 @@ def build_prompt(planner, is_finalization: bool) -> str:
     # Existing (current-run) issues: dropped first under budget pressure.
     volatile_parts.extend(_render_existing_issues_section(planner))
     # Prior-run issues from disk: also dropped first under budget pressure
-    # (see _enforce_prompt_budget). ISSUE-005.
+    # (see _enforce_prompt_budget).
     volatile_parts.extend(_render_prior_run_issues_section(planner))
-    # Foundation docs: dropped 3rd. ISSUE-006.
+    # Foundation docs: dropped 3rd.
     volatile_parts.extend(_render_foundation_docs_section(planner))
     # Discovery + research artifacts (pre-built): dropped under same budget pressure.
     volatile_parts.extend(_render_discovery_section(planner))

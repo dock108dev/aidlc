@@ -288,11 +288,11 @@ class Planner:
                 return False
 
         # Validate — pre-register new issue IDs from this batch so
-        # within-batch dependencies are allowed (e.g., ISSUE-018 depends on
-        # ISSUE-016, both created in the same cycle).
+        # within-batch dependencies are allowed (issue X may depend on
+        # issue Y when both are created in the same cycle).
         # Include existing issues from previous runs so dependencies to them are valid.
         # existing_issues are {"path": "...", "content": "..."} dicts — extract the
-        # issue ID from the filename stem (e.g. ".aidlc/issues/ISSUE-020.md" → "ISSUE-020").
+        # issue ID from the filename stem.
         from pathlib import Path as _Path
 
         known_ids = {d["id"] for d in self.state.issues} | {

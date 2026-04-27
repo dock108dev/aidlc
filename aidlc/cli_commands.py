@@ -192,8 +192,8 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
         return
 
     state = load_state(run_dir)
-    # ISSUE-010: surface stale RUNNING/INTERRUPTED runs as ABANDONED
-    # so users see a yellow ABANDONED badge instead of stale RUNNING.
+    # Surface stale RUNNING/INTERRUPTED runs as ABANDONED so users see a
+    # yellow ABANDONED badge instead of an indistinguishable RUNNING.
     from .state_manager import mark_abandoned_if_stale
 
     mark_abandoned_if_stale(state, run_dir)
@@ -252,7 +252,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Reset (ISSUE-008)
+# Reset
 # ---------------------------------------------------------------------------
 
 
@@ -286,7 +286,7 @@ def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> li
 
 
 def cmd_reset(args: argparse.Namespace, version: str) -> None:
-    """Clear stale .aidlc/ state (ISSUE-008)."""
+    """Clear stale .aidlc/ state."""
     project_root = Path(args.project or ".").resolve()
     aidlc_dir = project_root / ".aidlc"
     _print_banner(version)

@@ -208,7 +208,7 @@ def find_latest_run(runs_dir: Path, config_name: str = "") -> Path | None:
 
 
 def is_run_abandoned(state: RunState, *, threshold_seconds: float = 3600.0) -> bool:
-    """ISSUE-010: True when a RUNNING/INTERRUPTED run is stale enough to count as abandoned.
+    """True when a RUNNING/INTERRUPTED run is stale enough to count as abandoned.
 
     Used at resume time so the user can tell crashed runs from live ones.
     Threshold defaults to 1 hour; a run is abandoned when its status is in

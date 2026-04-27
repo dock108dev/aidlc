@@ -66,8 +66,8 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
         run_dir = find_latest_run(runs_dir)
         if run_dir:
             state = load_state(run_dir)
-            # ISSUE-010: surface stale RUNNING/INTERRUPTED runs as ABANDONED
-            # so the user can tell crashed runs from live ones.
+            # Surface stale RUNNING/INTERRUPTED runs as ABANDONED so the
+            # user can tell crashed runs from live ones.
             from .state_manager import mark_abandoned_if_stale
 
             if mark_abandoned_if_stale(state, run_dir):
@@ -118,8 +118,8 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     return state, run_dir
 
 
-# ISSUE-010: signal/atexit handlers flip RUNNING → INTERRUPTED so resume can
-# detect crashed sessions. Module-level state ensures we don't double-register.
+# Signal/atexit handlers flip RUNNING → INTERRUPTED so resume can detect
+# crashed sessions. Module-level state ensures we don't double-register.
 _HANDLERS_REGISTERED = False
 _HANDLER_STATE: tuple[RunState, Path] | None = None
 

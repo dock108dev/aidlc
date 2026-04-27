@@ -194,11 +194,11 @@ class ProviderRouter:
                     return result
 
                 if result_signals.is_token_exhaustion_result(result):
-                    # ISSUE-004: try the next model in this provider's chain
-                    # before excluding the provider entirely. Without this,
-                    # single-provider users (only Claude enabled) get no
-                    # fallback at all when sonnet hits its quota — even if
-                    # they have opus/haiku capacity remaining.
+                    # Try the next model in this provider's chain before
+                    # excluding the provider entirely. Without this, single-
+                    # provider users (only Claude enabled) get no fallback
+                    # at all when sonnet hits its quota — even if they have
+                    # opus/haiku capacity remaining.
                     next_model = self._next_chain_model(
                         decision.provider_id,
                         decision.model,
@@ -538,12 +538,12 @@ class ProviderRouter:
     ) -> str | None:
         """Return the next model in this provider's fallback chain, or None.
 
-        ISSUE-004: walked when a model returns "out of tokens" so the engine
-        tries the next entry on the same provider before excluding the
-        provider. Skips entries already in ``excluded_models`` for this
-        provider. Returns None when the chain is empty, missing, or fully
-        consumed — at which point the caller falls through to the existing
-        provider-exclusion branch.
+        Walked when a model returns "out of tokens" so the engine tries
+        the next entry on the same provider before excluding the provider.
+        Skips entries already in ``excluded_models`` for this provider.
+        Returns None when the chain is empty, missing, or fully consumed —
+        at which point the caller falls through to the provider-exclusion
+        branch.
         """
         providers_cfg = self.config.get("providers", {})
         provider_cfg = providers_cfg.get(provider_id) if isinstance(providers_cfg, dict) else None
@@ -577,8 +577,8 @@ class ProviderRouter:
         """Format ``excluded_models`` grouped by provider for stop-reason logs.
 
         Output looks like ``claude=[sonnet, opus, haiku]; openai=[gpt-5.4]``,
-        used in the all-providers-exhausted log line so users can see what was
-        tried before giving up (ISSUE-004).
+        used in the all-providers-exhausted log line so users can see what
+        was tried before giving up.
         """
         by_provider: dict[str, list[str]] = {}
         for provider_id, model in sorted(excluded_models):

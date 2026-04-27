@@ -28,8 +28,8 @@ def issue_progress_rank(status: IssueStatus) -> int:
     return order.get(status, 0)
 
 
-# ISSUE-012: failure cause taxonomy. Distinguishes transient causes
-# (auto-reopen on next cycle) from real-blocker causes (manual review).
+# Failure cause taxonomy. Distinguishes transient causes (auto-reopen on
+# next cycle) from real-blocker causes (manual review).
 FAILURE_CAUSE_TOKEN_EXHAUSTED = "failed_token_exhausted"
 FAILURE_CAUSE_DEPENDENCY = "failed_dependency"
 FAILURE_CAUSE_TEST_REGRESSION = "failed_test_regression"
@@ -57,8 +57,8 @@ class Issue:
     files_changed: list = field(default_factory=list)
     attempt_count: int = 0
     max_attempts: int = 3
-    # ISSUE-012: optional cause set when status flips to FAILED. Used to
-    # distinguish transient (token exhaustion) from real blockers (dep/test
+    # Optional cause set when status flips to FAILED. Distinguishes
+    # transient (token exhaustion) from real blockers (dependency / test
     # regression). None when not failed.
     failure_cause: str | None = None
 

@@ -243,7 +243,7 @@ def resolve_model_for_phase(
     config take effect across all phases without forcing them to override
     every entry in ``phase_models``. Without it, a DEFAULT
     ``phase_models.planning: "sonnet"`` would always win and the user's
-    ``default_model`` would be silently dead config (ISSUE-003).
+    ``default_model`` would be silently dead config.
     """
     effective_phase = phase
     if phase == "implementation" and complexity_level == "complex":

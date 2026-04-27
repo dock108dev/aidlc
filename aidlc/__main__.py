@@ -142,8 +142,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         config["max_planning_cycles"] = args.max_plan_cycles
     if args.max_impl_cycles is not None:
         config["max_implementation_cycles"] = args.max_impl_cycles
-    # ISSUE-012: --retry-failed forces reopen of every failed issue, not just
-    # the transient ones. Stashed on config under an internal key so the
+    # --retry-failed forces reopen of every failed issue, not just the
+    # transient ones. Stashed on config under an internal key so the
     # implementer can pick it up without changing the public function signature.
     if getattr(args, "retry_failed", False):
         config["_retry_failed_flag"] = True

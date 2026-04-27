@@ -46,10 +46,10 @@ _EXCLUDE_DIRS = {
 }
 
 
-# ISSUE-013: in-process cache so repeated detect_doc_gaps calls in the same
-# Python process (e.g., runner + plan_session in the same invocation) skip the
-# rescan when no doc has changed. Keyed by (project_root, hash of all doc
-# (path, mtime, size) tuples). Cleared on process exit naturally.
+# In-process cache so repeated detect_doc_gaps calls in the same Python
+# process skip the rescan when no doc has changed. Keyed by
+# (project_root, hash of all doc (path, mtime, size) tuples). Cleared on
+# process exit naturally.
 _DOC_GAP_CACHE: dict[tuple[str, str], list] = {}
 
 
@@ -84,9 +84,9 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
         List of DocGap items sorted by severity (critical first),
         capped at config["doc_gap_max_items"].
 
-    ISSUE-013: results are cached in-process keyed on the doc-state hash so
-    repeated invocations within the same run skip the rescan unless docs
-    changed. Cache is process-local — subsequent runs always recompute, which
+    Results are cached in-process keyed on the doc-state hash so repeated
+    invocations within the same run skip the rescan unless docs changed.
+    The cache is process-local — subsequent runs always recompute, which
     keeps results correct after external doc edits between runs.
     """
     scan_patterns = config.get("doc_scan_patterns", ["**/*.md"])
@@ -102,7 +102,7 @@ def detect_doc_gaps(project_root: Path, config: dict) -> list[DocGap]:
                 if not _is_excluded(rel, exclude_patterns):
                     doc_paths.add(rel)
 
-    # ISSUE-013: cache lookup keyed on (project_root, doc-state hash).
+    # Cache lookup keyed on (project_root, doc-state hash).
     state_key = _doc_state_key(project_root, doc_paths)
     cache_key = (str(project_root), state_key)
     if cache_key in _DOC_GAP_CACHE:

@@ -60,7 +60,7 @@ def is_model_exhausted_result(result: dict) -> bool:
     Distinguishes per-model exhaustion from per-provider/account exhaustion:
     if the error text names a model (e.g., ``claude-sonnet-4-5 has reached
     its quota``), it's per-model and the engine should walk the provider's
-    ``model_fallback_chain`` before excluding the entire provider (ISSUE-004).
+    ``model_fallback_chain`` before excluding the entire provider.
 
     A True return means: also-true for is_token_exhaustion_result, plus the
     error message names a model. False means: either not exhausted at all, or

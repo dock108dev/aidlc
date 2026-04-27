@@ -188,7 +188,7 @@ class Implementer:
             save_state(self.state, self.run_dir)
             return False
 
-        # ISSUE-012: auto-reopen transient failures (or all if --retry-failed).
+        # Auto-reopen transient failures (or all if --retry-failed).
         force_retry = bool(self.config.get("_retry_failed_flag", False))
         reopened = self._maybe_reopen_transient_failures(force_all=force_retry)
         if reopened:
@@ -294,9 +294,9 @@ class Implementer:
                 last_checkpoint_time = time.time()
 
         if self.state.stop_reason and not self.state.all_issues_resolved():
-            # ISSUE-009: don't auto-run finalization on early stop unless the
-            # user opts in. The default-off prevents burning more budget at
-            # exactly the moment we want to stop cleanly (e.g., token
+            # Don't auto-run finalization on early stop unless the user
+            # opts in. The default-off prevents burning more budget at
+            # exactly the moment we want to stop cleanly (e.g. token
             # exhaustion). Always log a single visually-distinct stop-reason
             # line and resume hint so the user can see what happened without
             # parsing the rest of the log.
@@ -408,8 +408,9 @@ class Implementer:
             sampled_error = sample_error_payload(result.get("error"))
             compact_error = compact_error_text(sampled_error)
             self.logger.error(f"Implementation of {issue.id} failed: {compact_error}")
-            # ISSUE-012: tag failure cause so the next cycle can decide whether
-            # to auto-reopen (transient) or leave for manual review (real blocker).
+            # Tag the failure cause so the next implementation cycle can
+            # decide whether to auto-reopen (transient causes) or leave for
+            # manual review (real blockers like dependency / test regression).
             from .issue_model import (
                 FAILURE_CAUSE_TOKEN_EXHAUSTED,
                 FAILURE_CAUSE_UNKNOWN,

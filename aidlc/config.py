@@ -40,8 +40,8 @@ DEFAULTS = {
                 "audit": "sonnet",
             },
             # Ordered list tried in sequence when a model returns "out of tokens"
-            # before the entire provider is excluded (ISSUE-004). Empty list = legacy
-            # behavior (provider excluded on first exhaustion).
+            # before the entire provider is excluded. Empty list disables
+            # intra-provider fallback (provider excluded on first exhaustion).
             "model_fallback_chain": ["sonnet", "opus", "haiku"],
         },
         "copilot": {
@@ -365,10 +365,11 @@ DEFAULTS = {
     "autosync_keep_claude_outputs": 200,
     # Stop run cleanly when router confirms token exhaustion across all models/providers
     "stop_on_all_models_token_exhausted": True,
-    # ISSUE-009: when implementation stops with work remaining, do NOT auto-run
-    # ssot/abend/cleanup finalization passes by default. Set to true to restore
-    # the prior behavior. The new default exits cleanly with a STOP REASON +
-    # RESUME WITH log so you can pick up after the underlying issue resolves.
+    # When implementation stops with work remaining, do NOT auto-run
+    # finalization passes by default. Set to true to opt back in (runs the
+    # cleanup pass only). The default exits cleanly with a STOP REASON +
+    # RESUME WITH log so the user can pick up after the underlying problem
+    # resolves, without burning more budget at the moment of failure.
     "implementation_finalize_on_early_stop": False,
 }
 
@@ -387,7 +388,7 @@ def _merge_user_config(config: dict, user_config: dict) -> None:
     code (``routing.context.resolve_model_for_phase``) can tell user-set from
     DEFAULT values. This is what makes a user-set ``default_model`` win over a
     DEFAULT ``phase_models[phase]`` entry without forcing users to override
-    every phase explicitly (ISSUE-003).
+    every phase explicitly.
     """
     overrides = config.setdefault("_user_provider_overrides", {})
     for key, value in user_config.items():
