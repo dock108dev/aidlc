@@ -18,6 +18,7 @@ backward-compatible; two require user action.
 | Implementation no longer auto-runs finalization on early stop | ISSUE-009 default change | If you relied on this, set `implementation_finalize_on_early_stop: true` in `.aidlc/config.json`. The opt-in now runs `cleanup` only. |
 | `aidlc reset` is now a real command | ISSUE-008 add | Use it instead of `rm -rf .aidlc/`. Preserves `config.json`. |
 | Stale `status=running` runs from before this version may show as `abandoned` | ISSUE-010 detection | Resume them or wipe them. `aidlc status` shows a yellow ABANDONED badge. |
+| Implementation runs may have been routing to **sonnet** instead of **opus** | `aidlc init` was scaffolding `providers.claude.default_model: "sonnet"` into your config, which (per the ISSUE-003 precedence rule) overrode the DEFAULT `phase_models.implementation: "opus"`. | Open `.aidlc/config.json` and **delete the `"default_model": "sonnet"` line under `providers.claude`** (and the same line under `providers.copilot` / `providers.openai` if present). With that line removed, phase-specific model selection inherits cleanly from DEFAULTS — implementation routes to opus, planning/discovery/research/audit to sonnet. New `aidlc init` runs no longer write that line. |
 
 ## What carries over
 

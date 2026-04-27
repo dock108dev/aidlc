@@ -27,13 +27,16 @@ DEFAULTS = {
             "max_capacity": True,
             "max_capacity_weight": 20,
             "default_model": "sonnet",
+            # Implementation + finalization run on opus (heavy, code-quality
+            # work); everything else uses sonnet (cheaper, sufficient for
+            # planning / discovery / research / audit assessment work).
             "phase_models": {
                 "discovery": "sonnet",
                 "planning": "sonnet",
                 "research": "sonnet",
                 "implementation": "opus",
                 "implementation_complex": "opus",
-                "finalization": "sonnet",
+                "finalization": "opus",
                 "audit": "sonnet",
             },
             # Ordered list tried in sequence when a model returns "out of tokens"
@@ -456,6 +459,13 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
 
     config_path = aidlc_dir / "config.json"
     if not config_path.exists():
+        # Deliberately minimal — only set what a user genuinely customizes.
+        # Notably, do NOT scaffold `default_model` or `phase_models` here:
+        # those live in DEFAULTS (aidlc/config.py) and inherit cleanly.
+        # Writing `default_model` into the scaffold made every fresh
+        # project ship with a *user-set* default_model that, per the
+        # phase-resolution precedence rule, overrode DEFAULT phase_models —
+        # and silently routed implementation to sonnet instead of opus.
         default_config: dict = {
             "plan_budget_hours": 4,
             "checkpoint_interval_minutes": 15,
@@ -464,7 +474,6 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "claude": {
                     "enabled": True,
                     "cli_command": "claude",
-                    "default_model": "sonnet",
                     "accounts": [
                         {
                             "id": "default",
@@ -478,13 +487,11 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "copilot": {
                     "enabled": False,
                     "cli_command": "copilot",
-                    "default_model": "",
                     "accounts": [],
                 },
                 "openai": {
                     "enabled": False,
                     "cli_command": "codex",
-                    "default_model": "gpt-4o",
                     "accounts": [],
                 },
             },

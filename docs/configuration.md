@@ -55,7 +55,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
         "research": "sonnet",
         "implementation": "opus",
         "implementation_complex": "opus",
-        "finalization": "sonnet",
+        "finalization": "opus",
         "audit": "sonnet"
       },
       "model_fallback_chain": ["sonnet", "opus", "haiku"]
