@@ -456,6 +456,136 @@ class TestLivenessLoop:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_post_terminal_idle_kills_hung_cli_after_result_event(
+        self, mock_popen, mock_time, base_config, logger, caplog, tmp_path
+    ):
+        """Regression for the user's stuck-on-result-success log: after the
+        model emits the terminal stream-json `result success` event, the
+        CLI should exit. When it hangs (CLI bug, OS buffer, etc.), the
+        wrapper kills it after ``claude_post_terminal_idle_seconds`` of
+        further silence — independent of the broader ``claude_stall_kill_seconds``
+        runaway threshold. This protects against post-terminal hangs
+        without false-positive killing during long real tool runs."""
+        terminal_event = '{"type": "result", "subtype": "success"}\n'
+        proc = MagicMock()
+        proc.poll.side_effect = [None, 0]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            0,
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        # Emit the terminal event once, then EOF — simulates "model done,
+        # CLI hangs."
+        proc.stdout.readline.side_effect = _line_reader(terminal_event)
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
+        mock_popen.return_value = proc
+
+        # Tight post-terminal threshold for the test; default is 30s.
+        base_config["claude_post_terminal_idle_seconds"] = 1
+        base_config["claude_stall_kill_seconds"] = 0  # not the path we're testing
+        base_config["retry_max_attempts"] = 0
+        # Each tick advances 5s; idle past the 1s threshold fires immediately.
+        clock = itertools.count(start=0.0, step=5.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        with caplog.at_level(logging.INFO, logger="test_claude_cli"):
+            cli.execute_prompt("prompt", tmp_path)
+
+        # Graceful stop was requested (post-terminal hang detected).
+        assert proc.send_signal.called
+        # The kill reason and the terminal-event detection were both logged.
+        assert any("post-terminal hang" in rec.message for rec in caplog.records)
+        assert any("emitted terminal" in rec.message for rec in caplog.records)
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_post_terminal_idle_disabled_when_zero(
+        self, mock_popen, mock_time, base_config, logger, caplog, tmp_path
+    ):
+        """``claude_post_terminal_idle_seconds=0`` disables the post-terminal
+        kill — useful when running with a debugger attached or when a user
+        has external lifecycle management."""
+        terminal_event = '{"type": "result", "subtype": "success"}\n'
+        proc = MagicMock()
+        # Process exits naturally on the third poll; without the kill path
+        # firing, the wrapper just waits.
+        proc.poll.side_effect = [None, None, None, 0]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            0,
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader(terminal_event)
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
+        mock_popen.return_value = proc
+
+        base_config["claude_post_terminal_idle_seconds"] = 0  # disabled
+        base_config["claude_stall_kill_seconds"] = 0
+        base_config["retry_max_attempts"] = 0
+        clock = itertools.count(start=0.0, step=60.0)  # huge idle gaps
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        cli.execute_prompt("prompt", tmp_path)
+        # No kill happened — process exited naturally.
+        assert not proc.send_signal.called
+        assert not proc.terminate.called
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_post_terminal_idle_does_not_fire_during_real_work(
+        self, mock_popen, mock_time, base_config, logger, tmp_path
+    ):
+        """During a long-running tool call (e.g. a 5-minute Bash test), idle
+        can legitimately spike to several minutes. The post-terminal kill
+        must NOT fire because no terminal `result` event has been emitted
+        yet. Stall-kill is the only path that could trigger here, and it's
+        disabled by default."""
+        # Stream events that look like an in-progress run: tool_use, tool_result,
+        # but no terminal `result` event.
+        in_progress = (
+            '{"type": "assistant", "message": {"content": [{"type": "tool_use", '
+            '"name": "Bash", "input": {"command": "long-test"}}]}}\n'
+        )
+        proc = MagicMock()
+        proc.poll.side_effect = [None, None, 0]
+        proc.wait.side_effect = [
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            0,
+        ]
+        proc.returncode = 0
+        proc.stdin = MagicMock()
+        proc.stdout = MagicMock()
+        proc.stdout.readline.side_effect = _line_reader(in_progress)
+        proc.stderr = MagicMock()
+        proc.stderr.readline.side_effect = _line_reader("")
+        mock_popen.return_value = proc
+
+        base_config["claude_post_terminal_idle_seconds"] = 30
+        base_config["claude_stall_kill_seconds"] = 0
+        base_config["retry_max_attempts"] = 0
+        # Huge idle gaps to prove post-terminal does NOT fire without the
+        # terminal event.
+        clock = itertools.count(start=0.0, step=300.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        cli.execute_prompt("prompt", tmp_path)
+        # No kill — no terminal event was emitted, so post-terminal is inert.
+        assert not proc.send_signal.called
+
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
     def test_no_kill_on_elapsed_alone(self, mock_popen, mock_time, base_config, logger, tmp_path):
         """Wall-clock kill removed: no matter how long Claude runs, only
         activity-based stall_kill can interrupt it."""

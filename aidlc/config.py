@@ -91,6 +91,15 @@ DEFAULTS = {
     #   unattended runs.
     "claude_stall_warn_seconds": 300,
     "claude_stall_kill_seconds": 0,
+    # Once the model emits the terminal `result success` / `result error`
+    # event, the CLI should drain stdout and exit. In practice it sometimes
+    # hangs for minutes afterwards. After we observe the terminal event,
+    # idle past this threshold is unambiguously a stuck CLI — kill it.
+    # This is much shorter than `claude_stall_kill_seconds` because real
+    # work cannot be happening (the model is done); a 200s gap during a
+    # long Bash test is fine, a 30s gap *after* the terminal result is not.
+    # Set 0 to disable.
+    "claude_post_terminal_idle_seconds": 30,
     "claude_timeout_grace_seconds": 30,  # wait for graceful Claude shutdown before force-kill
     # Wall-clock timeout for non-streaming provider CLIs (Copilot, OpenAI
     # Codex). These don't emit stream-json so activity-based stall

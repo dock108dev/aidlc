@@ -106,7 +106,8 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 |---|---|
 | `claude_long_run_warn_seconds` | `300` (heartbeat-log cadence while Claude is still running) |
 | `claude_stall_warn_seconds` | `300` (flip the heartbeat log from INFO to WARNING after this much silence; never kills) |
-| `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs — kills only on real silence, never on wall-clock alone) |
+| `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs — kills only on real silence anywhere in the run, never on wall-clock alone) |
+| `claude_post_terminal_idle_seconds` | `30` (kills the CLI when it hangs *after* the model has emitted the terminal `result` stream event — model is done, CLI just isn't exiting). Set 0 to disable. |
 | `claude_timeout_grace_seconds` | `30` (graceful shutdown window before SIGKILL) |
 | `provider_call_timeout_seconds` | `1800` (wall-clock timeout for non-streaming provider CLIs — Copilot, OpenAI Codex. Claude CLI does NOT use this; it streams.) |
 
@@ -115,10 +116,23 @@ emits steady tool-use events while doing real work — sometimes for an
 hour or more. The legacy `claude_hard_timeout_seconds` knob would
 interrupt productive sessions and leave partial JSON output that
 downstream parsers couldn't handle. It was removed entirely (legacy
-config files containing the key are silently ignored). Use
-`claude_stall_kill_seconds` if you need an unattended-run safety valve;
-it kills only on **real silence** (no stream output for N seconds), not
-on wall-clock alone.
+config files containing the key are silently ignored). Two activity-
+based knobs replace it:
+
+- **`claude_stall_kill_seconds`** (default `0`, disabled). Broad
+  runaway protection: kills if no stream output appears for N seconds
+  *anywhere in the run*. Off by default because real tool calls (e.g.
+  long Bash test runs) can legitimately take 200+ seconds and you do
+  not want to murder them. Turn on for unattended runs.
+
+- **`claude_post_terminal_idle_seconds`** (default `30`, on by
+  default). Targeted post-completion protection: kicks in *only* once
+  the model has emitted the terminal `result success` / `result error`
+  stream event. After that, the model is done and the CLI should
+  drain stdout and exit; if it hangs (CLI bug, OS buffer, environment
+  quirk), the wrapper kills it after this many seconds of further
+  silence. Cannot false-positive on long tool calls because no
+  terminal event has been emitted yet.
 | `telemetry_cost_mode` | `"auto"` |
 | `telemetry_estimate_usd` | `false` |
 | `telemetry_model_pricing_usd_per_million_tokens` | See `aidlc/config.py` for the full table (sonnet/opus/haiku/gpt-5.4 family). |

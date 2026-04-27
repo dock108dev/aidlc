@@ -217,6 +217,17 @@ class ClaudeCLI:
         stall_warn = max(0, int(stall_warn_raw if stall_warn_raw is not None else 0))
         stall_kill_raw = self.config.get("claude_stall_kill_seconds", 0)
         stall_kill = max(0, int(stall_kill_raw if stall_kill_raw is not None else 0))
+        # Post-terminal hang: once the model has emitted the terminal
+        # ``result success`` / ``result error`` stream event, the CLI
+        # should drain stdout and exit. In practice it sometimes hangs
+        # for minutes afterwards (CLI bug, OS buffer, environment issue).
+        # Once we've seen the terminal event, idle past this threshold
+        # is unambiguously a hung CLI — kill it. Default 30s is much
+        # shorter than ``claude_stall_kill_seconds`` because real work
+        # cannot be happening (the model is done); a 200s gap during
+        # tool calls is fine, a 30s gap *after* result is not.
+        post_terminal_raw = self.config.get("claude_post_terminal_idle_seconds", 30)
+        post_terminal_idle = max(0, int(post_terminal_raw if post_terminal_raw is not None else 0))
         timeout_grace = max(1, int(self.config.get("claude_timeout_grace_seconds", 30)))
         outage_max_wait = max(
             0, int(self.config.get("claude_service_outage_max_wait_seconds", 7200))
@@ -281,12 +292,17 @@ class ClaudeCLI:
 
                 # Activity-aware wait loop. Emit a heartbeat every warn_interval
                 # seconds of wall clock; flip to WARNING when idle crosses
-                # stall_warn. Kill only on explicit opt-in (stall_kill > 0)
-                # — and only on real silence, never on wall-clock alone.
+                # stall_warn. Two kill paths (both opt-in by config):
+                #   - stall_kill: idle past N seconds, anywhere in the run
+                #     (broad runaway protection; default off).
+                #   - post-terminal: idle past N seconds *after* the model
+                #     emitted the terminal `result` event (targeted CLI-
+                #     hang protection; default 30s).
                 timed_out = False
                 timeout_forced = False
                 heartbeat_count = 0
                 next_heartbeat_at = start + warn_interval
+                saw_terminal = False  # flips True once a `result *` event lands
 
                 while proc.poll() is None:
                     try:
@@ -299,11 +315,31 @@ class ClaudeCLI:
                     elapsed = now - start
                     idle = now - last_activity_at[0]
 
+                    # Detect the terminal event once. After it, the model is
+                    # done; only CLI shutdown remains. Re-scanning the line
+                    # list each iteration is cheap (walks backward to first
+                    # non-empty event); we stop scanning once detected.
+                    if not saw_terminal and idle >= 2:
+                        last_event_brief = _pick_last_nonempty_summary(stdout_lines)
+                        if last_event_brief.startswith("result "):
+                            saw_terminal = True
+                            self.logger.info(
+                                f"Claude CLI emitted terminal '{last_event_brief}' event "
+                                f"(elapsed={elapsed:.0f}s); will kill if the process does "
+                                f"not exit within {post_terminal_idle}s of further silence."
+                            )
+
                     if now >= next_heartbeat_at:
                         heartbeat_count += 1
                         next_heartbeat_at = now + warn_interval
                         last_event = _pick_last_nonempty_summary(stdout_lines)
-                        if stall_warn and idle >= stall_warn:
+                        if saw_terminal:
+                            self.logger.info(
+                                "Claude CLI post-terminal "
+                                f"(elapsed={elapsed:.0f}s, idle={idle:.0f}s, "
+                                f"last: {last_event}, model={model})"
+                            )
+                        elif stall_warn and idle >= stall_warn:
                             self.logger.warning(
                                 "Claude CLI STALLED "
                                 f"(elapsed={elapsed:.0f}s, idle={idle:.0f}s, "
@@ -317,7 +353,13 @@ class ClaudeCLI:
                             )
 
                     kill_reason = None
-                    if stall_kill and idle >= stall_kill:
+                    if saw_terminal and post_terminal_idle and idle >= post_terminal_idle:
+                        kill_reason = (
+                            f"post-terminal hang ({idle:.0f}s of silence after the model's "
+                            "terminal result event — model is done, CLI is not exiting)"
+                        )
+                        timed_out = True
+                    elif stall_kill and idle >= stall_kill:
                         kill_reason = f"stall kill (no output for {idle:.0f}s)"
                         timed_out = True
 
