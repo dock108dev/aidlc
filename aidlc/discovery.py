@@ -1,8 +1,12 @@
 """Discovery phase — single pre-planning model pass.
 
 Reads BRAINDUMP.md + repo (provider has file tools), writes:
-  - docs/discovery/findings.md
-  - docs/discovery/topics.json
+  - .aidlc/discovery/findings.md
+  - .aidlc/discovery/topics.json
+
+These are tool-generated artifacts (not user-authored docs), so they live
+under ``.aidlc/`` alongside ``runs/``, ``issues/``, etc. — not under the
+target repo's ``docs/`` tree.
 
 Idempotent: if both artifacts already exist, skip the model call (resume).
 """
@@ -62,7 +66,8 @@ def run_discovery(
     and return the existing paths. The caller is responsible for setting
     `state.phase` before/after this call.
     """
-    discovery_dir = project_root / "docs" / "discovery"
+    aidlc_dir = Path(config["_aidlc_dir"])
+    discovery_dir = aidlc_dir / "discovery"
     discovery_dir.mkdir(parents=True, exist_ok=True)
     findings_path = discovery_dir / "findings.md"
     topics_path = discovery_dir / "topics.json"
@@ -93,7 +98,7 @@ def run_discovery(
         return findings_path, topics_path
 
     repo_summary = _build_repo_summary(project_root, scan_result)
-    research_dir = project_root / "docs" / "research"
+    research_dir = aidlc_dir / "research"
     existing_research: list[str] = []
     if research_dir.exists():
         existing_research = sorted(p.name for p in research_dir.glob("*.md"))
@@ -140,7 +145,7 @@ def run_discovery(
             "Discovery output is %s chars with no ```json topics fence — "
             "this strongly suggests the model was interrupted mid-output. "
             "The findings file is being saved but is likely partial/garbled; "
-            "delete docs/discovery/findings.md and docs/discovery/topics.json "
+            "delete .aidlc/discovery/findings.md and .aidlc/discovery/topics.json "
             "and re-run aidlc to get clean findings.",
             f"{len(findings):,}",
         )

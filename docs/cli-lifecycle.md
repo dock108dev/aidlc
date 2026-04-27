@@ -37,10 +37,10 @@ Typical progression:
 1. **`init`** — initial phase before any substantive work in a fresh run
 2. **`scanning`** — repo + documentation scan via `ProjectScanner`
 3. **`discovery`** — single pre-planning model pass; reads `BRAINDUMP.md`
-   and the repo, writes `docs/discovery/findings.md` + `docs/discovery/topics.json`.
+   and the repo, writes `.aidlc/discovery/findings.md` + `.aidlc/discovery/topics.json`.
    **Idempotent**: skipped on resume if both artifacts already exist.
 4. **`research`** — one model call per discovery-nominated topic; writes
-   `docs/research/<slug>.md` per entry. **Skip-if-exists per topic**.
+   `.aidlc/research/<slug>.md` per entry. **Skip-if-exists per topic**.
 5. **`planning`** — iterative `create_issue` / `update_issue` action cycles
 6. **`plan_finalization`** — planning wind-down near budget end
 7. **`implementing`** — issue-by-issue implementation
@@ -82,8 +82,8 @@ Typical progression:
 Clears stale run state without nuking your config.
 
 - Default: deletes `.aidlc/runs/`, `reports/`, `issues/`, `session/`,
-  `audit_result.json`, `planning_index.md`, `CONFLICTS.md`, `run.lock`.
-  **Preserves** `.aidlc/config.json`.
+  `discovery/`, `research/`, `audit_result.json`, `planning_index.md`,
+  `CONFLICTS.md`, `run.lock`. **Preserves** `.aidlc/config.json`.
 - `--all`: also deletes `config.json` (requires re-init and re-auth).
 - `--keep-issues`: preserves `.aidlc/issues/` for cases where you want to
   reset run state but keep the planned backlog.
@@ -104,21 +104,23 @@ Use this instead of `rm -rf .aidlc/`.
 ## Discovery and Research
 
 Discovery and research are pre-planning model passes that write
-**user-visible artifacts** under `docs/`:
+**tool-generated artifacts** under `.aidlc/` (not under the target
+repo's `docs/` tree — they are AIDLC working state, not user-authored
+documentation):
 
 - **Discovery** (`aidlc/discovery.py`): one model call. Reads `BRAINDUMP.md`
   + a repo summary. Writes:
-  - `docs/discovery/findings.md` — markdown findings
-  - `docs/discovery/topics.json` — JSON list of `{topic, question, scope}`
+  - `.aidlc/discovery/findings.md` — markdown findings
+  - `.aidlc/discovery/topics.json` — JSON list of `{topic, question, scope}`
     entries the research phase should investigate
 - **Research** (`aidlc/research_phase.py`): one model call per topic in
-  `topics.json`. Writes `docs/research/<slug>.md`. Per-topic failures log a
+  `topics.json`. Writes `.aidlc/research/<slug>.md`. Per-topic failures log a
   warning but do not fail the run; the next topic continues.
 
 Both phases are **idempotent**: existing artifacts are not regenerated unless
 deleted. This is what makes resume cheap.
 
-The planner reads the discovery findings and lists `docs/research/*.md`
+The planner reads the discovery findings and lists `.aidlc/research/*.md`
 filenames in its prompt so it can reference researched answers without
 re-deriving them.
 

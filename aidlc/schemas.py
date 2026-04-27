@@ -309,8 +309,8 @@ Action shapes (canonical keys only — unknown keys are ignored, missing require
 Rules:
 - ISSUE-NNN format; deps must already exist (in backlog or same batch).
 - Finalization cycle: `create_issue` only if `critical_gap: true` and `priority: "high"`.
-- Discovery and research are pre-planning phases. `docs/discovery/findings.md`
-  and `docs/research/*.md` are already on disk — read them to shape issues. Do
+- Discovery and research are pre-planning phases. `.aidlc/discovery/findings.md`
+  and `.aidlc/research/*.md` are already on disk — read them to shape issues. Do
   not propose `research` as a planning action; that action type is removed.
 - Doc authoring is not a planning action. Source code and BRAINDUMP.md are the
   inputs alongside discovery/research artifacts; do not file

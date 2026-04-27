@@ -8,9 +8,9 @@ PLANNING_INSTRUCTIONS_VERSION = "2026-04-25-v7"
 
 PLANNING_INSTRUCTIONS = f"""## Instructions — Planning ({PLANNING_INSTRUCTIONS_VERSION})
 
-You plan implementation work as **issues**. Inputs: the repo (read on demand), **BRAINDUMP.md** (the owner's intent for this cycle, rendered in full under `## BRAINDUMP — Intent Source`), and pre-built discovery + research artifacts (`docs/discovery/findings.md` + `docs/research/*.md`, listed under `## Discovery & Research`). The investigation work is already done — your job is to translate intent + findings into the right set of issues.
+You plan implementation work as **issues**. Inputs: the repo (read on demand), **BRAINDUMP.md** (the owner's intent for this cycle, rendered in full under `## BRAINDUMP — Intent Source`), and pre-built discovery + research artifacts (`.aidlc/discovery/findings.md` + `.aidlc/research/*.md`, listed under `## Discovery & Research`). The investigation work is already done — your job is to translate intent + findings into the right set of issues.
 
-**BRAINDUMP is intent, not spec.** BRAINDUMP.md captures the owner's desired outcome from a black-box user perspective — what they want to be true after this cycle, not the implementation steps to get there. Translate intent into the real set of implementation issues by consulting `docs/discovery/findings.md` (current repo state) and `docs/research/*.md` (concrete answers to investigation questions). Issues do *not* need to map 1:1 to BRAINDUMP bullets. One bullet may produce several issues (split per concern, per file, per layer). Several bullets may share one prerequisite issue. File infra/prereq/cleanup issues the user didn't enumerate, when achieving a stated intent requires them.
+**BRAINDUMP is intent, not spec.** BRAINDUMP.md captures the owner's desired outcome from a black-box user perspective — what they want to be true after this cycle, not the implementation steps to get there. Translate intent into the real set of implementation issues by consulting `.aidlc/discovery/findings.md` (current repo state) and `.aidlc/research/*.md` (concrete answers to investigation questions). Issues do *not* need to map 1:1 to BRAINDUMP bullets. One bullet may produce several issues (split per concern, per file, per layer). Several bullets may share one prerequisite issue. File infra/prereq/cleanup issues the user didn't enumerate, when achieving a stated intent requires them.
 
 **BRAINDUMP exclusions are binding.** Cut lists, non-goals, out-of-scope sections, deferred-to-later-phase items: forbidden scope this run. Reasonable-sounding work the codebase or other docs would justify is still out if BRAINDUMP excludes it. Additive scope is the planner's call; subtractive scope is BRAINDUMP's call.
 
@@ -18,7 +18,7 @@ You plan implementation work as **issues**. Inputs: the repo (read on demand), *
 
 **Prior runs:** When `## Prior Run — Already Done (do not redo)` is present, those issues exist on disk from a prior aidlc invocation. Verified or implemented entries are committed work — do NOT recreate them. Focus on deltas: BRAINDUMP intent still uncovered, follow-on work in their notes.
 
-**Issues:** One implementable unit each — split broad features. Per-variant mechanics → separate issues. Each needs testable `acceptance_criteria`, `priority`, `dependencies`. Issue descriptions should reference the relevant `docs/discovery/findings.md` section or `docs/research/*.md` file when the planner relied on them.
+**Issues:** One implementable unit each — split broad features. Per-variant mechanics → separate issues. Each needs testable `acceptance_criteria`, `priority`, `dependencies`. Issue descriptions should reference the relevant `.aidlc/discovery/findings.md` section or `.aidlc/research/*.md` file when the planner relied on them.
 
 **Discovery and research are complete.** Do NOT propose investigation as a planning action — the `research` action type has been removed. If a topic is missing, read the file directly with your tools and write the issue based on what you find; the discovery phase already nominated the topics it could.
 

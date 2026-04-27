@@ -1,9 +1,9 @@
 """Discovery prompt template + output parser.
 
 Discovery is a single pre-planning model pass that produces:
-  1. `docs/discovery/findings.md` — current state of the systems BRAINDUMP
+  1. `.aidlc/discovery/findings.md` — current state of the systems BRAINDUMP
      references (what's wired, stubbed, missing) with file paths.
-  2. `docs/discovery/topics.json` — research topics the model couldn't answer
+  2. `.aidlc/discovery/topics.json` — research topics the model couldn't answer
      from the scan alone (each: topic, question, scope[]).
 
 This module owns the prompt and the strict output parser. Orchestration lives
@@ -31,7 +31,7 @@ two artifacts that the planning phase will consume:
 2. **Research topics** — questions the planner will have to *guess at* if you
    don't answer them. The bar for nominating a topic is one question:
    *"would the planner have to guess if I didn't research this?"* If yes,
-   it's a topic. If you (or BRAINDUMP, or an existing `docs/research/*.md`)
+   it's a topic. If you (or BRAINDUMP, or an existing `.aidlc/research/*.md`)
    already have the answer, record it in findings.md and do NOT create a
    topic.
 
@@ -74,7 +74,7 @@ with the topics array. No prose outside these two blocks.
 ```
 
 Topic rules:
-- `topic`: short kebab-case slug (used as filename `docs/research/<topic>.md`).
+- `topic`: short kebab-case slug (used as filename `.aidlc/research/<topic>.md`).
 - `question`: one specific question.
 - `scope`: list of repo-relative file paths the research call should read first.
 - Empty list `[]` is allowed if everything was answered from the scan.
@@ -91,9 +91,9 @@ def build_discovery_prompt(
     `repo_summary` is a short pointer block (file counts, top-level layout) — the
     model uses its own file tools for the real reading.
 
-    `existing_research` is the list of `docs/research/<slug>.md` filenames already
-    on disk. Listing them in the prompt means the model trusts what's already
-    answered and won't re-nominate those topics.
+    `existing_research` is the list of `.aidlc/research/<slug>.md` filenames
+    already on disk. Listing them in the prompt means the model trusts what's
+    already answered and won't re-nominate those topics.
     """
     sections = [
         DISCOVERY_PROMPT_HEADER,
@@ -101,7 +101,7 @@ def build_discovery_prompt(
         "## Repo Summary\n" + repo_summary.rstrip(),
     ]
     if existing_research:
-        listing = "\n".join(f"- docs/research/{name}" for name in existing_research)
+        listing = "\n".join(f"- .aidlc/research/{name}" for name in existing_research)
         sections.append("## Existing Research (already answered — do NOT re-nominate)\n" + listing)
     else:
         sections.append(

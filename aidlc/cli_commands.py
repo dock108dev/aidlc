@@ -259,15 +259,20 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
 def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> list[Path]:
     """Return the list of paths inside .aidlc/ that ``aidlc reset`` would delete.
 
-    Default targets: runs/, reports/, session/, audit_result.json,
-    planning_index.md, CONFLICTS.md, run.lock — plus issues/ unless
-    ``keep_issues`` is set. With ``reset_all`` also includes config.json.
-    Files/dirs that don't exist are filtered out by the caller.
+    Default targets: runs/, reports/, session/, discovery/, research/,
+    audit_result.json, planning_index.md, CONFLICTS.md, run.lock — plus
+    issues/ unless ``keep_issues`` is set. With ``reset_all`` also includes
+    config.json. Files/dirs that don't exist are filtered out by the caller.
     """
     targets = [
         aidlc_dir / "runs",
         aidlc_dir / "reports",
         aidlc_dir / "session",
+        # Tool-generated pre-planning artifacts. Reset clears them so the
+        # next run produces fresh discovery + research from the current
+        # BRAINDUMP/repo state.
+        aidlc_dir / "discovery",
+        aidlc_dir / "research",
         aidlc_dir / "audit_result.json",
         aidlc_dir / "planning_index.md",
         aidlc_dir / "CONFLICTS.md",

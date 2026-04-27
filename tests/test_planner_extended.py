@@ -19,6 +19,7 @@ def logger():
 def config(tmp_path):
     return {
         "_project_root": str(tmp_path),
+        "_aidlc_dir": str(tmp_path / ".aidlc"),
         "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
         "_reports_dir": str(tmp_path / ".aidlc" / "reports"),
         "checkpoint_interval_minutes": 999,

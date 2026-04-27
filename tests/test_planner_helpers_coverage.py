@@ -105,7 +105,7 @@ def test_enforce_prompt_budget_shrinks_and_truncates(logger, tmp_path):
 def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
     cfg, run_dir = _base_config(tmp_path)
     (tmp_path / "README.md").write_text("# R")
-    rdir = tmp_path / "docs" / "research"
+    rdir = tmp_path / ".aidlc" / "research"
     rdir.mkdir(parents=True)
     (rdir / "a.md").write_text("r")
     for i in range(35):
@@ -136,7 +136,7 @@ def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
     assert path.exists()
     body = path.read_text()
     assert "Research" in body
-    assert "docs/research/a.md" in body
+    assert ".aidlc/research/a.md" in body
     assert "Other Project Docs" in body
     assert "and 5 more" in body or "more" in body
 
@@ -144,7 +144,7 @@ def test_write_planning_index_research_issues_other_docs(logger, tmp_path):
 def test_write_planning_index_includes_discovery_section(logger, tmp_path):
     """Discovery findings + topics.json should be listed in the index when present."""
     cfg, run_dir = _base_config(tmp_path)
-    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir = tmp_path / ".aidlc" / "discovery"
     discovery_dir.mkdir(parents=True)
     (discovery_dir / "findings.md").write_text("# Findings\nstuff")
     (discovery_dir / "topics.json").write_text("[]")
@@ -153,8 +153,8 @@ def test_write_planning_index_includes_discovery_section(logger, tmp_path):
     path = write_planning_index(planner)
     body = path.read_text()
     assert "## Discovery" in body
-    assert "docs/discovery/findings.md" in body
-    assert "docs/discovery/topics.json" in body
+    assert ".aidlc/discovery/findings.md" in body
+    assert ".aidlc/discovery/topics.json" in body
 
 
 def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
@@ -186,10 +186,10 @@ def test_build_prompt_points_at_discovery_and_research_without_embedding(logger,
     budget) and brittle (a partial / killed discovery run can write
     garbage that explodes the prompt)."""
     cfg, run_dir = _base_config(tmp_path)
-    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir = tmp_path / ".aidlc" / "discovery"
     discovery_dir.mkdir(parents=True)
     (discovery_dir / "findings.md").write_text("# Findings\ntutorial system has 11 steps wired")
-    research_dir = tmp_path / "docs" / "research"
+    research_dir = tmp_path / ".aidlc" / "research"
     research_dir.mkdir(parents=True)
     (research_dir / "tutorial-graph-shape.md").write_text("# Research")
     state = RunState(run_id="r", config_name="c")
@@ -200,8 +200,8 @@ def test_build_prompt_points_at_discovery_and_research_without_embedding(logger,
         prompt = build_prompt(planner, is_finalization=False)
     # Section header + pointers are present...
     assert "Discovery & Research" in prompt
-    assert "docs/discovery/findings.md" in prompt
-    assert "docs/research/tutorial-graph-shape.md" in prompt
+    assert ".aidlc/discovery/findings.md" in prompt
+    assert ".aidlc/research/tutorial-graph-shape.md" in prompt
     # ...but the full content of findings.md is NOT embedded.
     assert "tutorial system has 11 steps wired" not in prompt
 
@@ -213,7 +213,7 @@ def test_build_prompt_does_not_explode_on_huge_findings_file(logger, tmp_path):
     discovery section means the prompt size is independent of
     findings.md size."""
     cfg, run_dir = _base_config(tmp_path)
-    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir = tmp_path / ".aidlc" / "discovery"
     discovery_dir.mkdir(parents=True)
     huge = "MARKER_AT_START\n" + ("x" * 5_000_000) + "\nMARKER_AT_END"
     (discovery_dir / "findings.md").write_text(huge)
@@ -224,7 +224,7 @@ def test_build_prompt_does_not_explode_on_huge_findings_file(logger, tmp_path):
     with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
         prompt = build_prompt(planner, is_finalization=False)
     # Pointer is in the prompt; the giant content is NOT.
-    assert "docs/discovery/findings.md" in prompt
+    assert ".aidlc/discovery/findings.md" in prompt
     assert "MARKER_AT_START" not in prompt
     assert "MARKER_AT_END" not in prompt
     # Prompt is small (well under 1 MB; was ~5 MB embedded before).

@@ -316,7 +316,7 @@ DEFAULTS = {
     "cleanup_passes_periodic": ["abend", "cleanup"],
     # Implementation prompt: max prior completed issues listed (titles only); rest on disk
     "implementation_completed_issues_max": 6,
-    # Implementation prompt: max docs/research/*.md filenames shown in the
+    # Implementation prompt: max .aidlc/research/*.md filenames shown in the
     # "Available Research" index (implementer can still list the directory).
     "implementation_research_index_max": 15,
     # Patterns that classify a doc as planning-only (dropped from impl context)

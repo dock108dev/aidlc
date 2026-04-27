@@ -1,10 +1,12 @@
 """Research phase — runs the topic list produced by discovery.
 
-Reads `docs/discovery/topics.json`, executes one research call per topic,
-writes `docs/research/<topic>.md` per entry. Skip-if-exists per topic.
+Reads ``.aidlc/discovery/topics.json``, executes one research call per
+topic, writes ``.aidlc/research/<topic>.md`` per entry. Skip-if-exists
+per topic. Both inputs and outputs live under ``.aidlc/`` because they
+are tool-generated artifacts, not user-authored project docs.
 
 The per-topic execution logic was lifted from the legacy
-`planner_helpers.execute_research` so the planner no longer juggles
+``planner_helpers.execute_research`` so the planner no longer juggles
 investigation alongside issue creation.
 """
 
@@ -198,15 +200,16 @@ def execute_research_topic(
 ) -> bool:
     """Run one research topic. Returns True if a file was written, False otherwise.
 
-    Skip-if-exists semantics: if `docs/research/<slug>.md` already exists, no
-    model call is made and False is returned.
+    Skip-if-exists semantics: if ``.aidlc/research/<slug>.md`` already exists,
+    no model call is made and False is returned.
     """
     sanitized = sanitize_topic_slug(topic)[:80]
     sanitized = re.sub(r"-+", "-", sanitized).strip("-") or "topic"
-    research_dir = project_root / "docs" / "research"
+    aidlc_dir = Path(config["_aidlc_dir"])
+    research_dir = aidlc_dir / "research"
     output_path = research_dir / f"{sanitized}.md"
     if output_path.exists():
-        logger.info(f"Research already exists: docs/research/{sanitized}.md — skipping")
+        logger.info(f"Research already exists: .aidlc/research/{sanitized}.md — skipping")
         return False
 
     logger.info(f"Researching: {topic}")
@@ -261,7 +264,7 @@ def execute_research_topic(
     state.files_created += 1
     state.created_artifacts.append(
         {
-            "path": f"docs/research/{sanitized}.md",
+            "path": f".aidlc/research/{sanitized}.md",
             "type": "research",
             "action": "create",
         }
@@ -271,12 +274,12 @@ def execute_research_topic(
     outputs_dir.mkdir(exist_ok=True)
     (outputs_dir / f"research_{sanitized}.md").write_text(output, encoding="utf-8")
 
-    logger.info(f"Research complete: docs/research/{sanitized}.md")
+    logger.info(f"Research complete: .aidlc/research/{sanitized}.md")
     return True
 
 
-def _load_topics(project_root: Path, logger: logging.Logger) -> list[dict]:
-    topics_path = project_root / "docs" / "discovery" / "topics.json"
+def _load_topics(aidlc_dir: Path, logger: logging.Logger) -> list[dict]:
+    topics_path = aidlc_dir / "discovery" / "topics.json"
     if not topics_path.exists():
         logger.info("No discovery topics.json present — skipping research phase.")
         return []
@@ -313,7 +316,8 @@ def run_research_phase(
     logger: logging.Logger,
 ) -> int:
     """Run all discovery-produced research topics. Returns count written."""
-    topics = _load_topics(project_root, logger)
+    aidlc_dir = Path(config["_aidlc_dir"])
+    topics = _load_topics(aidlc_dir, logger)
     state.research_topics_total = len(topics)
     if not topics:
         state.research_topics_completed = 0

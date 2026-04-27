@@ -24,7 +24,7 @@ def test_prompt_contains_preserve_dont_rewrite_clauses():
 
 
 def test_implementer_prompt_lists_research_files_when_present(tmp_path):
-    """Research awareness: planner-emitted research lands in docs/research/.
+    """Research awareness: planner-emitted research lands in .aidlc/research/.
 
     The implementer must be told these files exist so it reads relevant ones
     instead of re-deriving content. Without this, the work the planner did
@@ -35,7 +35,7 @@ def test_implementer_prompt_lists_research_files_when_present(tmp_path):
     from aidlc.implementer_helpers import build_implementation_prompt
     from aidlc.issue_model import Issue
 
-    research_dir = tmp_path / "docs" / "research"
+    research_dir = tmp_path / ".aidlc" / "research"
     research_dir.mkdir(parents=True)
     (research_dir / "hole-layouts.md").write_text("# Hole layouts")
     (research_dir / "physics-tuning.md").write_text("# Physics")
@@ -43,6 +43,7 @@ def test_implementer_prompt_lists_research_files_when_present(tmp_path):
     impl = MagicMock()
     impl.config = {
         "_project_root": str(tmp_path),
+        "_aidlc_dir": str(tmp_path / ".aidlc"),
         "_issues_dir": str(tmp_path / ".aidlc" / "issues"),
         "implementation_completed_issues_max": 12,
     }
@@ -54,8 +55,8 @@ def test_implementer_prompt_lists_research_files_when_present(tmp_path):
 
     prompt = build_implementation_prompt(impl, issue)
     assert "## Available Research" in prompt
-    assert "docs/research/hole-layouts.md" in prompt
-    assert "docs/research/physics-tuning.md" in prompt
+    assert ".aidlc/research/hole-layouts.md" in prompt
+    assert ".aidlc/research/physics-tuning.md" in prompt
     assert "read them first" in prompt
 
 

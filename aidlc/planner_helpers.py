@@ -231,8 +231,8 @@ def _render_foundation_docs_section(planner) -> list[str]:
         "written (fit existing systems, respect constraints). They never "
         "override BRAINDUMP exclusions.\n\n"
         "**Discovery and research are complete.** Pre-built artifacts live at "
-        "`docs/discovery/findings.md` (current repo state for BRAINDUMP-relevant "
-        "systems) and `docs/research/*.md` (per-topic answers). Reference them "
+        "`.aidlc/discovery/findings.md` (current repo state for BRAINDUMP-relevant "
+        "systems) and `.aidlc/research/*.md` (per-topic answers). Reference them "
         "in issue descriptions when relied on. The `research` planning action "
         "has been removed; if a topic is missing, read the file directly with "
         "your tools.\n\n"
@@ -253,9 +253,9 @@ def _render_discovery_section(planner) -> list[str]:
     gives the model a known location to read when it actually needs that
     context, and keeps the prompt small.
     """
-    project_root = planner.project_root
-    findings_path = project_root / "docs" / "discovery" / "findings.md"
-    research_dir = project_root / "docs" / "research"
+    aidlc_dir = Path(planner.config["_aidlc_dir"])
+    findings_path = aidlc_dir / "discovery" / "findings.md"
+    research_dir = aidlc_dir / "research"
 
     if not findings_path.exists() and not research_dir.exists():
         return []
@@ -267,12 +267,12 @@ def _render_discovery_section(planner) -> list[str]:
     ]
 
     if findings_path.exists():
-        lines.append("- `docs/discovery/findings.md` — repo state for BRAINDUMP-relevant systems")
+        lines.append("- `.aidlc/discovery/findings.md` — repo state for BRAINDUMP-relevant systems")
 
     if research_dir.exists():
         research_files = sorted(p.name for p in research_dir.glob("*.md"))
         for name in research_files:
-            lines.append(f"- `docs/research/{name}`")
+            lines.append(f"- `.aidlc/research/{name}`")
 
     return lines
 
@@ -360,23 +360,24 @@ def write_planning_index(planner) -> Path:
             lines.append(f"- {name}")
         lines.append("")
 
-    discovery_findings = planner.project_root / "docs" / "discovery" / "findings.md"
-    discovery_topics = planner.project_root / "docs" / "discovery" / "topics.json"
+    aidlc_dir = Path(planner.config["_aidlc_dir"])
+    discovery_findings = aidlc_dir / "discovery" / "findings.md"
+    discovery_topics = aidlc_dir / "discovery" / "topics.json"
     if discovery_findings.exists() or discovery_topics.exists():
         lines.append("## Discovery (pre-built — current repo state)")
         if discovery_findings.exists():
-            lines.append("- docs/discovery/findings.md")
+            lines.append("- .aidlc/discovery/findings.md")
         if discovery_topics.exists():
-            lines.append("- docs/discovery/topics.json")
+            lines.append("- .aidlc/discovery/topics.json")
         lines.append("")
 
-    research_dir = planner.project_root / "docs" / "research"
+    research_dir = aidlc_dir / "research"
     if research_dir.exists():
         research_files = sorted(research_dir.glob("*.md"))
         if research_files:
             lines.append("## Research (pre-built — answers to discovery topics)")
             for rf in research_files:
-                lines.append(f"- docs/research/{rf.name}")
+                lines.append(f"- .aidlc/research/{rf.name}")
             lines.append("")
 
     issues_dir = Path(planner.config["_issues_dir"])
