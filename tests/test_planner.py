@@ -105,6 +105,10 @@ class TestPlanner:
 
         def fake_cycle():
             phases_seen.append(state.phase)
+            # Each cycle counts as productive work (issues_created bumps),
+            # so the planner doesn't switch into verify mode and the budget
+            # path is the one that triggers the stop.
+            state.issues_created += 1
             # Simulate first planning cycle overrunning remaining budget.
             if len(phases_seen) == 1:
                 state.plan_elapsed_seconds = 120.0
@@ -356,13 +360,26 @@ class TestPlanner:
         )
         assert "complete" in (state.stop_reason or "").lower()
 
-    def test_planning_complete_deferred_until_winding_down(self, state, config, logger, tmp_path):
-        """Claude's planning_complete is deferred — only honored after winding down confirmed."""
+    def test_planning_complete_only_honored_in_verify_mode(self, state, config, logger, tmp_path):
+        """The model's `planning_complete: true` is ignored on a normal cycle —
+        the model sometimes adds it unprompted on greenfield repos. It is
+        only honored on a verify cycle (which fires after a 0-new-issues
+        cycle and is the explicit invitation for the model to declare done).
+
+        Test sequence:
+          - Cycle 1: create issue + planning_complete=true (UNPROMPTED — must
+            be ignored). Cycle creates 1 new issue, so it's productive.
+          - Cycle 2: empty actions → planner switches to verify mode.
+          - Cycle 3 (verify mode): empty actions + planning_complete=true →
+            now accepted because the verify prompt explicitly invites it.
+        """
         cli = MagicMock()
-        # Cycle 1: creates an issue (not winding down yet)
-        create_response = json.dumps(
+        create_with_unprompted_complete = json.dumps(
             {
                 "frontier_assessment": "Creating work",
+                # The unprompted planning_complete on a NORMAL cycle.
+                "planning_complete": True,
+                "completion_reason": "Premature claim — should be ignored.",
                 "actions": [
                     {
                         "action_type": "create_issue",
@@ -376,26 +393,14 @@ class TestPlanner:
                 "cycle_notes": "",
             }
         )
-        # Cycles 2-4: only updates (winding down)
-        update_response = json.dumps(
-            {
-                "frontier_assessment": "Minor update",
-                "actions": [
-                    {
-                        "action_type": "update_issue",
-                        "issue_id": "ISSUE-001",
-                        "description": "Updated",
-                    }
-                ],
-                "cycle_notes": "",
-            }
+        empty_response = json.dumps(
+            {"frontier_assessment": "Nothing to add", "actions": [], "cycle_notes": ""}
         )
-        # Cycle 5: Claude declares complete after being offered the option
-        complete_response = json.dumps(
+        verify_complete_response = json.dumps(
             {
-                "frontier_assessment": "All done",
+                "frontier_assessment": "Coverage confirmed",
                 "planning_complete": True,
-                "completion_reason": "Plan is comprehensive",
+                "completion_reason": "All BRAINDUMP intent covered by ISSUE-001",
                 "actions": [],
                 "cycle_notes": "",
             }
@@ -403,7 +408,7 @@ class TestPlanner:
         cli.execute_prompt.side_effect = [
             {
                 "success": True,
-                "output": f"```json\n{create_response}\n```",
+                "output": f"```json\n{create_with_unprompted_complete}\n```",
                 "error": None,
                 "failure_type": None,
                 "duration_seconds": 1.0,
@@ -411,7 +416,7 @@ class TestPlanner:
             },
             {
                 "success": True,
-                "output": f"```json\n{update_response}\n```",
+                "output": f"```json\n{empty_response}\n```",
                 "error": None,
                 "failure_type": None,
                 "duration_seconds": 1.0,
@@ -419,23 +424,7 @@ class TestPlanner:
             },
             {
                 "success": True,
-                "output": f"```json\n{update_response}\n```",
-                "error": None,
-                "failure_type": None,
-                "duration_seconds": 1.0,
-                "retries": 0,
-            },
-            {
-                "success": True,
-                "output": f"```json\n{update_response}\n```",
-                "error": None,
-                "failure_type": None,
-                "duration_seconds": 1.0,
-                "retries": 0,
-            },
-            {
-                "success": True,
-                "output": f"```json\n{complete_response}\n```",
+                "output": f"```json\n{verify_complete_response}\n```",
                 "error": None,
                 "failure_type": None,
                 "duration_seconds": 1.0,
@@ -444,44 +433,26 @@ class TestPlanner:
         ]
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
-        config["planning_diminishing_returns_min_threshold"] = 3
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
         issues_dir = Path(config["_issues_dir"])
         issues_dir.mkdir(parents=True, exist_ok=True)
 
-        doc_files = [
-            {
-                "path": "ARCHITECTURE.md",
-                "content": "Architecture details " * 80,
-                "priority": 0,
-                "size": 1680,
-            },
-            {
-                "path": "DESIGN.md",
-                "content": "Design details " * 80,
-                "priority": 0,
-                "size": 1120,
-            },
-            {
-                "path": "CLAUDE.md",
-                "content": "Agent constraints " * 80,
-                "priority": 0,
-                "size": 1440,
-            },
-        ]
-        planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
+        planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
-        # Should run: 1 create + 3 updates (triggers offer) + 1 complete = 5 cycles
-        # But cycle 5 returns empty actions + planning_complete -> frontier clear
-        assert (
-            "complete" in (state.stop_reason or "").lower()
-            or "clear" in (state.stop_reason or "").lower()
-        )
+        # Cycle 1 (create) + cycle 2 (empty → verify) + cycle 3 (verify confirms) = 3 cycles.
+        assert state.planning_cycles == 3
+        # Verify-mode planning_complete reason is the one that lands.
+        assert "ISSUE-001" in (state.stop_reason or "")
+        assert "Premature claim" not in (state.stop_reason or "")
 
-    def test_diminishing_returns_exits_early(self, state, config, logger, tmp_path):
-        """Update-only cycles trigger offer, then force exit if Claude doesn't declare done."""
+    def test_update_only_cycles_trigger_verify_then_stop(self, state, config, logger, tmp_path):
+        """A cycle that proposes only update_issue actions (no new issues)
+        is treated the same as an empty cycle — it triggers verify mode
+        for the next cycle. If verify also produces no new issues,
+        planning stops with the verify-confirmed reason. This prevents
+        the planner from spinning forever on cosmetic updates."""
         cli = MagicMock()
         # Return a response with only update_issue actions (no new issues)
         update_response = json.dumps(
@@ -550,14 +521,18 @@ class TestPlanner:
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
-        # 3 cycles to detect winding down + offer, then 2 more before force exit = 5
-        assert state.planning_cycles == 5
-        assert "no new issues" in (state.stop_reason or "").lower()
+        # Cycle 1: update_issue (0 new) → triggers verify mode for cycle 2.
+        # Cycle 2 (verify): same update_issue (still 0 new) → planning stops.
+        assert state.planning_cycles == 2
+        assert "verify" in (state.stop_reason or "").lower()
 
-    def test_diminishing_returns_with_preexisting_issues_and_zero_created(
+    def test_update_only_works_when_no_new_issues_were_created_in_this_run(
         self, state, config, logger, tmp_path
     ):
-        """Winding-down should work even when this run created no new issues."""
+        """Sanity: the verify-mode trigger fires on 0-new-issues regardless of
+        whether the cycle's actions touch pre-existing or run-fresh issues.
+        Pre-existing issues with only update_issue actions still count as
+        zero-new-this-cycle and should land in verify mode just the same."""
         cli = MagicMock()
         update_response = json.dumps(
             {
@@ -624,5 +599,6 @@ class TestPlanner:
         ]
         planner = Planner(state, run_dir, config, cli, "context", logger, doc_files=doc_files)
         planner.run()
-        assert state.planning_cycles == 4
-        assert "no new issues" in (state.stop_reason or "").lower()
+        # Same as above: 2 cycles before verify-mode confirms.
+        assert state.planning_cycles == 2
+        assert "verify" in (state.stop_reason or "").lower()

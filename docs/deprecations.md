@@ -59,8 +59,15 @@ spurious planning issues on mature repos.
 
 - **`session_dir_max_keep`** — only existed for the retired `aidlc plan`
   wizard.
-- **`diminishing_returns_threshold`** — replaced by the SSOT pair
-  `planning_diminishing_returns_min_threshold` and `_max_threshold`.
+- **`diminishing_returns_threshold`**,
+  **`diminishing_returns_window`**,
+  **`planning_diminishing_returns_min_threshold`**,
+  **`planning_diminishing_returns_max_threshold`** — the entire
+  multi-empty-cycle "diminishing returns" wait was replaced with a
+  single explicit verify cycle (see ``VERIFY_INSTRUCTIONS`` in
+  ``aidlc/planner_text.py`` and the "Verify-mode planning exit" section
+  in ``docs/configuration.md``). Legacy configs containing any of these
+  keys are silently ignored.
 - **`audit_braindump_*`, `audit_planning_workload_*`, `audit_*_estimate_*`**
   — see *Auditor BRAINDUMP/ARCHITECTURE generation* above.
 - **`claude_hard_timeout_seconds`** — wall-clock kill on the Claude CLI

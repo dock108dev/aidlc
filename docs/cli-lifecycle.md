@@ -134,9 +134,13 @@ The planner emits two action types (defined in `PLANNING_ACTION_TYPES`):
 Planner completion is controlled by cycle outcomes and guards:
 
 - budget/cycle caps
-- repeated no-new-issue cycles (**adaptive** diminishing returns: threshold
-  = `clamp(min, ceil(num_issues_so_far / 10), max)`, configured via
-  `planning_diminishing_returns_min_threshold` / `_max_threshold`)
+- a no-new-issue cycle (no actions, or only `update_issue` actions)
+  triggers **verify mode** for the next cycle. Verify mode swaps the
+  normal prompt for an explicit coverage-check prompt that walks
+  through BRAINDUMP, discovery findings, research files, and the
+  existing issue set. If verify also returns no new issues, planning
+  completes; if verify surfaces missing work, the planner files those
+  issues and returns to normal mode
 - explicit `planning_complete` accepted only when completion is offered and
   core planning docs are sufficient
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)

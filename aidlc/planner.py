@@ -21,9 +21,9 @@ from .planner_helpers import (
     write_planning_index,
 )
 from .planner_text import (
-    COMPLETION_OFFER_INSTRUCTIONS,
     FINALIZATION_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
+    VERIFY_INSTRUCTIONS,
 )
 from .reporting import generate_checkpoint_summary
 from .schemas import (
@@ -74,11 +74,16 @@ class Planner:
         )
         finalization_grace_used = 0
 
-        # Diminishing returns tracking — tracks (new_issues, total_actions) per cycle
-        recent_cycles = []  # list of (new_issue_count, total_action_count)
-        diminishing_returns_window = self.config.get("diminishing_returns_window", 5)
         self._pending_completion_reason = None
-        self._offer_completion = False  # When True, prompt tells Claude it can declare done
+        # Verify mode is set after a cycle proposes no actions. The next cycle
+        # uses an explicit coverage-check prompt (BRAINDUMP + findings + research
+        # + existing issues) instead of re-issuing the same planning prompt.
+        # If the verify cycle is also empty, planning is complete. If it
+        # uncovers gaps, those issues are filed and the next cycle returns
+        # to normal mode. This replaces the earlier multi-empty-cycle
+        # diminishing-returns dance — one verify pass is a stronger signal
+        # than N idle re-prompts and is much cheaper.
+        self._verify_mode = False
 
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
@@ -135,49 +140,9 @@ class Planner:
             # Run one planning cycle
             issues_before = self.state.issues_created
             result = self._planning_cycle()
+            new_this_cycle = self.state.issues_created - issues_before
 
-            if result is None:
-                # No actions proposed. Only treat as "done" if:
-                # 1. We already offered completion and Claude accepted, OR
-                # 2. We've been winding down (multiple empty/update-only cycles)
-                if self._pending_completion_reason:
-                    self.state.stop_reason = self._pending_completion_reason
-                    self.logger.info("No more planning work identified (completion confirmed).")
-                    break
-                elif getattr(self, "_offer_completion", False):
-                    self.state.stop_reason = "Planning frontier is clear"
-                    self.logger.info("No more planning work identified.")
-                    break
-                else:
-                    # Early empty cycle — Claude may have stopped prematurely.
-                    # Track it as a zero-new-issue cycle for diminishing returns.
-                    self.logger.warning(
-                        "Empty planning cycle but completion not yet offered — "
-                        "continuing to ensure repository scope is fully captured."
-                    )
-                    recent_cycles.append(0)
-                    # Check if we've had enough empty cycles to trigger winding down.
-                    # ISSUE-011: threshold scales with issue count.
-                    threshold = self._adaptive_diminishing_threshold()
-                    if (
-                        len(recent_cycles) >= threshold
-                        and len(self.state.issues) > 0
-                        and all(n == 0 for n in recent_cycles[-threshold:])
-                    ):
-                        if not self._offer_completion:
-                            self._offer_completion = True
-                            self.logger.info(
-                                f"Offering completion option after {threshold} empty cycles "
-                                f"(adaptive threshold for {len(self.state.issues)} issues)."
-                            )
-                        else:
-                            self.state.stop_reason = "Planning frontier is clear"
-                            self.logger.info(
-                                f"Planning complete after {threshold} empty cycles "
-                                f"(adaptive threshold)."
-                            )
-                            break
-            elif result is False:
+            if result is False:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
                     self.state.stop_reason = (
@@ -186,52 +151,53 @@ class Planner:
                     self.logger.error("Too many consecutive failures. Stopping planning.")
                     break
                 continue
+            consecutive_failures = 0
+
+            if new_this_cycle == 0:
+                # No new issues this cycle — either no actions at all (result is
+                # None), or the model only emitted update_issue actions (still no
+                # progress on coverage). Two outcomes:
+                #   - Already in verify mode → coverage confirmed; done.
+                #   - Normal mode → switch to verify mode for the next cycle.
+                # The verify prompt walks through BRAINDUMP + discovery findings
+                # + existing issues, either filing the missing pieces or
+                # declaring complete. Replaces the earlier multi-empty-cycle
+                # diminishing-returns wait with a single explicit coverage check.
+                if self._verify_mode:
+                    reason = (
+                        self._pending_completion_reason
+                        or "Verify cycle confirmed coverage: no new issues needed."
+                    )
+                    self.state.stop_reason = reason
+                    self.logger.info(f"Planning complete: {reason}")
+                    break
+                else:
+                    self._verify_mode = True
+                    self.logger.info(
+                        "No new issues this cycle — switching to verify mode for the next "
+                        "cycle. The verify prompt walks through BRAINDUMP + discovery findings "
+                        "+ existing issues to confirm coverage or surface missing pieces."
+                    )
             else:
-                # Cycle succeeded
-                consecutive_failures = 0
-                new_this_cycle = self.state.issues_created - issues_before
-
-                # Track cycle stats
-                recent_cycles.append(new_this_cycle)
-                if len(recent_cycles) > diminishing_returns_window:
-                    recent_cycles.pop(0)
-
-                # Check for winding down: last N cycles all had 0 new issues
-                # ISSUE-011: threshold scales with issue count, recomputed each cycle
-                threshold = self._adaptive_diminishing_threshold()
-                if (
-                    len(recent_cycles) >= threshold
-                    and len(self.state.issues) > 0
-                    and all(n == 0 for n in recent_cycles[-threshold:])
-                ):
-                    if not self._offer_completion:
-                        # First detection: tell Claude it can declare done next cycle
-                        self._offer_completion = True
-                        self.logger.info(
-                            f"Winding down detected: {threshold} cycles "
-                            f"with no new issues (adaptive threshold for "
-                            f"{len(self.state.issues)} issues). Offering completion to Claude."
-                        )
-                    elif self._pending_completion_reason:
-                        # Claude accepted the offer — honor it
-                        self.state.stop_reason = self._pending_completion_reason
-                        self.logger.info(
-                            f"Planning complete (confirmed): {self._pending_completion_reason}"
-                        )
-                        break
-                    else:
-                        # Claude didn't declare complete but is still just updating
-                        # Give it one more cycle, then force exit
-                        tail_len = sum(1 for n in recent_cycles if n == 0)
-                        if tail_len >= threshold + 2:
-                            self.state.stop_reason = (
-                                f"Planning complete — {tail_len} consecutive cycles "
-                                f"with no new issues"
-                            )
-                            self.logger.info(
-                                f"Forced planning exit: {tail_len} update-only cycles."
-                            )
-                            break
+                # Cycle produced new issues. If we were in verify mode, that's
+                # a real coverage gap the verify pass surfaced — exit verify
+                # mode and let normal cycles continue. If the next cycles
+                # return 0 new issues again, verify fires again and confirms.
+                if self._verify_mode:
+                    self.logger.info(
+                        f"Verify cycle surfaced {new_this_cycle} new issue(s) — filed; "
+                        "returning to normal planning."
+                    )
+                    self._verify_mode = False
+                # Honor an explicit planning_complete from a productive verify
+                # cycle (model said "I filed N issues and now we're done").
+                if self._pending_completion_reason:
+                    self.state.stop_reason = self._pending_completion_reason
+                    self.logger.info(
+                        f"Planning complete (model self-declared): "
+                        f"{self._pending_completion_reason}"
+                    )
+                    break
 
             save_state(self.state, self.run_dir)
 
@@ -344,15 +310,21 @@ class Planner:
             f"Notes: {planning_output.cycle_notes}"
         )
 
-        # Only accept planning_complete if we've offered it.
-        # (Claude sometimes adds this field unprompted — ignore it until invited)
-        if planning_output.planning_complete and getattr(self, "_offer_completion", False):
+        # Accept planning_complete when the model emits it during a verify
+        # cycle (where the prompt explicitly invites it) — the verify prompt
+        # is the only place the model is told it's allowed to declare done.
+        # On normal cycles the field is ignored; the model sometimes adds it
+        # unprompted on greenfield repos and we don't want to short-circuit.
+        if planning_output.planning_complete and self._verify_mode:
             reason = planning_output.completion_reason or "planning completed"
             self._pending_completion_reason = f"Planning complete — {reason}"
-            self.logger.info(f"Model signaled planning_complete (accepted): {reason}")
+            self.logger.info(
+                f"Model signaled planning_complete (accepted in verify mode): {reason}"
+            )
         elif planning_output.planning_complete:
             self.logger.info(
-                "Model signaled planning_complete but completion not yet offered — ignoring"
+                "Model signaled planning_complete on a normal cycle — ignoring "
+                "(only accepted in verify mode, which fires after an empty cycle)."
             )
 
         if not planning_output.actions:
@@ -415,31 +387,6 @@ class Planner:
         self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
         return True
 
-    def _adaptive_diminishing_threshold(self) -> int:
-        """Compute the diminishing-returns threshold for the current issue count.
-
-        ISSUE-011: scale the threshold with project size:
-            threshold = clamp(min, ceil(num_issues_so_far / 10), max)
-
-        - Small projects (≤30 issues) use the floor (default 3).
-        - Large projects (≥60 issues) use the ceiling (default 6).
-        - In between, the threshold steps up by one per ~10 issues so a stall
-          mid-planning on a big repo doesn't force-exit prematurely.
-        """
-        from math import ceil
-
-        floor_val = max(
-            1,
-            int(self.config.get("planning_diminishing_returns_min_threshold", 3)),
-        )
-        ceil_val = max(
-            floor_val,
-            int(self.config.get("planning_diminishing_returns_max_threshold", 6)),
-        )
-        n = len(self.state.issues or [])
-        adaptive = ceil(max(1, n) / 10)
-        return max(floor_val, min(adaptive, ceil_val))
-
     def _write_planning_index(self):
         return write_planning_index(self)
 
@@ -456,8 +403,8 @@ class Planner:
         """Save the current cycle's context for resume."""
         save_cycle_notes(self.run_dir, frontier, notes, cycle_num)
 
-    def _completion_offer_instructions(self) -> str:
-        return COMPLETION_OFFER_INSTRUCTIONS
+    def _verify_instructions(self) -> str:
+        return VERIFY_INSTRUCTIONS
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

@@ -142,9 +142,6 @@ on wall-clock alone.
 
 | Key | Default |
 |---|---|
-| `diminishing_returns_window` | `5` |
-| `planning_diminishing_returns_min_threshold` | `3` |
-| `planning_diminishing_returns_max_threshold` | `6` |
 | `finalization_budget_percent` | `10` |
 | `planning_finalization_grace_cycles` | `1` |
 | `planning_doc_min_chars` | `800` |
@@ -164,7 +161,7 @@ on wall-clock alone.
 | `doc_gap_detection_enabled` | `false` |
 | `doc_gap_max_items` | `50` |
 
-**Adaptive diminishing-returns threshold.** The planner exits when it sees N consecutive cycles with zero new issues. N is adaptive to issue count: `N = clamp(min, ceil(num_issues_so_far / 10), max)`. So a small project (≤30 issues) uses 3, a large project (≥60 issues) uses 6. The legacy `diminishing_returns_threshold` config key has been removed; use `planning_diminishing_returns_min_threshold` / `_max_threshold` instead.
+**Verify-mode planning exit.** When a planning cycle produces 0 new issues (no actions, or only `update_issue` actions), the planner switches to **verify mode** for the next cycle. The verify prompt explicitly walks through `BRAINDUMP.md`, `.aidlc/discovery/findings.md`, `.aidlc/research/*.md`, and the existing issue set — either filing the missing pieces (gap found → exit verify mode, continue planning) or returning empty (coverage confirmed → planning complete). This replaces the earlier multi-empty-cycle "diminishing returns" wait with a single explicit coverage check; it's much cheaper and a stronger signal. The legacy keys `diminishing_returns_window`, `planning_diminishing_returns_min_threshold`, `planning_diminishing_returns_max_threshold`, and `diminishing_returns_threshold` have all been removed and are silently ignored if present in legacy configs.
 
 **Doc-gap detection (opt-in).** Off by default — on mature repos, scanning every doc for TBD/placeholder markers and turning them into spurious planning issues created noise. Set `doc_gap_detection_enabled: true` on greenfield projects where doc gaps are real planning input.
 

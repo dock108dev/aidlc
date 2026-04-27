@@ -497,8 +497,8 @@ def build_prompt(planner, is_finalization: bool) -> str:
         static_parts.append(planner._finalization_instructions())
     else:
         static_parts.append(planner._planning_instructions())
-    if getattr(planner, "_offer_completion", False):
-        static_parts.append(planner._completion_offer_instructions())
+    if getattr(planner, "_verify_mode", False):
+        static_parts.append(planner._verify_instructions())
     static_parts.append(PLANNING_SCHEMA_DESCRIPTION)
 
     volatile_parts: list[str] = [

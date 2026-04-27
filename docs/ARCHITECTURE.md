@@ -251,10 +251,11 @@ The planner and implementer each have explicit stop conditions.
 
 **Planner** (`planner.py`):
 - Budget exhausted → `plan_finalization` phase, then exit.
-- N consecutive empty cycles → offer completion; if the model declines,
-  force-exit one cycle later. N is **adaptive** to issue count:
-  `clamp(min, ceil(num_issues/10), max)`, configured via
-  `planning_diminishing_returns_min_threshold` / `_max_threshold`.
+- A no-new-issue cycle triggers **verify mode** for the next cycle.
+  Verify uses an explicit coverage-check prompt (BRAINDUMP + findings +
+  research + existing issues). If verify also returns 0 new issues,
+  planning completes; if verify surfaces gaps, those issues are filed
+  and normal cycles resume.
 - Explicit `planning_complete` from the model (only honored after completion is
   offered).
 - 3 consecutive failures.

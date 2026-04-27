@@ -36,9 +36,29 @@ Budget almost exhausted. **Refine only** — review issues for completeness, tes
 
 **Complete:** set top-level `planning_complete`: true when the filed-or-prior issue set is sufficient to deliver every concrete BRAINDUMP intent — including the prereq/infra issues you discovered. "Sufficient" not "literal coverage." Do not emit `set_planning_complete` as an action type."""
 
-COMPLETION_OFFER_INSTRUCTIONS = """## Wind-down
+VERIFY_INSTRUCTIONS = """## VERIFY MODE — Final Coverage Check
 
-Several cycles had no new issues. If the filed-or-prior issue set is sufficient to deliver every BRAINDUMP intent (including the prereq/infra you've discovered), declare completion in JSON:
-`planning_complete`: true, `completion_reason`: "<brief>".
+The previous cycle proposed no new issues. Before planning is declared complete, run this explicit coverage check.
 
-Otherwise keep filing issues for uncovered intent or unblockers."""
+**Walk this checklist with your file tools:**
+
+1. Read `BRAINDUMP.md` (project root). Enumerate every distinct intent item (phases, asks, "must-have" lines).
+2. Read `.aidlc/discovery/findings.md`. Note every system / file that BRAINDUMP intent touches.
+3. Skim `.aidlc/research/*.md` filenames listed under `## Discovery & Research`. Read any whose answers might imply work not yet captured.
+4. Cross-reference against the existing issue set (the `## Existing Issues` and `## Prior Run` sections plus `.aidlc/issues/*.md` on disk).
+
+**For each BRAINDUMP intent item:**
+- Covered by an existing issue (any status) → OK.
+- Not covered → file a `create_issue` action with `critical_gap: true` and `priority: "high"`. Description must cite the BRAINDUMP line it satisfies and the discovery finding it relies on.
+
+**For each significant system named in findings:**
+- Touched by an existing/prior issue → OK.
+- Structurally needed for an intent item but no issue mentions it → file a prereq `create_issue` (also `critical_gap: true`).
+
+**If everything checks out:**
+- Return `actions: []`.
+- Set top-level `planning_complete: true`.
+- Set `completion_reason` to a **concrete** statement that references actual issue IDs and BRAINDUMP coverage, e.g.:
+  `"All BRAINDUMP Phase 1–8 intent covered by ISSUE-001..ISSUE-014; finding 'tutorial-graph' satisfied by ISSUE-007; no infra prereqs missing."`
+
+**Do not** file speculative work, future-phase polish, or anything BRAINDUMP excludes. The bar is: *would shipping every existing issue make BRAINDUMP intent true?* If yes, declare done. If a single intent item is uncovered, file just that issue (and only that issue) and let the next verify pass confirm."""

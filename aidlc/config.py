@@ -172,11 +172,12 @@ DEFAULTS = {
     "retry_backoff_factor": 2.0,
     "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
     "max_consecutive_failures": 3,
-    "diminishing_returns_window": 5,  # track last N cycles for diminishing returns
-    # ISSUE-011: adaptive threshold = clamp(min, ceil(num_issues_so_far/10), max).
-    # Floor (small projects use this), ceiling (very large projects).
-    "planning_diminishing_returns_min_threshold": 3,
-    "planning_diminishing_returns_max_threshold": 6,
+    # Diminishing-returns multi-empty-cycle wait was replaced with a single
+    # explicit verify cycle (see VERIFY_INSTRUCTIONS in planner_text.py).
+    # The keys `diminishing_returns_window`,
+    # `planning_diminishing_returns_min_threshold`, and `_max_threshold`
+    # have been removed; legacy config files setting them are silently
+    # ignored.
     "finalization_budget_percent": 10,
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion
     "max_implementation_attempts": 3,
