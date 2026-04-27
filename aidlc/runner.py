@@ -221,9 +221,14 @@ def scan_project(state: RunState, config: dict, logger, cli=None) -> tuple[str, 
 def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
     """Load parsed issue files from scan results into run state.
 
-    Issue markdown under .aidlc/issues is the usual source for metadata on cold start.
-    On **resume**, run state already reflects persisted progress; we **never downgrade**
-    status from a saved issue because the markdown file is still ``pending``.
+    Issue markdown under ``.aidlc/issues`` is the canonical source of the
+    *planner-authored* fields (title, description, acceptance_criteria,
+    priority, labels, dependencies). State.json is the canonical source of
+    the *implementer-tracked* fields (attempt_count, failure_cause,
+    max_attempts, files_changed). When both exist (i.e. on resume), each
+    side wins over its own fields; we **never downgrade** status from a
+    saved issue just because the markdown still says ``pending``, and we
+    never reset attempt_count just because the markdown doesn't carry it.
     """
     existing = scan_result.get("existing_issues", []) or []
     loaded = 0
@@ -234,14 +239,35 @@ def hydrate_existing_issues(state: RunState, scan_result: dict, logger) -> None:
         incoming = Issue.from_dict(parsed)
         current = state.get_issue(incoming.id)
         if current is not None:
+            # Status: never downgrade. If state's status is "ahead" of the
+            # markdown's, keep state's. (The markdown is auto-rewritten to
+            # match state on every implementer cycle, but a stale read or a
+            # mid-attempt interrupt can leave the markdown behind.)
             cr = issue_progress_rank(current.status)
             ir = issue_progress_rank(incoming.status)
             if cr > ir:
                 continue
-            if cr == ir and len((current.implementation_notes or "")) > len(
+            # Preserve implementer-tracked fields the markdown never carries.
+            # Without this, resume hydration silently zeroes attempt_count
+            # (so the resume-reconcile guard misfires and pending issues
+            # get flipped to "implemented"), and loses failure_cause /
+            # files_changed / max_attempts.
+            incoming.attempt_count = current.attempt_count
+            incoming.max_attempts = current.max_attempts
+            incoming.failure_cause = current.failure_cause
+            if current.files_changed:
+                incoming.files_changed = current.files_changed
+            # implementation_notes: prefer the longer one — markdown is
+            # often re-rendered from state, but state may have an in-flight
+            # update the markdown hasn't picked up yet.
+            if len((current.implementation_notes or "")) > len(
                 (incoming.implementation_notes or "")
             ):
                 incoming.implementation_notes = current.implementation_notes
+            # verification_result: render_issue_md doesn't write this back
+            # into the markdown, so the state value is the only source.
+            if current.verification_result and not incoming.verification_result:
+                incoming.verification_result = current.verification_result
         state.update_issue(incoming)
         loaded += 1
 

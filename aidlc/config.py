@@ -283,7 +283,16 @@ DEFAULTS = {
     "doc_gap_detection_enabled": False,
     "doc_gap_max_items": 50,  # cap gaps passed to planner prompt (when enabled)
     # Resume (implementation-phase continuation)
-    "resume_reconcile_enabled": True,  # git-grep heuristic when resuming past planning
+    # Off by default: the git-grep heuristic that flips pending/in_progress
+    # issues to "implemented" when their id appears in source files has bad
+    # failure modes — foundation docs (BRAINDUMP, ROADMAP) and stray Claude
+    # comments referencing planned issue IDs both look like "evidence the
+    # work is done" to the heuristic, and a false flip silently skips real
+    # work the next pass should have done. False *negatives* are cheap (we
+    # just re-run an already-done issue). False positives are expensive.
+    # Opt in only if you know your project doesn't reference issue IDs
+    # outside of completed implementation commits.
+    "resume_reconcile_enabled": False,
     # Context preparation
     "project_brief_max_chars": 20000,  # max size of generated project brief
     "phase_context_max_chars": 20000,  # max chars for phase-focused docs per cycle

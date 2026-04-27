@@ -181,6 +181,66 @@ class TestHydrateExistingIssues:
         hydrate_existing_issues(state, scan_result, logging.getLogger("test"))
         assert state.get_issue("ISSUE-001").status == IssueStatus.IMPLEMENTED
 
+    def test_preserves_state_only_fields_when_markdown_lacks_them(self):
+        """Regression: ``render_issue_md`` does NOT write ``attempt_count``,
+        ``failure_cause``, ``max_attempts``, or ``files_changed`` into the
+        markdown. On resume, ``_parse_issue_markdown`` reads those fields back
+        as defaults (0, None, 3, []) — overwriting state.json. That used to
+        let the resume-reconcile heuristic see ``attempt_count == 0`` for an
+        issue that actually had a failed attempt and silently flip pending
+        issues to "implemented". Hydration must keep state's view of those
+        fields when it merges incoming markdown."""
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            Issue(
+                id="ISSUE-001",
+                title="From state",
+                description="real",
+                status=IssueStatus.IN_PROGRESS,
+                attempt_count=2,
+                max_attempts=5,
+                failure_cause="JSON parse error",
+                files_changed=["src/x.py", "src/y.py"],
+                verification_result="last verify said missing test",
+            ).to_dict()
+        ]
+        scan_result = {
+            "existing_issues": [
+                {
+                    "parsed_issue": {
+                        # markdown carries planner-authored fields only
+                        "id": "ISSUE-001",
+                        "title": "From state",
+                        "description": "real",
+                        "priority": "high",
+                        "labels": ["x"],
+                        "dependencies": [],
+                        "acceptance_criteria": ["AC1", "AC2"],
+                        "status": "in_progress",
+                        "implementation_notes": "",
+                        # explicitly NOT set — these come back as defaults
+                        # when from_dict is invoked on the parsed markdown:
+                        "attempt_count": 0,
+                        "max_attempts": 3,
+                        "files_changed": [],
+                        "verification_result": "",
+                    },
+                }
+            ]
+        }
+        hydrate_existing_issues(state, scan_result, logging.getLogger("h"))
+        issue = state.get_issue("ISSUE-001")
+        # State-only fields: kept from state.json, NOT overwritten by markdown.
+        assert issue.attempt_count == 2
+        assert issue.max_attempts == 5
+        assert issue.failure_cause == "JSON parse error"
+        assert issue.files_changed == ["src/x.py", "src/y.py"]
+        assert issue.verification_result == "last verify said missing test"
+        # Planner-authored fields: refreshed from markdown.
+        assert issue.acceptance_criteria == ["AC1", "AC2"]
+        assert issue.priority == "high"
+        assert issue.labels == ["x"]
+
     def test_skips_entries_without_valid_parsed_issue(self):
         state = RunState(run_id="t", config_name="c")
         scan_result = {

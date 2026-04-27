@@ -58,12 +58,16 @@ Typical progression:
   - When the saved run is already past planning (`implementing` and later
     phases), resume **does not start a new planning cycle**. The scan step
     still runs to refresh context, then the prior phase is restored.
-  - A short **resume reconcile** pass may mark issues as implemented when
-    three guard rails are all met: status is `pending`/`in_progress`,
-    `attempt_count == 0` (so issues actively worked on this run are left
-    alone), AND the issue id appears in at least one **non-test** source
-    file in the git tree. Disable with `resume_reconcile_enabled: false`
-    in config. See `docs/configuration.md` for details.
+  - A short **resume reconcile** pass *can* mark issues as implemented
+    when their id appears in committed source. **Off by default** —
+    foundation docs and stale Claude comments referencing planned issue
+    IDs both look identical to evidence-of-completion to the heuristic,
+    and a false flip silently skips real work the next pass should have
+    done. False *negatives* are cheap (re-run the issue); false
+    *positives* are expensive. Opt in with `resume_reconcile_enabled:
+    true` if your project doesn't reference issue IDs outside completed
+    implementation commits. See `docs/configuration.md` for the full
+    guard-rail list.
   - If the latest run shows `status=running` or `interrupted` and
     `last_updated` is older than 1 hour, it is surfaced as `abandoned` and
     you are prompted to resume or start fresh.

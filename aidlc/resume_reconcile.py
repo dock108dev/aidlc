@@ -1,22 +1,43 @@
 """Best-effort reconciliation when resuming implementation — detect done work without replanning.
 
-The heuristic is **deliberately conservative** because the cost of a
-false positive (silently flipping an issue to ``implemented`` when it
-was actually still in progress) is very high: validation later runs
-against a stale "done" status, the implementer never re-attempts, and
-the user has to discover and unpick the mistake by hand.
+**Off by default** (``resume_reconcile_enabled = False``). The heuristic
+flips ``pending``/``in_progress`` issues to ``implemented`` based on
+whether the issue id appears in committed source files. False positives
+here are **very expensive** — validation later runs against a stale
+"done" status, the implementer never re-attempts, the user thinks the
+work shipped when it didn't. False negatives are cheap — aidlc just
+re-runs an issue that was already done.
 
-Concrete guard rails (all must hold for a flip):
+Concrete failure modes the heuristic can't reliably distinguish:
+
+  - Foundation docs (BRAINDUMP, ROADMAP, ARCHITECTURE) often *mention*
+    planned issue IDs as part of the plan. That is evidence of
+    *planning*, not *completion*.
+  - Earlier Claude work may leave comments referencing future issue
+    IDs (e.g. "TODO: addressed by ISSUE-013") even when the prompt
+    forbids it.
+  - The issue file at ``.aidlc/issues/<id>.md`` is excluded from the
+    grep, but a copy/quote in any other file is enough to trip the
+    heuristic.
+
+The legitimate use case (user manually completes some issues between
+runs and references their IDs in commits) is uncommon enough that
+we don't make the user pay for it by default. Set
+``resume_reconcile_enabled: true`` if you want the convenience.
+
+Concrete guard rails when enabled (all must hold for a flip):
 
   1. Current status is ``pending`` or ``in_progress``. ``failed`` /
      ``implemented`` / ``verified`` / ``skipped`` are left alone.
   2. ``attempt_count == 0``. An issue with attempts already recorded was
-     actively being worked on this run; trust the recorded status (it
-     usually means a failure or interrupt mid-attempt).
-  3. The issue id appears in **at least one non-test file** in the git
+     actively being worked on this run; trust the recorded status.
+  3. The issue is **not** the run's currently-active ``current_issue_id``
+     (that's the issue the implementer was mid-flight on when killed —
+     trust the in-progress status, never flip).
+  4. The issue id appears in **at least one non-test file** in the git
      tree. Tests and fixtures often carry the issue id in filenames
      (e.g. ``tests/test_retro_games_scene_issue_006.gd``) before the
-     implementation has finished — so finding the id only in test paths
+     implementation has finished — finding the id only in test paths
      is not evidence of completion.
 """
 
@@ -121,13 +142,16 @@ def reconcile_issues_on_resume(
     the number of issues updated.
     """
     cfg = config or {}
-    if not cfg.get("resume_reconcile_enabled", True):
+    if not cfg.get("resume_reconcile_enabled", False):
         return 0
+
+    active_id = state.current_issue_id
 
     updated = 0
     updated_ids: list[str] = []
     skipped_with_attempts = 0
     skipped_test_only = 0
+    skipped_active = 0
     for d in list(state.issues):
         if not isinstance(d, dict):
             continue
@@ -143,6 +167,13 @@ def reconcile_issues_on_resume(
             continue
         issue_id = d.get("id")
         if not issue_id or not isinstance(issue_id, str):
+            continue
+        # Defense-in-depth: the issue the implementer was mid-flight on
+        # when the run was killed has ``current_issue_id == its id`` in
+        # state.json. Never flip that one even if attempt_count somehow
+        # reads as 0.
+        if active_id and issue_id == active_id:
+            skipped_active += 1
             continue
         if not _issue_id_in_non_test_source(project_root, issue_id):
             # The id may still appear under tests/ — just not enough
@@ -176,6 +207,12 @@ def reconcile_issues_on_resume(
             "Resume reconcile: left %s issue(s) alone because they have prior attempts "
             "(trust recorded status over heuristic).",
             skipped_with_attempts,
+        )
+    if skipped_active:
+        logger.info(
+            "Resume reconcile: left %s issue(s) alone because they were the active "
+            "in-flight issue when the prior run stopped.",
+            skipped_active,
         )
     if skipped_test_only:
         logger.debug(

@@ -43,6 +43,10 @@ def git_project_test_only(tmp_path):
     return tmp_path
 
 
+# Heuristic is now opt-in. Most tests pass this explicitly.
+ENABLED = {"resume_reconcile_enabled": True}
+
+
 def test_reconcile_marks_pending_when_id_in_source(git_project):
     state = RunState(run_id="r", config_name="c")
     state.issues = [
@@ -58,9 +62,53 @@ def test_reconcile_marks_pending_when_id_in_source(git_project):
         }
     ]
     logger = MagicMock()
-    n = reconcile_issues_on_resume(state, git_project, logger, {})
+    n = reconcile_issues_on_resume(state, git_project, logger, ENABLED)
     assert n == 1
     assert state.get_issue("ISSUE-001").status == IssueStatus.IMPLEMENTED
+
+
+def test_reconcile_disabled_by_default(git_project):
+    """Resume reconcile is off by default. The heuristic produces too many
+    false positives (foundation docs / Claude comments mentioning planned
+    issue IDs look identical to evidence-of-completion). Users must opt in."""
+    state = RunState(run_id="r", config_name="c")
+    state.issues = [
+        {
+            "id": "ISSUE-001",
+            "title": "t",
+            "description": "",
+            "status": "pending",
+            "dependencies": [],
+            "attempt_count": 0,
+            "max_attempts": 3,
+        }
+    ]
+    n = reconcile_issues_on_resume(state, git_project, MagicMock(), {})
+    assert n == 0
+    assert state.get_issue("ISSUE-001").status == IssueStatus.PENDING
+
+
+def test_reconcile_skips_active_in_flight_issue(git_project):
+    """Defense-in-depth: even when enabled and even if attempt_count looks
+    like 0 (e.g. hydration overwrote it before the run reached the
+    implementer), the issue marked as ``current_issue_id`` in state.json was
+    the one being worked on when the prior run stopped. Never flip it."""
+    state = RunState(run_id="r", config_name="c")
+    state.issues = [
+        {
+            "id": "ISSUE-001",
+            "title": "t",
+            "description": "",
+            "status": "in_progress",
+            "dependencies": [],
+            "attempt_count": 0,
+            "max_attempts": 3,
+        }
+    ]
+    state.current_issue_id = "ISSUE-001"
+    n = reconcile_issues_on_resume(state, git_project, MagicMock(), ENABLED)
+    assert n == 0
+    assert state.get_issue("ISSUE-001").status == IssueStatus.IN_PROGRESS
 
 
 def test_reconcile_skips_issue_with_prior_attempts(git_project):
@@ -83,7 +131,7 @@ def test_reconcile_skips_issue_with_prior_attempts(git_project):
         }
     ]
     logger = MagicMock()
-    n = reconcile_issues_on_resume(state, git_project, logger, {})
+    n = reconcile_issues_on_resume(state, git_project, logger, ENABLED)
     assert n == 0
     assert state.get_issue("ISSUE-001").status == IssueStatus.PENDING
     # Attempt count must stay so the implementer respects max_attempts.
@@ -109,7 +157,7 @@ def test_reconcile_skips_when_id_only_in_test_paths(git_project_test_only):
         }
     ]
     logger = MagicMock()
-    n = reconcile_issues_on_resume(state, git_project_test_only, logger, {})
+    n = reconcile_issues_on_resume(state, git_project_test_only, logger, ENABLED)
     assert n == 0
     assert state.get_issue("ISSUE-006").status == IssueStatus.PENDING
 
@@ -139,7 +187,7 @@ def test_reconcile_no_git_is_noop(tmp_path):
     state.issues = [
         Issue(id="ISSUE-001", title="t", description="", status=IssueStatus.PENDING).to_dict()
     ]
-    n = reconcile_issues_on_resume(state, tmp_path, MagicMock(), {})
+    n = reconcile_issues_on_resume(state, tmp_path, MagicMock(), ENABLED)
     assert n == 0
 
 
@@ -181,7 +229,7 @@ def test_reconcile_skips_wrong_status_and_bad_id(git_project):
             "max_attempts": 3,
         },
     ]
-    assert reconcile_issues_on_resume(state, git_project, MagicMock(), {}) == 0
+    assert reconcile_issues_on_resume(state, git_project, MagicMock(), ENABLED) == 0
 
 
 def test_reconcile_in_progress_with_existing_notes(git_project):
@@ -198,7 +246,7 @@ def test_reconcile_in_progress_with_existing_notes(git_project):
             "max_attempts": 3,
         }
     ]
-    n = reconcile_issues_on_resume(state, git_project, MagicMock(), {})
+    n = reconcile_issues_on_resume(state, git_project, MagicMock(), ENABLED)
     assert n == 1
     notes = state.get_issue("ISSUE-001").implementation_notes or ""
     assert "prior note" in notes

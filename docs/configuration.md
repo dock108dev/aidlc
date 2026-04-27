@@ -308,15 +308,24 @@ independent of autosync (which controls commit/push). The hook is wired in
 
 | Key | Default |
 |---|---|
-| `resume_reconcile_enabled` | `true` |
+| `resume_reconcile_enabled` | `false` |
 
-When you resume a run that's past planning, AIDLC will best-effort mark issues as implemented based on a deliberately tight heuristic. Three guard rails (all required for a flip):
+**Off by default.** When enabled, on a resume past planning, AIDLC tries to detect issues that were finished out-of-band (e.g. the user fixed something manually between runs) by grepping for the issue id in committed source. The heuristic has bad failure modes that aren't worth defaulting on:
+
+- Foundation docs (BRAINDUMP, ROADMAP, ARCHITECTURE) often *mention* planned issue IDs as part of the plan — that is evidence of *planning*, not *completion*.
+- Earlier Claude work may leave comments referencing future issue IDs (e.g. `# TODO: addressed by ISSUE-013`) even when the prompt forbids it.
+- A false flip silently skips real work the next pass should have done.
+
+False negatives (re-running an already-done issue) are cheap. False positives (silently skipping work the user expected) are not.
+
+If you do enable it, four guard rails are all required for a flip:
 
 1. The issue's current status is `pending` or `in_progress` (`failed`, `implemented`, `verified`, `skipped` are left alone).
-2. **`attempt_count == 0`.** Issues with prior attempts in this run carry recorded status (failed, partially complete) — the reconcile path trusts that recorded status and does not flip it.
-3. The issue id appears in **at least one non-test source file** in the git tree. Test files often carry the issue id in their filename (e.g. `tests/gut/test_retro_scene_issue_006.gd`) before the implementation has finished, so a tests-only reference is not evidence of completion.
+2. **`attempt_count == 0`.** Issues with prior attempts in this run carry recorded status — trust that over the heuristic.
+3. The issue is **not** the run's `current_issue_id` (the issue the implementer was mid-flight on when killed — never flip).
+4. The issue id appears in **at least one non-test source file** in the git tree. Test files often carry the issue id in their filename (e.g. `tests/gut/test_retro_scene_issue_006.gd`) before implementation has finished, so a tests-only reference is not evidence of completion.
 
-Disable entirely with `resume_reconcile_enabled: false` in config.
+Enable explicitly with `resume_reconcile_enabled: true` in config.
 
 ## Production Profile Behavior
 
