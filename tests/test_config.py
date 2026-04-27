@@ -81,7 +81,6 @@ class TestLoadConfig:
             "routing_rate_limit_buffer_base_seconds",
             "routing_impl_budget_explore_probability",
             "claude_long_run_warn_seconds",
-            "claude_hard_timeout_seconds",
             "claude_timeout_grace_seconds",
             "retry_max_attempts",
             "retry_base_delay_seconds",
@@ -188,7 +187,6 @@ class TestLoadConfig:
         assert config["fail_on_validation_incomplete"] is True
         assert config["fail_on_final_test_failure"] is True
         assert config["strict_change_detection"] is True
-        assert config["claude_hard_timeout_seconds"] == 1800
 
     def test_production_profile_respects_explicit_override(self, tmp_path):
         aidlc_dir = tmp_path / ".aidlc"
@@ -198,13 +196,11 @@ class TestLoadConfig:
                 {
                     "runtime_profile": "production",
                     "strict_validation": False,
-                    "claude_hard_timeout_seconds": 120,
                 }
             )
         )
         config = load_config(project_root=str(tmp_path))
         assert config["strict_validation"] is False
-        assert config["claude_hard_timeout_seconds"] == 120
 
 
 class TestHelperFunctions:

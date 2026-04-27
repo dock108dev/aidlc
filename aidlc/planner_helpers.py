@@ -244,11 +244,14 @@ def _render_foundation_docs_section(planner) -> list[str]:
 
 
 def _render_discovery_section(planner) -> list[str]:
-    """Inject discovery findings + the list of research files into the prompt.
+    """Point the planner at discovery + research artifacts; do NOT embed them.
 
-    Discovery and research run as pre-planning phases; their artifacts live at
-    `docs/discovery/findings.md` and `docs/research/*.md`. This block lets the
-    planner consume them without re-investigating in-cycle.
+    The model has file-read tools; embedding hundreds of KB of pre-built
+    findings into every cycle's prompt is wasteful (cache_read tokens,
+    prompt budget) and brittle (a partial / killed discovery run can
+    write garbage that then explodes the prompt). Listing the files here
+    gives the model a known location to read when it actually needs that
+    context, and keeps the prompt small.
     """
     project_root = planner.project_root
     findings_path = project_root / "docs" / "discovery" / "findings.md"
@@ -257,22 +260,19 @@ def _render_discovery_section(planner) -> list[str]:
     if not findings_path.exists() and not research_dir.exists():
         return []
 
-    lines = ["\n## Discovery & Research (pre-built; consume when filing issues)\n"]
+    lines = [
+        "\n## Discovery & Research (read on demand)\n",
+        "Pre-built artifacts from earlier phases. Use your file tools to read "
+        "the ones relevant to the current cycle — do not re-derive their content.",
+    ]
 
     if findings_path.exists():
-        try:
-            findings_text = findings_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            findings_text = ""
-        if findings_text:
-            lines.append("### docs/discovery/findings.md\n```\n" + findings_text + "\n```")
+        lines.append("- `docs/discovery/findings.md` — repo state for BRAINDUMP-relevant systems")
 
     if research_dir.exists():
         research_files = sorted(p.name for p in research_dir.glob("*.md"))
-        if research_files:
-            lines.append("\n### docs/research/ (read on demand)")
-            for name in research_files:
-                lines.append(f"- docs/research/{name}")
+        for name in research_files:
+            lines.append(f"- `docs/research/{name}`")
 
     return lines
 

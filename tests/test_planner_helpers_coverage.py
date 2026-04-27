@@ -178,9 +178,13 @@ def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
     assert "completion" in prompt.lower() or "offer" in prompt.lower()
 
 
-def test_build_prompt_includes_discovery_and_research(logger, tmp_path):
-    """When discovery/research artifacts exist on disk, build_prompt should
-    splice them into the prompt so the planner consumes them inline."""
+def test_build_prompt_points_at_discovery_and_research_without_embedding(logger, tmp_path):
+    """SSOT: discovery findings + research files are referenced as
+    *file pointers* in the planning prompt, NOT embedded inline. The
+    model has file-read tools; embedding hundreds of KB of pre-built
+    artifacts in every cycle is wasteful (cache_read tokens, prompt
+    budget) and brittle (a partial / killed discovery run can write
+    garbage that explodes the prompt)."""
     cfg, run_dir = _base_config(tmp_path)
     discovery_dir = tmp_path / "docs" / "discovery"
     discovery_dir.mkdir(parents=True)
@@ -194,9 +198,37 @@ def test_build_prompt_includes_discovery_and_research(logger, tmp_path):
     planner = Planner(state, run_dir, cfg, cli, "ctx", logger)
     with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
         prompt = build_prompt(planner, is_finalization=False)
+    # Section header + pointers are present...
     assert "Discovery & Research" in prompt
-    assert "tutorial system has 11 steps wired" in prompt
+    assert "docs/discovery/findings.md" in prompt
     assert "docs/research/tutorial-graph-shape.md" in prompt
+    # ...but the full content of findings.md is NOT embedded.
+    assert "tutorial system has 11 steps wired" not in prompt
+
+
+def test_build_prompt_does_not_explode_on_huge_findings_file(logger, tmp_path):
+    """Regression: a 5 MB findings.md (e.g. partial output from an
+    interrupted discovery run) used to balloon the planning prompt
+    because the entire file was embedded verbatim. The pointer-only
+    discovery section means the prompt size is independent of
+    findings.md size."""
+    cfg, run_dir = _base_config(tmp_path)
+    discovery_dir = tmp_path / "docs" / "discovery"
+    discovery_dir.mkdir(parents=True)
+    huge = "MARKER_AT_START\n" + ("x" * 5_000_000) + "\nMARKER_AT_END"
+    (discovery_dir / "findings.md").write_text(huge)
+    state = RunState(run_id="r", config_name="c")
+    state.phase = RunPhase.PLANNING
+    cli = MagicMock()
+    planner = Planner(state, run_dir, cfg, cli, "ctx", logger)
+    with patch("aidlc.planner_helpers.write_planning_index", return_value=tmp_path / "idx.md"):
+        prompt = build_prompt(planner, is_finalization=False)
+    # Pointer is in the prompt; the giant content is NOT.
+    assert "docs/discovery/findings.md" in prompt
+    assert "MARKER_AT_START" not in prompt
+    assert "MARKER_AT_END" not in prompt
+    # Prompt is small (well under 1 MB; was ~5 MB embedded before).
+    assert len(prompt) < 200_000
 
 
 def test_render_foundation_section_renders_root_braindump(logger, tmp_path):

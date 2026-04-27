@@ -47,7 +47,6 @@ def config(tmp_path):
         "plan_budget_hours": 0.01,
         "checkpoint_interval_minutes": 999,
         "dry_run": True,
-        "claude_hard_timeout_seconds": 10,
         "retry_max_attempts": 0,
         "retry_base_delay_seconds": 0.01,
         "retry_max_delay_seconds": 0.05,

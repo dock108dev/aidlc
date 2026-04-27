@@ -21,19 +21,27 @@ def test_detect_rust_adjusts_test_timeout(tmp_path):
     assert out.get("lint_command") == "cargo clippy"
 
 
-def test_detect_godot_stack_timeout(tmp_path):
+def test_detect_godot_stack_does_not_set_hard_timeout(tmp_path):
+    """SSOT: ``claude_hard_timeout_seconds`` was removed entirely.
+    config_detect must NOT auto-set it for Godot/Unity projects (which
+    used to get an aggressive 900s wall-clock kill that interrupted
+    productive Claude sessions). Stack-specific tweaks are limited to
+    things like max_implementation_context_chars."""
     (tmp_path / "project.godot").write_text("[application]\n")
     out = detect_config(tmp_path)
     assert "godot" in out["_detected_project_type"]
-    assert out["claude_hard_timeout_seconds"] == 900
+    assert "claude_hard_timeout_seconds" not in out
+    # Godot still gets a wider implementation context window.
+    assert out.get("max_implementation_context_chars") == 40000
 
 
-def test_detect_unity(tmp_path):
+def test_detect_unity_does_not_set_hard_timeout(tmp_path):
+    """SSOT: same as Godot — no auto-set wall-clock kill for Unity."""
     (tmp_path / "Assets").mkdir()
     (tmp_path / "ProjectSettings").mkdir()
     out = detect_config(tmp_path)
     assert "unity" in out["_detected_project_type"]
-    assert out.get("claude_hard_timeout_seconds") == 900
+    assert "claude_hard_timeout_seconds" not in out
 
 
 def test_detect_pnpm_rewrites_npm_commands(tmp_path):

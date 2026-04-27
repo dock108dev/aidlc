@@ -76,13 +76,11 @@ DEFAULTS = {
     "checkpoint_interval_minutes": 15,
     "dry_run": False,
     "claude_long_run_warn_seconds": 300,  # heartbeat-log cadence while Claude is still running
-    # Hard timeout disabled by default — Claude CLI can legitimately run for an
-    # hour+ on complex tasks, and stream-json gives us an activity signal so
-    # "running" vs "stuck" is no longer just "elapsed time". Set > 0 if you
-    # want a wall-clock escape hatch regardless of activity.
-    "claude_hard_timeout_seconds": 0,
     # Stall detection (activity-based, uses stream-json line events as the
-    # liveness signal):
+    # liveness signal). Wall-clock kill (claude_hard_timeout_seconds) was
+    # removed entirely — it interrupted productive multi-hour Claude
+    # sessions and produced partial-JSON output that broke downstream
+    # parsing.
     # - claude_stall_warn_seconds: flip the heartbeat log from INFO to WARNING
     #   once Claude has been silent for this long. Does not kill. Default 300s.
     # - claude_stall_kill_seconds: if > 0, kill the process after this much
@@ -91,6 +89,11 @@ DEFAULTS = {
     "claude_stall_warn_seconds": 300,
     "claude_stall_kill_seconds": 0,
     "claude_timeout_grace_seconds": 30,  # wait for graceful Claude shutdown before force-kill
+    # Wall-clock timeout for non-streaming provider CLIs (Copilot, OpenAI
+    # Codex). These don't emit stream-json so activity-based stall
+    # detection doesn't apply — a wall-clock cap is the right safety net.
+    # Claude CLI does NOT use this (it streams; see claude_stall_*).
+    "provider_call_timeout_seconds": 1800,
     # Telemetry/cost tracking:
     # - auto: use exact CLI-reported cost when available, otherwise estimate from token rates
     # - exact_only: track only exact cost values from CLI metadata
@@ -574,7 +577,6 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
             "fail_on_validation_incomplete": True,
             "fail_on_final_test_failure": True,
             "strict_change_detection": True,
-            "claude_hard_timeout_seconds": 1800,
         }
         for key, value in production_defaults.items():
             if key not in user_keys:

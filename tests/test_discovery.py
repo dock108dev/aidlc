@@ -134,6 +134,59 @@ def test_run_discovery_writes_findings_and_topics(tmp_path, logger):
     assert (run_dir / "claude_outputs" / "discovery.md").exists()
 
 
+def test_run_discovery_warns_on_truncated_output(tmp_path, caplog):
+    """Regression: when discovery is killed mid-output (hard timeout, etc.),
+    the model never emits the closing ```json topics fence. The current
+    parser then dutifully treats the entire raw output as findings markdown
+    — sometimes hundreds of KB. Emit a clear warning telling the user to
+    re-run discovery rather than silently shipping that noise into
+    planning."""
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- one ask\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    # 60 KB of "findings" with NO ```json fence — looks just like the
+    # output of a discovery run that hit hard_timeout mid-stream.
+    fake_truncated = "# Findings\n\n" + ("partial tool output line\n" * 2500)
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": fake_truncated,
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path)}
+    test_logger = logging.getLogger("test.discovery.warn")
+    with caplog.at_level(logging.WARNING, logger="test.discovery.warn"):
+        run_discovery(state, config, cli, tmp_path, run_dir, test_logger)
+    assert any(
+        "no ```json topics fence" in rec.message and "interrupted mid-output" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_run_discovery_no_warning_for_normal_output(tmp_path, caplog):
+    """Sanity: a normal-shape discovery output (with the topics JSON fence)
+    must not trigger the truncation warning, even if findings is large."""
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- ask\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    big_findings = "# Findings\n\n" + ("real finding line\n" * 3000)
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": big_findings + "\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path)}
+    test_logger = logging.getLogger("test.discovery.no_warn")
+    with caplog.at_level(logging.WARNING, logger="test.discovery.no_warn"):
+        run_discovery(state, config, cli, tmp_path, run_dir, test_logger)
+    assert not any("no ```json topics fence" in rec.message for rec in caplog.records)
+
+
 def test_run_discovery_passes_existing_research_into_prompt(tmp_path, logger):
     """If docs/research/*.md is non-empty, run_discovery should inject those
     filenames into the prompt so the model doesn't re-nominate them."""

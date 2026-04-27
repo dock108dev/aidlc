@@ -127,6 +127,24 @@ def run_discovery(
     if not topics:
         logger.info("Discovery proposed no research topics.")
 
+    # Truncation sanity check: a normal discovery output ends with a
+    # ```json fenced topics block. When the output is killed mid-flight
+    # (Ctrl-C, SIGTERM, or claude_stall_kill_seconds), no fence is
+    # emitted and parse_discovery_output dutifully treats the entire raw
+    # output as findings markdown — sometimes hundreds of KB of partial
+    # tool-use blobs. The user should know to re-run discovery rather
+    # than ship that noise into planning. Heuristic: no JSON fence AND
+    # >50 KB of "findings".
+    if "```json" not in raw_output and len(findings) > 50_000:
+        logger.warning(
+            "Discovery output is %s chars with no ```json topics fence — "
+            "this strongly suggests the model was interrupted mid-output. "
+            "The findings file is being saved but is likely partial/garbled; "
+            "delete docs/discovery/findings.md and docs/discovery/topics.json "
+            "and re-run aidlc to get clean findings.",
+            f"{len(findings):,}",
+        )
+
     findings_path.write_text(findings.rstrip() + "\n", encoding="utf-8")
     topics_path.write_text(json.dumps(topics, indent=2) + "\n", encoding="utf-8")
 

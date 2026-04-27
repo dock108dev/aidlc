@@ -208,8 +208,11 @@ class ClaudeCLI:
             cmd.append("--dangerously-skip-permissions")
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
-        hard_timeout_raw = self.config.get("claude_hard_timeout_seconds", 0)
-        hard_timeout = max(0, int(hard_timeout_raw if hard_timeout_raw is not None else 0))
+        # Activity-based stall detection only — wall-clock kills were removed
+        # because Claude CLI in stream-json mode emits steady tool-use events
+        # while doing real work, sometimes for an hour+. A wall-clock cap
+        # interrupts productive sessions mid-output, leaving partial JSON
+        # that downstream parsers then mishandle.
         stall_warn_raw = self.config.get("claude_stall_warn_seconds", 300)
         stall_warn = max(0, int(stall_warn_raw if stall_warn_raw is not None else 0))
         stall_kill_raw = self.config.get("claude_stall_kill_seconds", 0)
@@ -241,11 +244,12 @@ class ClaudeCLI:
                 else:
                     self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
-                # Run without a default time-based timeout — let Claude finish.
-                # Background reader threads stamp last-activity on every stream
-                # line so the heartbeat can distinguish "still working" from
-                # "stalled". Optional hard_timeout / stall_kill provide escape
-                # hatches (disabled by default).
+                # No wall-clock timeout — Claude CLI in stream-json mode
+                # emits steady tool-use events even on multi-hour work.
+                # Background reader threads stamp last-activity on every
+                # stream line so the heartbeat can distinguish "still
+                # working" from "stalled"; the only kill path is
+                # stall_kill (opt-in safety valve for unattended runs).
                 proc = subprocess.Popen(
                     cmd,
                     stdin=subprocess.PIPE,
@@ -277,8 +281,8 @@ class ClaudeCLI:
 
                 # Activity-aware wait loop. Emit a heartbeat every warn_interval
                 # seconds of wall clock; flip to WARNING when idle crosses
-                # stall_warn. Only kill on explicit opt-in (hard_timeout or
-                # stall_kill set > 0).
+                # stall_warn. Kill only on explicit opt-in (stall_kill > 0)
+                # — and only on real silence, never on wall-clock alone.
                 timed_out = False
                 timeout_forced = False
                 heartbeat_count = 0
@@ -313,10 +317,7 @@ class ClaudeCLI:
                             )
 
                     kill_reason = None
-                    if hard_timeout and elapsed >= hard_timeout:
-                        kill_reason = f"hard timeout ({hard_timeout}s)"
-                        timed_out = True
-                    elif stall_kill and idle >= stall_kill:
+                    if stall_kill and idle >= stall_kill:
                         kill_reason = f"stall kill (no output for {idle:.0f}s)"
                         timed_out = True
 

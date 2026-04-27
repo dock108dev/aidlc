@@ -105,21 +105,20 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | Key | Default |
 |---|---|
 | `claude_long_run_warn_seconds` | `300` (heartbeat-log cadence while Claude is still running) |
-| `claude_hard_timeout_seconds` | `0` (disabled — stream-json gives an activity signal so wall-clock isn't the only liveness check). Production profile sets `1800`. |
 | `claude_stall_warn_seconds` | `300` (flip the heartbeat log from INFO to WARNING after this much silence; never kills) |
-| `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs) |
-
-**On `claude_hard_timeout_seconds`.** This is a **wall-clock** kill that
-does not care whether Claude is making progress. Setting it too low
-(e.g. 900s = 15min) interrupts long-running but productive sessions —
-typically when the model is running a test suite or iterating on tools.
-The graceful-stop path *does* try to accept whatever Claude has emitted
-so far, but partial output frequently lacks the trailing JSON envelope
-the implementer expects. Prefer the activity-based knobs
-(`claude_stall_warn_seconds`, `claude_stall_kill_seconds`) for runaway
-detection; reserve `claude_hard_timeout_seconds` for unattended runs
-where you genuinely cannot let Claude continue past a fixed budget.
+| `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs — kills only on real silence, never on wall-clock alone) |
 | `claude_timeout_grace_seconds` | `30` (graceful shutdown window before SIGKILL) |
+| `provider_call_timeout_seconds` | `1800` (wall-clock timeout for non-streaming provider CLIs — Copilot, OpenAI Codex. Claude CLI does NOT use this; it streams.) |
+
+**No wall-clock kill for Claude CLI.** Claude CLI in stream-json mode
+emits steady tool-use events while doing real work — sometimes for an
+hour or more. The legacy `claude_hard_timeout_seconds` knob would
+interrupt productive sessions and leave partial JSON output that
+downstream parsers couldn't handle. It was removed entirely (legacy
+config files containing the key are silently ignored). Use
+`claude_stall_kill_seconds` if you need an unattended-run safety valve;
+it kills only on **real silence** (no stream output for N seconds), not
+on wall-clock alone.
 | `telemetry_cost_mode` | `"auto"` |
 | `telemetry_estimate_usd` | `false` |
 | `telemetry_model_pricing_usd_per_million_tokens` | See `aidlc/config.py` for the full table (sonnet/opus/haiku/gpt-5.4 family). |
@@ -311,7 +310,6 @@ When `runtime_profile` is `"production"`, these defaults are applied only if the
 - `fail_on_validation_incomplete=true`
 - `fail_on_final_test_failure=true`
 - `strict_change_detection=true`
-- `claude_hard_timeout_seconds=1800`
 
 Additionally, `aidlc run` rejects:
 

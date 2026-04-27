@@ -125,7 +125,9 @@ class CopilotAdapter(ProviderAdapter):
         self.cli_command = provider_cfg.get("cli_command", "copilot")
         self.default_model = str(provider_cfg.get("default_model", _DEFAULT_COPILOT_MODEL) or "")
         self.dry_run = config.get("dry_run", False)
-        self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
+        # Non-streaming provider — wall-clock timeout is appropriate here
+        # (unlike Claude CLI streaming, where we removed wall-clock kills).
+        self.call_timeout = int(config.get("provider_call_timeout_seconds", 1800))
         self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
         # False = include CLI stats in output so we can parse token usage (default).
         self._silent = bool(provider_cfg.get("silent", False))
@@ -163,7 +165,7 @@ class CopilotAdapter(ProviderAdapter):
                 proc,
                 provider_label="Copilot CLI",
                 model=model or "default",
-                timeout_seconds=self.hard_timeout,
+                timeout_seconds=self.call_timeout,
                 warn_interval=self.warn_interval,
                 account_id=account_id,
             )

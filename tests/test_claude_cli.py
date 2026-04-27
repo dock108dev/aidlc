@@ -258,71 +258,40 @@ class TestExecutePrompt:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_terminates_process(
+    def test_hard_timeout_config_is_ignored(
         self, mock_popen, mock_time, base_config, logger, tmp_path
     ):
+        """SSOT: ``claude_hard_timeout_seconds`` was removed entirely.
+        Setting it (legacy config files may still carry it) must NOT
+        cause Claude CLI to be killed on wall-clock alone — productive
+        multi-hour streaming sessions used to be interrupted, leaving
+        partial JSON that downstream parsers couldn't handle. Activity-
+        based stall detection is the only kill path."""
         proc = MagicMock()
-        proc.poll.side_effect = [None, 124]
+        proc.poll.side_effect = [None, None, 0]  # finishes naturally
         proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="claude", timeout=300),
-            subprocess.TimeoutExpired(cmd="claude", timeout=30),
-            124,
-        ]
-        proc.returncode = 124
-        proc.stdin = MagicMock()
-        proc.stdout = MagicMock()
-        proc.stdout.readline.side_effect = _line_reader("")
-        proc.stdout.read.return_value = ""
-        proc.stderr = MagicMock()
-        proc.stderr.readline.side_effect = _line_reader("")
-        proc.stderr.read.return_value = ""
-        mock_popen.return_value = proc
-
-        base_config["claude_hard_timeout_seconds"] = 1
-        base_config["claude_timeout_grace_seconds"] = 30
-        base_config["retry_max_attempts"] = 0
-        clock = itertools.count(start=0.0, step=1.2)
-        mock_time.side_effect = lambda: next(clock)
-
-        cli = ClaudeCLI(base_config, logger)
-        result = cli.execute_prompt("prompt", tmp_path)
-        assert result["success"] is False
-        assert result["failure_type"] == "timeout"
-        assert proc.send_signal.called
-        assert proc.terminate.called
-
-    @patch("aidlc.claude_cli.time.time")
-    @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_graceful_exit_keeps_success(
-        self, mock_popen, mock_time, base_config, logger, tmp_path
-    ):
-        proc = MagicMock()
-        proc.poll.side_effect = [None, 0]
-        proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="claude", timeout=300),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
+            subprocess.TimeoutExpired(cmd="claude", timeout=1.0),
             0,
         ]
         proc.returncode = 0
         proc.stdin = MagicMock()
         proc.stdout = MagicMock()
-        proc.stdout.readline.side_effect = _line_reader("partial final output")
-        proc.stdout.read.return_value = "partial final output"
+        proc.stdout.readline.side_effect = _line_reader("")
         proc.stderr = MagicMock()
         proc.stderr.readline.side_effect = _line_reader("")
-        proc.stderr.read.return_value = ""
         mock_popen.return_value = proc
 
+        # Legacy config that USED to trigger a kill at 1s wall-clock.
         base_config["claude_hard_timeout_seconds"] = 1
-        base_config["claude_timeout_grace_seconds"] = 30
         base_config["retry_max_attempts"] = 0
-        clock = itertools.count(start=0.0, step=1.2)
+        clock = itertools.count(start=0.0, step=2.0)
         mock_time.side_effect = lambda: next(clock)
 
         cli = ClaudeCLI(base_config, logger)
-        result = cli.execute_prompt("prompt", tmp_path)
-        assert result["success"] is True
-        assert result["output"] == "partial final output"
-        assert proc.send_signal.called
+        cli.execute_prompt("prompt", tmp_path)
+        # No kill signal sent: the legacy hard_timeout has no effect.
+        assert not proc.send_signal.called
         assert not proc.terminate.called
 
 
@@ -439,15 +408,15 @@ class TestSummarizeStreamEvent:
 
 
 class TestLivenessLoop:
-    """Hard timeout disabled by default + stall-based heartbeat."""
+    """Stall-based heartbeat — wall-clock kills were removed entirely."""
 
-    def test_hard_timeout_disabled_by_default(self, base_config, logger):
-        # base_config has no claude_hard_timeout_seconds; default is 0.
-        assert base_config.get("claude_hard_timeout_seconds") is None
-        # The value is read inside execute_prompt; we just verify DEFAULTS wins.
+    def test_hard_timeout_config_key_is_absent_from_defaults(self):
+        """SSOT: ``claude_hard_timeout_seconds`` was removed from DEFAULTS.
+        Reintroducing it would resurrect the wall-clock kill that
+        interrupted productive multi-hour Claude sessions."""
         from aidlc.config import DEFAULTS
 
-        assert DEFAULTS["claude_hard_timeout_seconds"] == 0
+        assert "claude_hard_timeout_seconds" not in DEFAULTS
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
@@ -488,10 +457,9 @@ class TestLivenessLoop:
 
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
-    def test_hard_timeout_zero_means_no_time_based_kill(
-        self, mock_popen, mock_time, base_config, logger, tmp_path
-    ):
-        """hard_timeout=0 + no stall_kill -> process is never killed on elapsed alone."""
+    def test_no_kill_on_elapsed_alone(self, mock_popen, mock_time, base_config, logger, tmp_path):
+        """Wall-clock kill removed: no matter how long Claude runs, only
+        activity-based stall_kill can interrupt it."""
         proc = MagicMock()
         # Process exits naturally on the 3rd poll.
         proc.poll.side_effect = [None, None, 0]
@@ -508,7 +476,6 @@ class TestLivenessLoop:
         proc.stderr.readline.side_effect = _line_reader("")
         mock_popen.return_value = proc
 
-        base_config["claude_hard_timeout_seconds"] = 0
         base_config["claude_stall_kill_seconds"] = 0
         base_config["retry_max_attempts"] = 0
         # Advance time by an hour each tick — no kill should happen.

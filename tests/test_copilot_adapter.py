@@ -90,7 +90,7 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
         {
             "providers": {"copilot": {"cli_command": "copilot", "default_model": ""}},
             "claude_long_run_warn_seconds": 1,
-            "claude_hard_timeout_seconds": 10,
+            "provider_call_timeout_seconds": 10,
         },
         logger,
     )

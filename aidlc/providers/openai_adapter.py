@@ -202,7 +202,9 @@ class OpenAIAdapter(ProviderAdapter):
         self.cli_command = provider_cfg.get("cli_command", "codex")
         self.default_model = provider_cfg.get("default_model", _DEFAULT_OPENAI_MODEL)
         self.dry_run = config.get("dry_run", False)
-        self.hard_timeout = int(config.get("claude_hard_timeout_seconds", 1800))
+        # Non-streaming provider — wall-clock timeout is appropriate here
+        # (unlike Claude CLI streaming, where we removed wall-clock kills).
+        self.call_timeout = int(config.get("provider_call_timeout_seconds", 1800))
         self.warn_interval = int(config.get("claude_long_run_warn_seconds", 300))
 
     def _provider_config(self) -> dict:
@@ -238,7 +240,7 @@ class OpenAIAdapter(ProviderAdapter):
                 proc,
                 provider_label="OpenAI CLI",
                 model=model,
-                timeout_seconds=self.hard_timeout,
+                timeout_seconds=self.call_timeout,
                 warn_interval=self.warn_interval,
                 account_id=account_id,
             )

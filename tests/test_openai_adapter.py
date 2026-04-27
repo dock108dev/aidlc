@@ -34,7 +34,7 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
         {
             "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
             "claude_long_run_warn_seconds": 1,
-            "claude_hard_timeout_seconds": 10,
+            "provider_call_timeout_seconds": 10,
         },
         logger,
     )
@@ -117,7 +117,7 @@ def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_pa
     adapter = OpenAIAdapter(
         {
             "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
-            "claude_hard_timeout_seconds": 30,
+            "provider_call_timeout_seconds": 30,
         },
         MagicMock(),
     )
@@ -142,7 +142,7 @@ again at 5:41 PM.
     adapter = OpenAIAdapter(
         {
             "providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.4"}},
-            "claude_hard_timeout_seconds": 30,
+            "provider_call_timeout_seconds": 30,
         },
         MagicMock(),
     )

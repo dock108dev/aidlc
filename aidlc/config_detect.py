@@ -47,14 +47,15 @@ def detect_config(project_root: Path) -> dict:
     if test_profile["build"]:
         detected["build_validation_command"] = test_profile["build"]
 
-    # Stack-specific config adjustments
+    # Stack-specific config adjustments. We deliberately do NOT auto-set a
+    # wall-clock timeout for Godot/Unity even though their tests take
+    # longer — wall-clock kills interrupt productive Claude sessions.
+    # Activity-based stall detection (claude_stall_*) handles runaway
+    # processes without that side effect.
     if "godot" in project_type:
-        detected["claude_hard_timeout_seconds"] = 900  # Godot scenes take longer
         detected["max_implementation_context_chars"] = 40000
     elif "rust" in project_type:
         detected["test_timeout_seconds"] = 600  # Rust compiles slow
-    elif "unity" in project_type:
-        detected["claude_hard_timeout_seconds"] = 900
 
     # Detect lint/format commands
     lint_cmd = _detect_lint_command(project_root, project_type)

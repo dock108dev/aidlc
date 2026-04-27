@@ -63,6 +63,15 @@ spurious planning issues on mature repos.
   `planning_diminishing_returns_min_threshold` and `_max_threshold`.
 - **`audit_braindump_*`, `audit_planning_workload_*`, `audit_*_estimate_*`**
   — see *Auditor BRAINDUMP/ARCHITECTURE generation* above.
+- **`claude_hard_timeout_seconds`** — wall-clock kill on the Claude CLI
+  process. Removed because Claude CLI in stream-json mode emits steady
+  tool-use events while doing real work — sometimes for an hour or
+  more — and the wall-clock kill interrupted productive sessions,
+  leaving partial JSON that downstream parsers couldn't handle. Legacy
+  config files containing the key are silently ignored. Use
+  `claude_stall_kill_seconds` for an activity-based safety valve.
+  Non-streaming provider CLIs (Copilot, OpenAI Codex) now use
+  `provider_call_timeout_seconds` (default `1800`).
 
 ### Removed routing helpers
 
