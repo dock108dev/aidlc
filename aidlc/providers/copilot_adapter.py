@@ -126,6 +126,35 @@ def _extract_response_text(stdout: str, stderr: str, silent: bool) -> str:
     return primary or fallback
 
 
+def _copilot_success_payload_is_quota_blocker(
+    stdout: str, stderr: str, parsed_out: str
+) -> tuple[bool, str, str]:
+    """Detect Copilot CLI quota/rate-limit chatter even when it exits 0.
+
+    Copilot sometimes exits successfully while rendering a usage-limit / quota
+    message in stderr (or whichever stream `_extract_response_text` selects).
+    In that case we must treat the result as provider availability, not as a
+    successful model completion, so the router can move on to the next model or
+    provider instead of letting downstream phases parse the quota page as JSON.
+    """
+    from ..routing import result_signals as rs
+
+    diagnostic = "\n".join(
+        part.strip()
+        for part in (stderr or "", parsed_out or "", stdout or "")
+        if part and part.strip()
+    ).strip()
+    if not diagnostic:
+        return False, "", ""
+
+    probe = {"error": diagnostic, "output": ""}
+    if rs.is_rate_limited_result(probe):
+        return True, diagnostic[:20000], "rate_limited"
+    if rs.is_token_exhaustion_result(probe):
+        return True, diagnostic[:20000], "token_exhausted"
+    return False, "", ""
+
+
 class CopilotAdapter(ProviderAdapter):
     """Provider adapter for GitHub Copilot CLI."""
 
@@ -193,6 +222,19 @@ class CopilotAdapter(ProviderAdapter):
                 combined = f"{stdout or ''}\n{stderr or ''}"
                 usage = _parse_copilot_usage_blob(combined)
                 out = _extract_response_text(stdout, stderr, self._silent)
+                blocked, diag, failure_type = _copilot_success_payload_is_quota_blocker(
+                    stdout or "",
+                    stderr or "",
+                    out,
+                )
+                if blocked:
+                    return self._failure_result(
+                        model,
+                        account_id,
+                        duration,
+                        error=diag,
+                        failure_type=failure_type,
+                    )
                 usage_source = "copilot_cli"
                 return {
                     "success": True,

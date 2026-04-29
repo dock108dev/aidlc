@@ -32,6 +32,8 @@ def is_token_exhaustion_result(result: dict) -> bool:
         r"out of tokens",
         r"token budget",
         r"token quota",
+        r"\bno quota\b",
+        r"\byou have no quota\b",
         r"quota exceeded",
         r"insufficient quota",
         r"billing.*required",

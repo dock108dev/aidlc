@@ -164,6 +164,11 @@ def test_reclassify_quota_chatter_success():
     assert out["failure_type"] == "rate_limited"
 
 
+def test_token_exhaustion_detects_no_quota_phrase():
+    r = {"success": False, "error": "402 You have no quota", "failure_type": "issue"}
+    assert rs.is_token_exhaustion_result(r) is True
+
+
 def test_reclassify_quota_chatter_leaves_normal_success():
     r = {"success": True, "output": "# Hello\n\nThis is a ROADMAP."}
     assert rs.reclassify_quota_chatter_success(r) == r

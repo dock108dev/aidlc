@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from aidlc.providers.copilot_adapter import (
     CopilotAdapter,
     _parse_copilot_usage_blob,
+    _copilot_success_payload_is_quota_blocker,
     _strip_copilot_trailing_stats,
 )
 
@@ -137,6 +138,17 @@ def test_strip_copilot_trailing_stats():
     assert _strip_copilot_trailing_stats(raw) == "Answer line one\nAnswer two"
 
 
+def test_success_payload_quota_blocker_detects_no_quota_message():
+    blocked, diag, failure_type = _copilot_success_payload_is_quota_blocker(
+        "Input tokens: 12\n",
+        "402 You have no quota\n\nRequests 0 Premium (2s)\n",
+        "402 You have no quota\n\nRequests 0 Premium (2s)",
+    )
+    assert blocked is True
+    assert "no quota" in diag.lower()
+    assert failure_type == "token_exhausted"
+
+
 @patch("aidlc.providers.copilot_adapter.subprocess.Popen")
 def test_uses_stderr_when_stdout_is_empty(mock_popen, tmp_path):
     mock_popen.return_value = _mock_popen_success(
@@ -163,3 +175,28 @@ def test_uses_stderr_when_stdout_is_empty(mock_popen, tmp_path):
     assert result["raw_stderr"] == (
         '{"frontier_assessment":"ok","actions":[],"cycle_notes":"done"}\n'
     )
+
+
+@patch("aidlc.providers.copilot_adapter.subprocess.Popen")
+def test_exit_zero_quota_message_is_returned_as_failure(mock_popen, tmp_path):
+    mock_popen.return_value = _mock_popen_success(
+        stdout="Input tokens: 12\n",
+        stderr="402 You have no quota (Request ID: abc123)\n\nRequests 0 Premium (2s)\n",
+    )
+    adapter = CopilotAdapter(
+        {
+            "providers": {
+                "copilot": {
+                    "cli_command": "copilot",
+                    "default_model": "",
+                }
+            }
+        },
+        logging.getLogger("test.copilot"),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is False
+    assert result["failure_type"] == "token_exhausted"
+    assert "no quota" in (result["error"] or "").lower()

@@ -142,7 +142,49 @@ def test_run_discovery_retries_implausibly_shallow_zero_topic_output(tmp_path, l
     (tmp_path / "BRAINDUMP.md").write_text("# Brain\n\n" + ("Need feature details.\n" * 300))
     run_dir = _make_run_dir(tmp_path)
     state = RunState(run_id="r", config_name="c")
-    cli = MagicMock()
+    decision_type = type(
+        "Decision",
+        (),
+        {},
+    )
+
+    def _decision(**kwargs):
+        obj = decision_type()
+        for key, value in kwargs.items():
+            setattr(obj, key, value)
+        return obj
+
+    class FakeCLI:
+        def __init__(self):
+            self.execute_prompt = MagicMock()
+            self.set_phase = MagicMock()
+            self._decisions = [
+                _decision(
+                    provider_id="copilot",
+                    account_id="copilot-default",
+                    model="",
+                    reasoning="first",
+                    strategy_used="balanced",
+                    fallback=False,
+                    tier="standard",
+                    quality_note=None,
+                ),
+                _decision(
+                    provider_id="openai",
+                    account_id=None,
+                    model="gpt-5.4-mini",
+                    reasoning="retry",
+                    strategy_used="balanced",
+                    fallback=False,
+                    tier="standard",
+                    quality_note=None,
+                ),
+            ]
+
+        def resolve(self, phase="discovery"):
+            return self._decisions.pop(0)
+
+    cli = FakeCLI()
     cli.execute_prompt.side_effect = [
         {
             "success": True,
@@ -180,6 +222,8 @@ def test_run_discovery_retries_implausibly_shallow_zero_topic_output(tmp_path, l
     assert (run_dir / "claude_outputs" / "discovery_retry.md").exists()
     retry_debug = json.loads((run_dir / "claude_outputs" / "discovery_retry.debug.json").read_text())
     assert retry_debug["parsed"]["topic_count"] == 1
+    assert retry_debug["preflight_routing"]["provider_id"] == "openai"
+    assert retry_debug["preflight_routing"]["model"] == "gpt-5.4-mini"
 
 
 def test_run_discovery_does_not_retry_small_zero_topic_output(tmp_path, logger):

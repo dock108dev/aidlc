@@ -286,6 +286,12 @@ def run_discovery(
             f"{len(findings):,}",
         )
         retry_prompt = _build_discovery_retry_prompt(prompt)
+        retry_preflight_routing = _preflight_routing_snapshot(cli)
+        if retry_preflight_routing:
+            logger.info(
+                "Discovery retry selected route: "
+                f"{retry_preflight_routing.get('provider_id')}/{retry_preflight_routing.get('model')}"
+            )
         retry_result = cli.execute_prompt(retry_prompt, project_root)
         _log_model_result(logger, "Discovery retry", retry_result)
         state.record_provider_result(retry_result, config, phase="discovery")
@@ -303,7 +309,7 @@ def run_discovery(
                 braindump=braindump,
                 repo_summary=repo_summary,
                 scan_result=scan_result,
-                preflight_routing=preflight_routing,
+                preflight_routing=retry_preflight_routing,
             )
         else:
             _write_discovery_debug_bundle(
@@ -316,7 +322,7 @@ def run_discovery(
                 braindump=braindump,
                 repo_summary=repo_summary,
                 scan_result=scan_result,
-                preflight_routing=preflight_routing,
+                preflight_routing=retry_preflight_routing,
             )
             logger.warning(
                 f"Discovery retry failed; using initial discovery result: {retry_result.get('error')}"
