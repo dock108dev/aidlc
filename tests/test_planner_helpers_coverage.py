@@ -159,6 +159,11 @@ def test_write_planning_index_includes_discovery_section(logger, tmp_path):
 
 def test_build_prompt_doc_gaps_and_foundation(logger, tmp_path):
     cfg, run_dir = _base_config(tmp_path)
+    # Mode-aware planning instructions (v8) are longer than v7; this
+    # test asserts content presence, not budget enforcement, so widen
+    # the budget enough to fit the v8 PLANNING / VERIFY instructions
+    # plus scaffolding without triggering shrink.
+    cfg["max_planning_prompt_chars"] = 20000
     (tmp_path / "README.md").write_text("# ok")
     state = RunState(run_id="r", config_name="c")
     state.phase = RunPhase.PLANNING
@@ -189,6 +194,9 @@ def test_build_prompt_points_at_discovery_and_research_without_embedding(logger,
     budget) and brittle (a partial / killed discovery run can write
     garbage that explodes the prompt)."""
     cfg, run_dir = _base_config(tmp_path)
+    # See note in test_build_prompt_doc_gaps_and_foundation — mode-aware
+    # v8 instructions need more budget headroom for content-presence tests.
+    cfg["max_planning_prompt_chars"] = 20000
     discovery_dir = tmp_path / ".aidlc" / "discovery"
     discovery_dir.mkdir(parents=True)
     (discovery_dir / "findings.md").write_text("# Findings\ntutorial system has 11 steps wired")
