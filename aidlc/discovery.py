@@ -51,6 +51,129 @@ def _build_repo_summary(project_root: Path, scan_result: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _should_retry_shallow_discovery(
+    braindump: str,
+    scan_result: dict | None,
+    findings: str,
+    topics: list[dict],
+) -> bool:
+    """Heuristic: discovery on a large input should not return a tiny no-topic stub."""
+    if topics:
+        return False
+    total_docs = 0
+    if scan_result:
+        total_docs = int(scan_result.get("total_docs") or len(scan_result.get("doc_files", [])) or 0)
+    braindump_len = len((braindump or "").strip())
+    findings_len = len((findings or "").strip())
+    return (
+        braindump_len >= 2500
+        and total_docs >= 20
+        and findings_len < 600
+    )
+
+
+def _build_discovery_retry_prompt(base_prompt: str) -> str:
+    """Augment discovery when the first answer was implausibly shallow."""
+    return (
+        base_prompt
+        + "\n\n## Retry Guardrail\n"
+        + "A previous discovery attempt returned implausibly shallow findings with zero "
+        + "research topics. Re-read BRAINDUMP.md and inspect the repository directly.\n"
+        + "- Walk every major BRAINDUMP area and cite the concrete files you inspected.\n"
+        + "- If any integration, contract, flow, or subsystem would require planner guesswork, "
+        + "emit a separate research topic for it.\n"
+        + "- If you still return zero topics, the findings must explicitly cover the major "
+        + "BRAINDUMP areas well enough that a planner would not have to guess.\n"
+        + "- Do not answer with a short summary; produce the full findings + JSON topics format.\n"
+    )
+
+
+def _preflight_routing_snapshot(cli) -> dict | None:
+    """Best-effort routing preview before the discovery call starts."""
+    resolve_fn = getattr(type(cli), "resolve", None)
+    if not callable(resolve_fn):
+        return None
+    try:
+        decision = cli.resolve(phase="discovery")
+    except Exception:
+        return None
+    provider_id = getattr(decision, "provider_id", None)
+    model = getattr(decision, "model", None)
+    if not provider_id and not model:
+        return None
+    return {
+        "provider_id": provider_id,
+        "account_id": getattr(decision, "account_id", None),
+        "model": model,
+        "reasoning": getattr(decision, "reasoning", None),
+        "strategy_used": getattr(decision, "strategy_used", None),
+        "fallback": getattr(decision, "fallback", None),
+        "tier": getattr(decision, "tier", None),
+        "quality_note": getattr(decision, "quality_note", None),
+    }
+
+
+def _serialize_result_metadata(result: dict) -> dict:
+    """Keep the discovery debug bundle JSON-safe and high-signal."""
+    usage = result.get("usage")
+    return {
+        "success": bool(result.get("success")),
+        "provider_id": result.get("provider_id"),
+        "account_id": result.get("account_id"),
+        "model_used": result.get("model_used"),
+        "error": result.get("error"),
+        "failure_type": result.get("failure_type"),
+        "duration_seconds": result.get("duration_seconds"),
+        "retries": result.get("retries"),
+        "usage": usage if isinstance(usage, dict) else {},
+        "routing_decision": (
+            result.get("routing_decision") if isinstance(result.get("routing_decision"), dict) else None
+        ),
+        "raw_stdout_chars": len(result.get("raw_stdout") or ""),
+        "raw_stderr_chars": len(result.get("raw_stderr") or ""),
+    }
+
+
+def _write_discovery_debug_bundle(
+    *,
+    outputs_dir: Path,
+    attempt_slug: str,
+    prompt: str,
+    result: dict,
+    findings: str,
+    topics: list[dict],
+    braindump: str,
+    repo_summary: str,
+    scan_result: dict | None,
+    preflight_routing: dict | None,
+) -> None:
+    """Persist the exact discovery inputs/outputs needed for forensic debugging."""
+    prompt_path = outputs_dir / f"{attempt_slug}.prompt.md"
+    raw_output_path = outputs_dir / f"{attempt_slug}.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    raw_output_path.write_text(result.get("output") or "", encoding="utf-8")
+    debug_payload = {
+        "attempt": attempt_slug,
+        "preflight_routing": preflight_routing,
+        "scan_result": scan_result or {},
+        "repo_summary": repo_summary,
+        "braindump_chars": len((braindump or "").strip()),
+        "prompt_path": prompt_path.name,
+        "raw_output_path": raw_output_path.name,
+        "result": _serialize_result_metadata(result),
+        "parsed": {
+            "findings_chars": len((findings or "").strip()),
+            "topic_count": len(topics),
+            "topics": topics,
+            "has_json_fence": "```json" in (result.get("output") or ""),
+        },
+    }
+    (outputs_dir / f"{attempt_slug}.debug.json").write_text(
+        json.dumps(debug_payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def run_discovery(
     state,
     config: dict,
@@ -103,6 +226,12 @@ def run_discovery(
     if research_dir.exists():
         existing_research = sorted(p.name for p in research_dir.glob("*.md"))
     prompt = build_discovery_prompt(braindump, repo_summary, existing_research=existing_research)
+    preflight_routing = _preflight_routing_snapshot(cli)
+    if preflight_routing:
+        logger.info(
+            "Discovery selected route: "
+            f"{preflight_routing.get('provider_id')}/{preflight_routing.get('model')}"
+        )
 
     cli.set_phase("discovery")
     logger.info("Running discovery — investigating repo against BRAINDUMP intent...")
@@ -110,12 +239,22 @@ def run_discovery(
     _log_model_result(logger, "Discovery", result)
     state.record_provider_result(result, config, phase="discovery")
 
-    raw_output = result.get("output") or ""
     outputs_dir = run_dir / "claude_outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
-    (outputs_dir / "discovery.md").write_text(raw_output, encoding="utf-8")
 
     if not result.get("success"):
+        _write_discovery_debug_bundle(
+            outputs_dir=outputs_dir,
+            attempt_slug="discovery",
+            prompt=prompt,
+            result=result,
+            findings="",
+            topics=[],
+            braindump=braindump,
+            repo_summary=repo_summary,
+            scan_result=scan_result,
+            preflight_routing=preflight_routing,
+        )
         logger.error(f"Discovery model call failed: {result.get('error')}")
         # Write empty artifacts so resume doesn't loop indefinitely; planning still runs.
         findings_path.write_text(
@@ -126,7 +265,62 @@ def run_discovery(
         state.research_topics_total = 0
         return findings_path, topics_path
 
+    raw_output = result.get("output") or ""
     findings, topics = parse_discovery_output(raw_output)
+    _write_discovery_debug_bundle(
+        outputs_dir=outputs_dir,
+        attempt_slug="discovery",
+        prompt=prompt,
+        result=result,
+        findings=findings,
+        topics=topics,
+        braindump=braindump,
+        repo_summary=repo_summary,
+        scan_result=scan_result,
+        preflight_routing=preflight_routing,
+    )
+    if _should_retry_shallow_discovery(braindump, scan_result, findings, topics):
+        logger.warning(
+            "Discovery result looks implausibly shallow for this BRAINDUMP/repo size "
+            "(%s chars findings, 0 topics). Retrying discovery once with stricter instructions.",
+            f"{len(findings):,}",
+        )
+        retry_prompt = _build_discovery_retry_prompt(prompt)
+        retry_result = cli.execute_prompt(retry_prompt, project_root)
+        _log_model_result(logger, "Discovery retry", retry_result)
+        state.record_provider_result(retry_result, config, phase="discovery")
+        retry_output = retry_result.get("output") or ""
+        if retry_result.get("success"):
+            raw_output = retry_output
+            findings, topics = parse_discovery_output(raw_output)
+            _write_discovery_debug_bundle(
+                outputs_dir=outputs_dir,
+                attempt_slug="discovery_retry",
+                prompt=retry_prompt,
+                result=retry_result,
+                findings=findings,
+                topics=topics,
+                braindump=braindump,
+                repo_summary=repo_summary,
+                scan_result=scan_result,
+                preflight_routing=preflight_routing,
+            )
+        else:
+            _write_discovery_debug_bundle(
+                outputs_dir=outputs_dir,
+                attempt_slug="discovery_retry",
+                prompt=retry_prompt,
+                result=retry_result,
+                findings="",
+                topics=[],
+                braindump=braindump,
+                repo_summary=repo_summary,
+                scan_result=scan_result,
+                preflight_routing=preflight_routing,
+            )
+            logger.warning(
+                f"Discovery retry failed; using initial discovery result: {retry_result.get('error')}"
+            )
     if not findings:
         logger.warning("Discovery output had no findings markdown; writing placeholder.")
         findings = "# Findings\n\n_Discovery returned no findings markdown._"

@@ -132,6 +132,79 @@ def test_run_discovery_writes_findings_and_topics(tmp_path, logger):
     cli.set_phase.assert_called_with("discovery")
     # Raw output is also persisted under the run dir for inspection.
     assert (run_dir / "claude_outputs" / "discovery.md").exists()
+    assert (run_dir / "claude_outputs" / "discovery.prompt.md").exists()
+    debug_payload = json.loads((run_dir / "claude_outputs" / "discovery.debug.json").read_text())
+    assert debug_payload["parsed"]["topic_count"] == 1
+    assert debug_payload["result"]["success"] is True
+
+
+def test_run_discovery_retries_implausibly_shallow_zero_topic_output(tmp_path, logger):
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n\n" + ("Need feature details.\n" * 300))
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.side_effect = [
+        {
+            "success": True,
+            "output": "# Findings\n\nTiny summary.\n\n```json\n[]\n```\n",
+            "error": None,
+            "retries": 0,
+            "usage": {},
+        },
+        {
+            "success": True,
+            "output": (
+                "# Findings\n\n"
+                "Reviewed ui/main.gd and game/systems/shop.gd.\n\n"
+                '```json\n[{"topic": "shop-flow", "question": "How does the shop flow branch today?", "scope": ["game/systems/shop.gd"]}]\n```\n'
+            ),
+            "error": None,
+            "retries": 0,
+            "usage": {},
+        },
+    ]
+    config = {"_project_root": str(tmp_path), "_aidlc_dir": str(tmp_path / ".aidlc")}
+    findings_path, topics_path = run_discovery(
+        state,
+        config,
+        cli,
+        tmp_path,
+        run_dir,
+        logger,
+        scan_result={"project_type": "gdscript", "total_docs": 62},
+    )
+    assert cli.execute_prompt.call_count == 2
+    assert "Reviewed ui/main.gd" in findings_path.read_text()
+    topics = json.loads(topics_path.read_text())
+    assert topics[0]["topic"] == "shop-flow"
+    assert (run_dir / "claude_outputs" / "discovery_retry.md").exists()
+    retry_debug = json.loads((run_dir / "claude_outputs" / "discovery_retry.debug.json").read_text())
+    assert retry_debug["parsed"]["topic_count"] == 1
+
+
+def test_run_discovery_does_not_retry_small_zero_topic_output(tmp_path, logger):
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- one ask\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\n\nEverything was clear.\n\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path), "_aidlc_dir": str(tmp_path / ".aidlc")}
+    run_discovery(
+        state,
+        config,
+        cli,
+        tmp_path,
+        run_dir,
+        logger,
+        scan_result={"project_type": "py", "total_docs": 3},
+    )
+    assert cli.execute_prompt.call_count == 1
 
 
 def test_discovery_artifacts_land_under_aidlc_not_target_repo_docs(tmp_path, logger):

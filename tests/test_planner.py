@@ -60,6 +60,7 @@ class TestPlanner:
         planner.run()
         assert state.phase in (RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION)
         assert state.planning_cycles <= 2
+        assert (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").exists()
 
     def test_cycle_cap_respected(self, state, config, cli, logger, tmp_path):
         config["max_planning_cycles"] = 1

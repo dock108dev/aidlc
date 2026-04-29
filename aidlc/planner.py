@@ -7,6 +7,7 @@ Runs time-constrained planning sessions that:
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
+import json
 import time
 from pathlib import Path
 
@@ -248,6 +249,14 @@ class Planner:
         # Build the planning prompt
         prompt = self._build_prompt(is_finalization)
         self.logger.debug(f"Prompt size: {len(prompt)} chars")
+        preflight_routing = self._preflight_routing_snapshot()
+        if preflight_routing:
+            self.logger.info(
+                "  Planning Cycle %s selected route: %s/%s",
+                cycle_num,
+                preflight_routing.get("provider_id"),
+                preflight_routing.get("model"),
+            )
 
         # Execute Claude with file access (can read project files + write issues/docs)
         start_time = time.time()
@@ -264,12 +273,26 @@ class Planner:
 
         # Save raw output
         output_text = result.get("output", "")
+        output_dir = self.run_dir / "claude_outputs"
+        output_dir.mkdir(exist_ok=True)
+        prompt_path = output_dir / f"plan_cycle_{cycle_num:04d}.prompt.md"
+        output_path = output_dir / f"plan_cycle_{cycle_num:04d}.md"
+        prompt_path.write_text(prompt, encoding="utf-8")
         if output_text:
-            output_dir = self.run_dir / "claude_outputs"
-            output_dir.mkdir(exist_ok=True)
-            (output_dir / f"plan_cycle_{cycle_num:04d}.md").write_text(output_text)
+            output_path.write_text(output_text, encoding="utf-8")
+        else:
+            output_path.write_text("", encoding="utf-8")
 
         if not result["success"]:
+            self._write_cycle_debug_bundle(
+                cycle_num=cycle_num,
+                prompt_path=prompt_path,
+                output_path=output_path,
+                result=result,
+                preflight_routing=preflight_routing,
+                parse_status="provider_failure",
+                parse_error=result.get("error"),
+            )
             self.logger.error(f"Cycle {cycle_num} failed: {result.get('error')}")
             return False
 
@@ -284,6 +307,15 @@ class Planner:
             try:
                 planning_output = parse_planning_output(output_text)
             except ValueError as e:
+                self._write_cycle_debug_bundle(
+                    cycle_num=cycle_num,
+                    prompt_path=prompt_path,
+                    output_path=output_path,
+                    result=result,
+                    preflight_routing=preflight_routing,
+                    parse_status="parse_error",
+                    parse_error=str(e),
+                )
                 self.logger.error(f"Failed to parse cycle {cycle_num}: {e}")
                 preview = (output_text or "").strip().replace("\n", "\\n")
                 stderr_preview = str(result.get("raw_stderr") or "").strip().replace("\n", "\\n")
@@ -303,6 +335,16 @@ class Planner:
                         f"{result.get('provider_id')}/{result.get('model_used')}"
                     )
                 return False
+
+        self._write_cycle_debug_bundle(
+            cycle_num=cycle_num,
+            prompt_path=prompt_path,
+            output_path=output_path,
+            result=result,
+            preflight_routing=preflight_routing,
+            parse_status="ok",
+            planning_output=planning_output,
+        )
 
         # Validate — pre-register new issue IDs from this batch so
         # within-batch dependencies are allowed (issue X may depend on
@@ -531,4 +573,99 @@ class Planner:
                 self.logger.info(f"Updated issue dependencies: {issue_id}")
         return total_changes
 
-        return total_changes
+    def _preflight_routing_snapshot(self) -> dict | None:
+        """Best-effort router preview before the planning call starts."""
+        resolve_fn = getattr(type(self.cli), "resolve", None)
+        if not callable(resolve_fn):
+            return None
+        try:
+            decision = self.cli.resolve(phase="planning")
+        except Exception:
+            return None
+        provider_id = getattr(decision, "provider_id", None)
+        model = getattr(decision, "model", None)
+        if not provider_id and not model:
+            return None
+        return {
+            "provider_id": provider_id,
+            "account_id": getattr(decision, "account_id", None),
+            "model": model,
+            "reasoning": getattr(decision, "reasoning", None),
+            "strategy_used": getattr(decision, "strategy_used", None),
+            "fallback": getattr(decision, "fallback", None),
+            "tier": getattr(decision, "tier", None),
+            "quality_note": getattr(decision, "quality_note", None),
+        }
+
+    def _serialize_result_metadata(self, result: dict) -> dict:
+        usage = result.get("usage")
+        return {
+            "success": bool(result.get("success")),
+            "provider_id": result.get("provider_id"),
+            "account_id": result.get("account_id"),
+            "model_used": result.get("model_used"),
+            "error": result.get("error"),
+            "failure_type": result.get("failure_type"),
+            "duration_seconds": result.get("duration_seconds"),
+            "retries": result.get("retries"),
+            "usage": usage if isinstance(usage, dict) else {},
+            "routing_decision": (
+                result.get("routing_decision") if isinstance(result.get("routing_decision"), dict) else None
+            ),
+            "raw_stdout_chars": len(result.get("raw_stdout") or ""),
+            "raw_stderr_chars": len(result.get("raw_stderr") or ""),
+            "output_chars": len(result.get("output") or ""),
+        }
+
+    def _write_cycle_debug_bundle(
+        self,
+        *,
+        cycle_num: int,
+        prompt_path: Path,
+        output_path: Path,
+        result: dict,
+        preflight_routing: dict | None,
+        parse_status: str,
+        parse_error: str | None = None,
+        planning_output: PlanningOutput | None = None,
+    ) -> None:
+        output_dir = self.run_dir / "claude_outputs"
+        debug_path = output_dir / f"plan_cycle_{cycle_num:04d}.debug.json"
+        parsed = {
+            "parse_status": parse_status,
+            "parse_error": parse_error,
+        }
+        if planning_output is not None:
+            parsed.update(
+                {
+                    "frontier_assessment": planning_output.frontier_assessment,
+                    "cycle_notes": planning_output.cycle_notes,
+                    "planning_complete": planning_output.planning_complete,
+                    "completion_reason": planning_output.completion_reason,
+                    "action_count": len(planning_output.actions),
+                    "actions": [
+                        {
+                            "action_type": action.action_type,
+                            "issue_id": action.issue_id,
+                            "title": action.title,
+                            "priority": action.priority,
+                            "dependencies": action.dependencies,
+                            "labels": action.labels,
+                            "acceptance_criteria_count": len(action.acceptance_criteria or []),
+                        }
+                        for action in planning_output.actions
+                    ],
+                }
+            )
+        payload = {
+            "cycle": cycle_num,
+            "phase": self.state.phase.value if hasattr(self.state.phase, "value") else str(self.state.phase),
+            "is_finalization": self.state.phase == RunPhase.PLAN_FINALIZATION,
+            "prompt_chars": len(prompt_path.read_text(encoding="utf-8")),
+            "prompt_path": prompt_path.name,
+            "raw_output_path": output_path.name,
+            "preflight_routing": preflight_routing,
+            "result": self._serialize_result_metadata(result),
+            "parsed": parsed,
+        }
+        debug_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
