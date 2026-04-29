@@ -316,24 +316,16 @@ class Planner:
                     parse_status="parse_error",
                     parse_error=str(e),
                 )
+                debug_path = output_dir / f"plan_cycle_{cycle_num:04d}.debug.json"
                 self.logger.error(f"Failed to parse cycle {cycle_num}: {e}")
-                preview = (output_text or "").strip().replace("\n", "\\n")
-                stderr_preview = str(result.get("raw_stderr") or "").strip().replace("\n", "\\n")
-                if preview:
-                    self.logger.error(
-                        f"Cycle {cycle_num} output preview ({min(len(preview), 240)} chars): "
-                        f"{preview[:240]}"
-                    )
-                elif stderr_preview:
-                    self.logger.error(
-                        f"Cycle {cycle_num} had empty parsed output; stderr preview "
-                        f"({min(len(stderr_preview), 240)} chars): {stderr_preview[:240]}"
-                    )
-                else:
-                    self.logger.error(
-                        f"Cycle {cycle_num} returned no parseable output from "
-                        f"{result.get('provider_id')}/{result.get('model_used')}"
-                    )
+                self.logger.error(
+                    "Cycle %s returned no parseable output from %s/%s. "
+                    "See %s for full prompt/result/debug details.",
+                    cycle_num,
+                    result.get("provider_id"),
+                    result.get("model_used"),
+                    debug_path.name,
+                )
                 return False
 
         self._write_cycle_debug_bundle(
