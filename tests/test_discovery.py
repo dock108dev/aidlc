@@ -261,6 +261,32 @@ def test_run_discovery_idempotent_when_artifacts_exist(tmp_path, logger):
     assert state.research_topics_total == 1
 
 
+def test_run_discovery_logs_model_and_output_size(tmp_path, caplog):
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- one ask\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\n\nx\n\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+        "provider_id": "copilot",
+        "model_used": "default",
+    }
+    config = {"_project_root": str(tmp_path), "_aidlc_dir": str(tmp_path / ".aidlc")}
+    test_logger = logging.getLogger("test.discovery.model_log")
+    with caplog.at_level(logging.INFO, logger="test.discovery.model_log"):
+        run_discovery(state, config, cli, tmp_path, run_dir, test_logger)
+    assert any(
+        rec.message.startswith("Discovery model: copilot/default (")
+        and "chars returned" in rec.message
+        for rec in caplog.records
+    )
+    assert state.research_topics_total == 0
+
+
 def test_run_discovery_no_braindump_writes_empty_artifacts(tmp_path, logger):
     """Defensive: if BRAINDUMP.md is missing, write placeholder artifacts and skip the model call."""
     run_dir = _make_run_dir(tmp_path)

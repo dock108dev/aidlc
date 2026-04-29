@@ -285,6 +285,23 @@ class Planner:
                 planning_output = parse_planning_output(output_text)
             except ValueError as e:
                 self.logger.error(f"Failed to parse cycle {cycle_num}: {e}")
+                preview = (output_text or "").strip().replace("\n", "\\n")
+                stderr_preview = str(result.get("raw_stderr") or "").strip().replace("\n", "\\n")
+                if preview:
+                    self.logger.error(
+                        f"Cycle {cycle_num} output preview ({min(len(preview), 240)} chars): "
+                        f"{preview[:240]}"
+                    )
+                elif stderr_preview:
+                    self.logger.error(
+                        f"Cycle {cycle_num} had empty parsed output; stderr preview "
+                        f"({min(len(stderr_preview), 240)} chars): {stderr_preview[:240]}"
+                    )
+                else:
+                    self.logger.error(
+                        f"Cycle {cycle_num} returned no parseable output from "
+                        f"{result.get('provider_id')}/{result.get('model_used')}"
+                    )
                 return False
 
         # Validate — pre-register new issue IDs from this batch so
@@ -481,7 +498,11 @@ class Planner:
         """Log which provider/model handled the planning cycle."""
         provider = str(result.get("provider_id") or "unknown")
         model = str(result.get("model_used") or "unknown")
-        self.logger.info(f"  Planning Cycle {cycle_num} model: {provider}/{model}")
+        output_len = len(result.get("output") or "")
+        self.logger.info(
+            f"  Planning Cycle {cycle_num} model: {provider}/{model} "
+            f"({output_len:,} chars returned)"
+        )
 
     def _sanitize_issue_dependencies(self) -> int:
         """Normalize dependency graph and persist any changes.

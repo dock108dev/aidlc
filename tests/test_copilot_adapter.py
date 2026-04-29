@@ -135,3 +135,31 @@ def test_parse_copilot_usage_slash_form():
 def test_strip_copilot_trailing_stats():
     raw = "Answer line one\nAnswer two\nInput tokens: 10\n"
     assert _strip_copilot_trailing_stats(raw) == "Answer line one\nAnswer two"
+
+
+@patch("aidlc.providers.copilot_adapter.subprocess.Popen")
+def test_uses_stderr_when_stdout_is_empty(mock_popen, tmp_path):
+    mock_popen.return_value = _mock_popen_success(
+        stdout="Input tokens: 12\n",
+        stderr='{"frontier_assessment":"ok","actions":[],"cycle_notes":"done"}\n',
+    )
+    adapter = CopilotAdapter(
+        {
+            "providers": {
+                "copilot": {
+                    "cli_command": "copilot",
+                    "default_model": "",
+                }
+            }
+        },
+        logging.getLogger("test.copilot"),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["output"] == '{"frontier_assessment":"ok","actions":[],"cycle_notes":"done"}'
+    assert result["raw_stdout"] == "Input tokens: 12\n"
+    assert result["raw_stderr"] == (
+        '{"frontier_assessment":"ok","actions":[],"cycle_notes":"done"}\n'
+    )

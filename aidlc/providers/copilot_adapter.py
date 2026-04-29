@@ -114,6 +114,18 @@ def _strip_copilot_trailing_stats(stdout: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _extract_response_text(stdout: str, stderr: str, silent: bool) -> str:
+    """Prefer stdout, but fall back to stderr when the CLI emits the answer there."""
+    primary = stdout or ""
+    fallback = stderr or ""
+    if not silent:
+        primary = _strip_copilot_trailing_stats(primary)
+        fallback = _strip_copilot_trailing_stats(fallback)
+    primary = primary.strip()
+    fallback = fallback.strip()
+    return primary or fallback
+
+
 class CopilotAdapter(ProviderAdapter):
     """Provider adapter for GitHub Copilot CLI."""
 
@@ -180,9 +192,7 @@ class CopilotAdapter(ProviderAdapter):
             if proc.returncode == 0:
                 combined = f"{stdout or ''}\n{stderr or ''}"
                 usage = _parse_copilot_usage_blob(combined)
-                out = stdout or ""
-                if not self._silent:
-                    out = _strip_copilot_trailing_stats(out)
+                out = _extract_response_text(stdout, stderr, self._silent)
                 usage_source = "copilot_cli"
                 return {
                     "success": True,
@@ -197,6 +207,8 @@ class CopilotAdapter(ProviderAdapter):
                     "usage_source": usage_source,
                     "provider_id": self.PROVIDER_ID,
                     "account_id": account_id,
+                    "raw_stdout": stdout or "",
+                    "raw_stderr": stderr or "",
                 }
             else:
                 return self._failure_result(

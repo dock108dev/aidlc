@@ -107,6 +107,7 @@ def run_discovery(
     cli.set_phase("discovery")
     logger.info("Running discovery — investigating repo against BRAINDUMP intent...")
     result = cli.execute_prompt(prompt, project_root)
+    _log_model_result(logger, "Discovery", result)
     state.record_provider_result(result, config, phase="discovery")
 
     raw_output = result.get("output") or ""
@@ -175,3 +176,11 @@ def run_discovery(
         f"{len(topics)} research topic(s) → {topics_path.relative_to(project_root)}"
     )
     return findings_path, topics_path
+
+
+def _log_model_result(logger: logging.Logger, label: str, result: dict) -> None:
+    """Log provider/model and output size for a phase result."""
+    provider = str(result.get("provider_id") or "unknown")
+    model = str(result.get("model_used") or "unknown")
+    output_len = len(result.get("output") or "")
+    logger.info(f"{label} model: {provider}/{model} ({output_len:,} chars returned)")
