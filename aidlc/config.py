@@ -183,6 +183,10 @@ DEFAULTS = {
     "retry_max_delay_seconds": 300,
     "retry_backoff_factor": 2.0,
     "claude_service_outage_max_wait_seconds": 7200,  # keep retrying on 5xx/outage for up to 2h
+    # When the implementer detects a Claude service outage, it rolls back the
+    # attempt and pauses this many seconds before the next iteration to avoid
+    # tight-looping during an extended outage.
+    "implementation_outage_pause_seconds": 300,
     "max_consecutive_failures": 3,
     "finalization_budget_percent": 10,
     "planning_finalization_grace_cycles": 1,  # finalization cycles allowed after budget exhaustion

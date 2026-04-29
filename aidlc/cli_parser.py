@@ -135,6 +135,17 @@ def build_parser(version: str) -> argparse.ArgumentParser:
             "(token_exhausted, unknown) auto-reopen each cycle."
         ),
     )
+    run_parser.add_argument(
+        "--reset-failed-attempts",
+        action="store_true",
+        help=(
+            "Recovery flag for runs stuck after a Claude service outage. Zeroes "
+            "attempt_count, clears failure_cause, and resets status to pending "
+            "for any failed issue whose implementation_notes contain the "
+            "'[outage]' marker. Does not touch issues whose failures had other "
+            "causes."
+        ),
+    )
 
     status_parser = subparsers.add_parser(
         "status",

@@ -66,6 +66,25 @@ def make_cli_fail():
     return cli
 
 
+def make_cli_outage():
+    """CLI mock that returns the same shape claude_cli.py emits when the
+    outage budget is exceeded — used to drive Fix C / Fix D paths."""
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": False,
+        "output": "",
+        "error": (
+            "Claude has been unavailable for an extended period "
+            "(2h outage window reached). Please check Claude status and retry."
+        ),
+        "failure_type": "service_down",
+        "duration_seconds": 1.0,
+        "retries": 0,
+    }
+    cli.set_complexity = MagicMock()
+    return cli
+
+
 def make_state_with_issue(issue_id="ISSUE-001", **overrides):
     s = RunState(run_id="test", config_name="default")
     issue_data = {
@@ -1080,3 +1099,235 @@ class TestAutosyncProgress:
         impl.run()
         mock_finalizer_cls.assert_not_called()
         mock_commit.assert_called()
+
+
+class TestImplementIssueOutageRollback:
+    """Fix C: outage failures must not consume issue attempts."""
+
+    def test_outage_does_not_burn_attempt_count(self, config, logger, tmp_path):
+        cli = make_cli_outage()
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        result = impl._implement_issue(issue)
+        assert result is False
+
+        updated = state.get_issue("ISSUE-001")
+        # Increment from line ~369 was rolled back: still 0 attempts.
+        assert updated.attempt_count == 0
+        assert updated.status == IssueStatus.PENDING
+        assert updated.failure_cause is None
+        assert "[outage]" in updated.implementation_notes
+        assert "service outage during implementation" in (state.stop_reason or "").lower()
+
+    def test_resume_after_outage_returns_pending(self, config, logger, tmp_path):
+        cli = make_cli_outage()
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        impl._implement_issue(issue)
+        # The whole point of Fix C: the issue is still pickable for retry.
+        pending = state.get_pending_issues()
+        assert len(pending) == 1
+        assert pending[0].id == "ISSUE-001"
+
+    def test_outage_branch_runs_before_token_exhausted_branch(
+        self, config, logger, tmp_path
+    ):
+        # Make a CLI that emits both signals — service_down failure_type and
+        # token-exhausted message text. Outage branch must win, otherwise
+        # the issue would be tagged FAILED with FAILURE_CAUSE_TOKEN_EXHAUSTED
+        # and the run would stop instead of pausing.
+        cli = MagicMock()
+        cli.execute_prompt.return_value = {
+            "success": False,
+            "output": "",
+            "error": (
+                "Claude has been unavailable for an extended period (outage). "
+                "all available providers/models are out of tokens"
+            ),
+            "failure_type": "service_down",
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        cli.set_complexity = MagicMock()
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        issue = Issue.from_dict(state.issues[0])
+        impl._implement_issue(issue)
+        updated = state.get_issue("ISSUE-001")
+        assert updated.status == IssueStatus.PENDING
+        assert updated.failure_cause is None
+
+
+class TestRunLoopOutagePause:
+    """Fix D: cross-call outage pause."""
+
+    @patch("aidlc.implementer.time.sleep")
+    def test_run_loop_pauses_and_clears_stop_reason(
+        self, mock_sleep, config, logger, tmp_path
+    ):
+        # First call: outage. Second call: success. Run loop should pause
+        # between them, clear the outage stop_reason, and not enter the
+        # early-stop block.
+        outage_response = {
+            "success": False,
+            "output": "",
+            "error": "Claude has been unavailable for an extended period (outage)",
+            "failure_type": "service_down",
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        success_response = {
+            "success": True,
+            "output": (
+                "```json\n"
+                + json.dumps(
+                    {
+                        "issue_id": "ISSUE-001",
+                        "success": True,
+                        "summary": "Done",
+                        "files_changed": [],
+                        "tests_passed": True,
+                        "notes": "",
+                    }
+                )
+                + "\n```"
+            ),
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+        }
+        cli = MagicMock()
+        cli.execute_prompt.side_effect = [outage_response, success_response]
+        cli.set_complexity = MagicMock()
+
+        state = make_state_with_issue()
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+        config["implementation_outage_pause_seconds"] = 7
+        # Cap the run so an unexpected loop doesn't hang the test.
+        config["max_implementation_cycles"] = 5
+
+        impl = Implementer(state, run_dir, config, cli, "ctx", logger)
+        impl.run()
+
+        # The implementer must have called sleep with the configured pause.
+        sleep_calls = [c.args[0] for c in mock_sleep.call_args_list if c.args]
+        assert 7 in sleep_calls
+        # The issue eventually succeeded, so it's implemented (or verified).
+        updated = state.get_issue("ISSUE-001")
+        assert updated.status in (IssueStatus.IMPLEMENTED, IssueStatus.VERIFIED)
+
+
+class TestSignalHelpers:
+    def test_is_service_outage_failure_type_match(self):
+        from aidlc.implementer_signals import is_service_outage
+
+        assert is_service_outage({"failure_type": "service_down"}) is True
+        assert is_service_outage({"failure_type": "SERVICE_DOWN"}) is True
+
+    def test_is_service_outage_message_match(self):
+        from aidlc.implementer_signals import is_service_outage
+
+        result = {
+            "failure_type": "transient",
+            "error": "Claude has been unavailable for an extended period (outage)",
+        }
+        assert is_service_outage(result) is True
+
+    def test_is_service_outage_negative_cases(self):
+        from aidlc.implementer_signals import is_service_outage
+
+        assert is_service_outage({}) is False
+        assert is_service_outage({"failure_type": "issue"}) is False
+        assert is_service_outage({"failure_type": "transient", "error": "rate limit"}) is False
+        assert is_service_outage(None) is False
+        assert is_service_outage("not a dict") is False
+
+    def test_is_service_outage_stop_reason(self):
+        from aidlc.implementer_signals import (
+            SERVICE_OUTAGE_STOP_REASON,
+            is_service_outage_stop_reason,
+        )
+
+        assert is_service_outage_stop_reason(SERVICE_OUTAGE_STOP_REASON) is True
+        assert is_service_outage_stop_reason("Claude service outage during implementation; foo") is True
+        assert is_service_outage_stop_reason("token exhausted") is False
+        assert is_service_outage_stop_reason(None) is False
+        assert is_service_outage_stop_reason("") is False
+
+
+class TestResetOutageFailedAttempts:
+    def test_resets_only_outage_marked_issues(self, logger):
+        from aidlc.implementer_helpers import (
+            OUTAGE_MARKER,
+            reset_outage_failed_attempts,
+        )
+
+        state = RunState(run_id="t", config_name="c")
+        state.issues = [
+            {
+                "id": "ISSUE-001",
+                "title": "outage-stuck",
+                "description": "",
+                "priority": "high",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": [],
+                "status": "failed",
+                "failure_cause": "failed_unknown",
+                "implementation_notes": (
+                    f"\nAttempt 3 failed (sample): timeout {OUTAGE_MARKER} attempt rolled back"
+                ),
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
+            {
+                "id": "ISSUE-002",
+                "title": "legitimately-broken",
+                "description": "",
+                "priority": "high",
+                "labels": [],
+                "dependencies": [],
+                "acceptance_criteria": [],
+                "status": "failed",
+                "failure_cause": "failed_dependency",
+                "implementation_notes": "real dependency error",
+                "verification_result": "",
+                "files_changed": [],
+                "attempt_count": 3,
+                "max_attempts": 3,
+            },
+        ]
+        n = reset_outage_failed_attempts(state, logger, lambda issue: None)
+        assert n == 1
+        i1 = state.get_issue("ISSUE-001")
+        i2 = state.get_issue("ISSUE-002")
+        assert i1.status == IssueStatus.PENDING
+        assert i1.attempt_count == 0
+        assert i1.failure_cause is None
+        # The non-outage issue must not be touched.
+        assert i2.status == IssueStatus.FAILED
+        assert i2.attempt_count == 3
+        assert i2.failure_cause == "failed_dependency"
+
+    def test_no_outage_issues_returns_zero(self, logger):
+        from aidlc.implementer_helpers import reset_outage_failed_attempts
+
+        state = RunState(run_id="t", config_name="c")
+        state.issues = []
+        assert reset_outage_failed_attempts(state, logger, lambda issue: None) == 0

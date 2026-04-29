@@ -147,6 +147,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     # implementer can pick it up without changing the public function signature.
     if getattr(args, "retry_failed", False):
         config["_retry_failed_flag"] = True
+    # --reset-failed-attempts is a recovery flag scoped to issues whose
+    # implementation_notes carry the [outage] marker — it zeroes attempt_count
+    # so they can be picked up again after a Claude service-outage cascade.
+    if getattr(args, "reset_failed_attempts", False):
+        config["_reset_failed_attempts_flag"] = True
 
     skip_finalize = getattr(args, "skip_finalize", False)
     skip_validation = getattr(args, "skip_validation", False)

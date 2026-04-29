@@ -431,6 +431,43 @@ def reopen_transient_failures(state, logger, sync_issue_markdown, force_all: boo
     return reopened
 
 
+OUTAGE_MARKER = "[outage]"
+
+
+def reset_outage_failed_attempts(state, logger, sync_issue_markdown) -> int:
+    """Recovery for runs that died from a Claude outage cascade.
+
+    Scoped to failed issues whose ``implementation_notes`` contain the
+    ``[outage]`` marker. Zeroes ``attempt_count``, clears ``failure_cause``,
+    and resets ``status`` to pending so ``get_pending_issues`` will surface
+    the issue on the next iteration / on ``--resume``.
+
+    Issues failed for non-outage reasons are left untouched. Use
+    ``--retry-failed`` for the broader, attempt-preserving reopen.
+
+    Returns the number of issues reset.
+    """
+    reset = 0
+    for d in list(state.issues):
+        if d.get("status") != IssueStatus.FAILED.value:
+            continue
+        notes = str(d.get("implementation_notes") or "")
+        if OUTAGE_MARKER not in notes:
+            continue
+        issue = Issue.from_dict(d)
+        logger.info(
+            f"Resetting {issue.id} for outage recovery "
+            f"(was attempts={issue.attempt_count}, cause={issue.failure_cause or 'none'})"
+        )
+        issue.status = IssueStatus.PENDING
+        issue.failure_cause = None
+        issue.attempt_count = 0
+        state.update_issue(issue)
+        sync_issue_markdown(issue)
+        reset += 1
+    return reset
+
+
 def reopen_stale_verified_issues(
     state,
     logger,

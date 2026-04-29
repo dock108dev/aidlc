@@ -256,6 +256,58 @@ class TestExecutePrompt:
         assert mock_popen.call_count > 1
         assert mock_sleep.called
 
+    @patch("aidlc.claude_cli.time.sleep")
+    @patch("aidlc.claude_cli.time.time")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_outage_classification_is_sticky_across_retry(
+        self, mock_popen, mock_time, mock_sleep, base_config, logger, tmp_path
+    ):
+        # Reproduces the logs_4 mid-outage misclassification:
+        #   call 1: rc=1 with explicit "internal server error" markers   -> service_down
+        #   call 2+: rc=1 with plain stdout that the regex would miss    -> WAS transient
+        # With Fix A (sticky window), all post-call-1 failures stay
+        # service_down for the duration of the outage budget. Use a small
+        # budget so the loop ends via budget-exhaustion, not retry exhaustion.
+        first = _mock_popen_failure(1, "")
+        first.stdout.read.return_value = "HTTP 500 internal server error\nupstream connect failure"
+        first.stdout.readline.side_effect = _line_reader(
+            "HTTP 500 internal server error\nupstream connect failure\n"
+        )
+        second = _mock_popen_failure(1, "")
+        second.stdout.read.return_value = "..."
+        second.stdout.readline.side_effect = _line_reader("...\n")
+
+        # First call uses `first`, every subsequent call uses `second`.
+        # A generator lets the loop run as many iterations as it wants
+        # without exhausting a fixed-size side_effect list.
+        def popen_factory():
+            yield first
+            while True:
+                yield second
+
+        gen = popen_factory()
+        mock_popen.side_effect = lambda *a, **kw: next(gen)
+
+        # Budget = 30 mocked seconds (a handful of outage retries given the
+        # wait loop's internal time.time() calls). Plenty to prove stickiness,
+        # finite enough to hit budget exhaustion and exit cleanly.
+        base_config["retry_max_attempts"] = 0
+        base_config["claude_service_outage_max_wait_seconds"] = 30
+        clock = itertools.count(start=0.0, step=1.0)
+        mock_time.side_effect = lambda: next(clock)
+
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path)
+        # Final result is service_down (budget exhausted). Without Fix A
+        # the classifier would have returned to "issue"/"transient" on
+        # call 2 and exited via the regular max_retries path with that
+        # classification.
+        assert result["success"] is False
+        assert result["failure_type"] == "service_down"
+        # And it must have retried more than the regular max_retries=0+1=1
+        # default — proves we stayed in the outage retry path.
+        assert mock_popen.call_count >= 2
+
     @patch("aidlc.claude_cli.time.time")
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_hard_timeout_config_is_ignored(
@@ -640,6 +692,31 @@ class TestClassifyFailure:
 
     def test_service_outage_detection_from_network_message(self):
         assert ClaudeCLI._is_service_outage(1, "", "temporary DNS failure") is True
+
+    def test_service_outage_detection_from_init_only_stdout(self):
+        # Real outage fingerprint observed in logs_4: CLI emits the system
+        # init event but never produces a result event, then exits non-zero.
+        init_only = (
+            '{"type":"system","subtype":"init","cwd":"/Users/x/proj",'
+            '"session_id":"abcd","tools":["Task","Bash","Edit"],'
+            '"model":"opus"}\n'
+        )
+        assert ClaudeCLI._is_service_outage(1, "", init_only) is True
+
+    def test_init_plus_result_is_not_outage(self):
+        # If the CLI got past init and produced a result event, the failure
+        # is about the run itself (test failure, etc.) — not an outage.
+        init_then_result = (
+            '{"type":"system","subtype":"init","session_id":"abcd"}\n'
+            '{"type":"result","subtype":"error","error":"tests failed"}\n'
+        )
+        assert ClaudeCLI._is_service_outage(1, "", init_then_result) is False
+
+    def test_init_only_stdout_with_zero_returncode_is_not_outage(self):
+        # rc=0 means the success branch handles parsing; outage detection
+        # should not fire.
+        init_only = '{"type":"system","subtype":"init","session_id":"abcd"}\n'
+        assert ClaudeCLI._is_service_outage(0, "", init_only) is False
 
 
 class TestExtractCliMetadataBranches:

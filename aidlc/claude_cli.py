@@ -428,6 +428,20 @@ class ClaudeCLI:
                             stderr_text = "Claude CLI timed out"
                     elif self._is_service_outage(returncode, stderr_text, stdout_text):
                         failure_type = "service_down"
+                    elif (
+                        outage_started_at is not None
+                        and (time.time() - outage_started_at) < outage_max_wait
+                    ):
+                        # Already inside an open outage window: a fast-failing
+                        # rc!=0 with only an init JSON event is the same outage,
+                        # not a new transient. Stay sticky so we don't reset
+                        # backoff and burn max_retries.
+                        failure_type = "service_down"
+                        self.logger.info(
+                            "Treating fast-fail as continued service outage "
+                            f"(elapsed={time.time() - outage_started_at:.0f}s of "
+                            f"{outage_max_wait:.0f}s budget)."
+                        )
                     else:
                         failure_type = self._classify_failure(
                             returncode, f"{stderr_text}\n{stdout_text}"
@@ -556,7 +570,17 @@ class ClaudeCLI:
         if returncode in (500, 502, 503, 504):
             return True
         combined = f"{stderr}\n{stdout}"
-        return bool(_SERVICE_OUTAGE_PATTERNS.search(combined))
+        if _SERVICE_OUTAGE_PATTERNS.search(combined):
+            return True
+        # Init-only fingerprint: CLI started a session (emitted system init)
+        # but never produced a result event and exited non-zero. Observed
+        # during real Claude API outages on retry calls where the upstream
+        # error message no longer reaches stdout.
+        if returncode != 0 and stdout:
+            head = stdout[:4096]
+            if '"subtype":"init"' in head and '"type":"result"' not in stdout:
+                return True
+        return False
 
     def check_available(self) -> bool:
         if self.dry_run:

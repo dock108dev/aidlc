@@ -11,6 +11,22 @@ def is_all_models_token_exhausted(result: dict) -> bool:
     return "all available providers/models" in message and "token" in message
 
 
+SERVICE_OUTAGE_STOP_REASON = "Claude service outage during implementation; pausing run."
+
+
+def is_service_outage(result: dict) -> bool:
+    if not isinstance(result, dict):
+        return False
+    if str(result.get("failure_type") or "").lower() == "service_down":
+        return True
+    msg = str(result.get("error") or "").lower()
+    return "extended period" in msg and "outage" in msg
+
+
+def is_service_outage_stop_reason(reason: str | None) -> bool:
+    return bool(reason) and "service outage during implementation" in reason.lower()
+
+
 def is_no_models_available(result: dict) -> bool:
     if not isinstance(result, dict):
         return False

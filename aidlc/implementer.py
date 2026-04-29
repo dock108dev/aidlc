@@ -15,12 +15,16 @@ from .implementer_helpers import (
     log_provider_result_for_issue,
     reopen_stale_verified_issues,
     reopen_transient_failures,
+    reset_outage_failed_attempts,
 )
 from .implementer_issue_order import sort_issues_for_implementation
 from .implementer_signals import (
+    SERVICE_OUTAGE_STOP_REASON,
     compact_error_text,
     is_all_models_token_exhausted,
     is_no_models_available,
+    is_service_outage,
+    is_service_outage_stop_reason,
     sample_error_payload,
     should_stop_for_provider_availability,
 )
@@ -188,6 +192,21 @@ class Implementer:
             save_state(self.state, self.run_dir)
             return False
 
+        # Apply --reset-failed-attempts before any auto-reopen so the helper
+        # below sees the corrected attempt_count / cleared status.
+        if bool(self.config.get("_reset_failed_attempts_flag", False)):
+            n_reset = reset_outage_failed_attempts(
+                self.state, self.logger, self._sync_issue_markdown
+            )
+            if n_reset:
+                self.logger.info(
+                    f"--reset-failed-attempts: reset {n_reset} outage-marked issue(s)."
+                )
+            else:
+                self.logger.info(
+                    "--reset-failed-attempts: no outage-marked failed issues found."
+                )
+
         # Auto-reopen transient failures (or all if --retry-failed).
         force_retry = bool(self.config.get("_retry_failed_flag", False))
         reopened = self._maybe_reopen_transient_failures(force_all=force_retry)
@@ -255,8 +274,14 @@ class Implementer:
 
             self.state.implementation_cycles += 1
 
+            outage_signal = is_service_outage_stop_reason(self.state.stop_reason)
+
             if success:
                 consecutive_failures = 0
+            elif outage_signal:
+                # Outage isn't signal about issue ordering — don't bump
+                # consecutive_failures or trigger the re-sort path.
+                pass
             else:
                 consecutive_failures += 1
                 if consecutive_failures >= max_consecutive_failures:
@@ -272,6 +297,21 @@ class Implementer:
                         )
                         self.logger.error(self.state.stop_reason)
                         break
+
+            if outage_signal:
+                pause = max(
+                    0, int(self.config.get("implementation_outage_pause_seconds", 300))
+                )
+                self.logger.warning(
+                    f"Service-outage signal received; pausing {pause}s before next iteration."
+                )
+                save_state(self.state, self.run_dir)
+                if pause > 0:
+                    time.sleep(pause)
+                # Clear the outage stop_reason so the early-stop logger at the
+                # bottom of run() does not treat this as a terminal stop.
+                self.state.stop_reason = None
+                continue
 
             if should_stop_for_provider_availability(self.state.stop_reason):
                 self.logger.error(
@@ -416,6 +456,25 @@ class Implementer:
                 FAILURE_CAUSE_UNKNOWN,
             )
 
+            if is_service_outage(result):
+                # Outage failures aren't signal about the issue. Roll back the
+                # attempt increment from earlier in this method and leave
+                # status=PENDING so the run loop's outage-pause path (and a
+                # later --resume) can pick the issue up again. The marker in
+                # implementation_notes lets `aidlc run --reset-failed-attempts`
+                # find these issues if a future code path ever does mark them
+                # failed during an outage.
+                if not resuming_interrupted and issue.attempt_count > 0:
+                    issue.attempt_count -= 1
+                issue.status = IssueStatus.PENDING
+                issue.failure_cause = None
+                issue.implementation_notes += (
+                    "\n[outage] attempt rolled back due to Claude service outage"
+                )
+                self.state.stop_reason = SERVICE_OUTAGE_STOP_REASON
+                self.state.update_issue(issue)
+                self._sync_issue_markdown(issue)
+                return False
             if is_all_models_token_exhausted(result):
                 message = (
                     "All available models/providers appear out of tokens or quota; "
