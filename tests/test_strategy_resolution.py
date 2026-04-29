@@ -210,7 +210,7 @@ def test_resolve_balanced_premium_non_claude_quality_note():
     d = sr.resolve_balanced(r, "implementation_complex", "normal", None, set(), set(), 0.0)
     assert d.provider_id == "openai"
     note = (d.quality_note or "").lower()
-    assert "implementation" in note and "budget" in note
+    assert "implementation" in note and "secondary provider" in note
 
 
 def test_resolve_balanced_budget_quality_note_non_nano():

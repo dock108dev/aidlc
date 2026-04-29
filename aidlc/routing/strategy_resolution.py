@@ -65,36 +65,25 @@ def resolve_balanced(
             f"model={model} ({model_reason})"
         )
 
-        explore_p = 0.05
-        try:
-            explore_p = float(
-                router.config.get("routing_impl_budget_explore_probability", 0.05) or 0.0
-            )
-        except (TypeError, ValueError):
-            explore_p = 0.05
-        explore_p = max(0.0, min(1.0, explore_p))
-
         quality_note: str | None = None
         if is_impl:
             if provider_id in helpers.get_budget_providers():
                 quality_note = (
-                    f"implementation → budget CLI ({provider_id}/{model}); "
-                    f"~{explore_p:.0%} of resolves try budget CLIs first when enabled"
+                    f"implementation → secondary provider ({provider_id}/{model}); "
+                    "weighted-fair mix shared across enabled providers"
                 )
             elif max_cap:
                 quality_note = (
-                    f"implementation → max-capacity backend ({provider_id}/{model}); "
-                    f"~{explore_p:.0%} of resolves try budget CLIs first; "
-                    "others when excluded or unavailable"
+                    f"implementation → primary provider ({provider_id}/{model}); "
+                    "weighted-fair mix shared across enabled providers"
                 )
             else:
                 quality_note = (
-                    f"implementation: {provider_id}/{model} — no max_capacity provider; "
-                    "set providers.<id>.max_capacity for premium-first ordering"
+                    f"implementation: {provider_id}/{model} — weighted-fair mix active"
                 )
         elif max_cap and not is_impl:
             w = provider_max_capacity_weight(router.config, provider_id)
-            quality_note = f"capacity-weighted routing ({provider_id}, weight≈{w:.0f}×)"
+            quality_note = f"weighted routing target ({provider_id}, weight≈{w:.0f})"
         elif not is_impl and provider_id in helpers.get_budget_providers():
             if model and model not in ("gpt-5.4-mini", "gpt-5.4-nano"):
                 quality_note = f"model upgraded to {model} for {phase} (complexity)"

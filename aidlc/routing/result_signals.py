@@ -79,6 +79,21 @@ def is_model_exhausted_result(result: dict) -> bool:
     return any(re.search(pat, message) for pat in _MODEL_NAME_PATTERNS)
 
 
+def is_model_rate_limited_result(result: dict) -> bool:
+    """True when a temporary rate limit appears scoped to the current model."""
+    if not is_rate_limited_result(result):
+        return False
+    message = "\n".join(
+        [
+            str(result.get("error") or ""),
+            str(result.get("output") or ""),
+        ]
+    ).lower()
+    if not message.strip():
+        return False
+    return any(re.search(pat, message) for pat in _MODEL_NAME_PATTERNS)
+
+
 # (label, regex) — labels appear in routing diagnostics when a heuristic fires.
 # Avoid substrings common in doc-gap / design prose (e.g. "rate limiting", "overloaded servers").
 RATE_LIMIT_HEURISTIC_PATTERNS: tuple[tuple[str, str], ...] = (

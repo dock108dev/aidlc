@@ -6,7 +6,7 @@ import logging
 from types import SimpleNamespace
 
 from aidlc.accounts.models import MembershipTier
-from aidlc.routing import context, helpers
+from aidlc.routing import context
 from aidlc.routing.types import UsagePressure
 
 from tests.test_routing_engine import FakeAdapter
@@ -155,14 +155,13 @@ def test_fallback_decision_no_adapters_instantiates_claude():
     assert d.fallback is True
 
 
-def test_tier_aware_provider_order_implementation_prefers_premium_tag():
+def test_tier_aware_provider_order_implementation_prefers_claude_weight():
     cfg = {
-        "routing_impl_budget_explore_probability": 0.0,
         "providers": {
             "claude": {
                 "enabled": True,
                 "max_capacity": True,
-                "max_capacity_weight": 20,
+                "max_capacity_weight": 8,
             },
             "openai": {"enabled": True, "max_capacity": False},
         },
@@ -179,63 +178,19 @@ def test_tier_aware_provider_order_implementation_prefers_premium_tag():
     assert "openai" in order
 
 
-def test_tier_aware_impl_budget_explore_reorders_when_probability_one():
-    cfg = {
-        "routing_impl_budget_explore_probability": 1.0,
-        "providers": {
-            "claude": {"enabled": True, "max_capacity": True},
-            "openai": {"enabled": True},
-            "copilot": {"enabled": True},
-        },
-    }
-    order = context.tier_aware_provider_order(
-        cfg,
-        {"claude", "openai", "copilot"},
-        UsagePressure(),
-        None,
-        "implementation",
-        "normal",
-    )
-    assert order[0] in helpers.get_budget_providers()
-    assert order.index("claude") > order.index(order[0])
-
-
-def test_tier_aware_impl_explore_random(monkeypatch):
-    cfg = {
-        "routing_impl_budget_explore_probability": 0.05,
-        "providers": {
-            "claude": {"enabled": True, "max_capacity": True},
-            "openai": {"enabled": True},
-        },
-    }
-    adapters = {"claude", "openai"}
-
-    monkeypatch.setattr("aidlc.routing.context.random.random", lambda: 0.001)
-    order_hit = context.tier_aware_provider_order(
-        cfg, adapters, UsagePressure(), None, "implementation", "normal"
-    )
-    assert order_hit[0] == "openai"
-
-    monkeypatch.setattr("aidlc.routing.context.random.random", lambda: 0.99)
-    order_miss = context.tier_aware_provider_order(
-        cfg, adapters, UsagePressure(), None, "implementation", "normal"
-    )
-    assert order_miss[0] == "claude"
-
-
 def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
     cfg = {
         "providers": {
             "claude": {
                 "enabled": True,
                 "max_capacity": True,
-                "max_capacity_weight": 20,
+                "max_capacity_weight": 8,
             },
             "openai": {"enabled": True},
         }
     }
     usage = UsagePressure()
-    usage.calls_by_provider["claude"] = 19
+    usage.calls_by_provider["claude"] = 7
     usage.calls_by_provider["openai"] = 1
     order = context.tier_aware_provider_order(
         cfg,
@@ -245,11 +200,11 @@ def test_tier_aware_provider_order_non_impl_uses_weighted_fairness():
         "planning",
         "normal",
     )
-    # 19/20 < 1/1 → claude still preferred first
+    # 7/8 < 1/1 → claude still preferred first
     assert order[0] == "claude"
 
     usage2 = UsagePressure()
-    usage2.calls_by_provider["claude"] = 20
+    usage2.calls_by_provider["claude"] = 8
     usage2.calls_by_provider["openai"] = 0
     order2 = context.tier_aware_provider_order(
         cfg,
@@ -277,12 +232,13 @@ def test_provider_max_capacity_weight_explicit():
 
 def test_provider_max_capacity_weight_defaults():
     assert context.provider_max_capacity_weight({"providers": {"openai": {}}}, "openai") == 1.0
+    assert context.provider_max_capacity_weight({"providers": {"claude": {}}}, "claude") == 8.0
     assert (
         context.provider_max_capacity_weight(
             {"providers": {"openai": {"max_capacity": True}}},
             "openai",
         )
-        == 20.0
+        == 1.0
     )
 
 

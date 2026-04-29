@@ -226,16 +226,33 @@ class ProviderRouter:
                     continue
 
                 if result_signals.is_rate_limited_result(result):
-                    excluded_providers.add(decision.provider_id)
                     excluded_models.add((decision.provider_id, decision.model))
                     rate_limited_models.append((decision.provider_id, decision.model))
+                    model_scoped = result_signals.is_model_rate_limited_result(result)
                     cooldown.record_rate_limit(
                         router=self,
                         decision=decision,
                         result=result,
                         now=now,
                         effective_phase=effective_phase,
+                        provider_scope=not model_scoped,
                     )
+                    if model_scoped:
+                        next_model = self._next_chain_model(
+                            decision.provider_id,
+                            decision.model,
+                            excluded_models,
+                        )
+                        if next_model:
+                            self.logger.warning(
+                                f"[routing] {effective_phase}: model-specific rate limit on "
+                                f"{decision.provider_id}/{decision.model}; "
+                                f"trying next model in chain: {next_model}"
+                            )
+                            model_override = next_model
+                            attempts_remaining += 1
+                            continue
+                    excluded_providers.add(decision.provider_id)
                     continue
 
                 return result

@@ -92,6 +92,7 @@ def record_rate_limit(
     result: dict,
     now: float,
     effective_phase: str,
+    provider_scope: bool,
 ) -> None:
     """Apply cooldown bookkeeping + emit logs for a rate-limited result.
 
@@ -122,18 +123,21 @@ def record_rate_limit(
     if restore_at is not None:
         from datetime import datetime
 
-        router._provider_cooldowns[decision.provider_id] = restore_at
         router._model_cooldowns[(decision.provider_id, decision.model)] = restore_at
+        if provider_scope:
+            router._provider_cooldowns[decision.provider_id] = restore_at
         restore_text = datetime.fromtimestamp(restore_at).isoformat(timespec="seconds")
+        scope_text = "provider" if provider_scope else "model"
         router.logger.warning(
             f"[routing] {effective_phase}: rate limited on "
-            f"{decision.provider_id}/{decision.model}; cooldown_until={restore_text} "
+            f"{decision.provider_id}/{decision.model} ({scope_text} scope); cooldown_until={restore_text} "
             f"(try another provider if configured)"
         )
     else:
+        scope_text = "provider" if provider_scope else "model"
         router.logger.warning(
             f"[routing] {effective_phase}: rate limited on "
-            f"{decision.provider_id}/{decision.model}; no cooldown_until "
+            f"{decision.provider_id}/{decision.model} ({scope_text} scope); no cooldown_until "
             f"(try another provider if configured)"
         )
 

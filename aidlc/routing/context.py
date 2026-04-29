@@ -5,7 +5,6 @@ Extracted from ``ProviderRouter`` to keep ``engine.py`` focused on the execute/r
 
 from __future__ import annotations
 
-import random
 from collections.abc import Callable
 from typing import Any
 
@@ -29,18 +28,23 @@ def provider_max_capacity_tagged(config: dict, provider_id: str) -> bool:
 
 
 def provider_max_capacity_weight(config: dict, provider_id: str) -> float:
-    """Relative token-budget weight for routing fairness (higher = more calls before rotating)."""
+    """Relative routing-share weight for weighted-fair selection.
+
+    Defaults are intentionally Claude-heavy: 8 for Claude, 1 for Copilot, 1 for
+    Codex/OpenAI. Enabled-provider subsets are normalized naturally by the fair
+    ordering loop.
+    """
     p = config.get("providers", {})
     if not isinstance(p, dict):
-        return 1.0
+        return 8.0 if provider_id == "claude" else 1.0
     cfg = p.get(provider_id)
     if not isinstance(cfg, dict):
-        return 1.0
+        return 8.0 if provider_id == "claude" else 1.0
     raw = cfg.get("max_capacity_weight")
     if raw is not None:
         return max(float(raw), 1e-9)
-    if _provider_max_capacity_flag(cfg):
-        return 20.0
+    if provider_id == "claude":
+        return 8.0
     return 1.0
 
 
@@ -81,12 +85,9 @@ def tier_aware_provider_order(
 ) -> list[str]:
     """Order providers for balanced routing.
 
-    * **Implementation** phases: by default all ``max_capacity`` providers first (stable
-      reference order), then the rest. With probability ``routing_impl_budget_explore_probability``
-      (default 5%), enabled Copilot/OpenAI are tried first (fair order), then max_capacity,
-      then any remainder — so budget CLIs still receive occasional implementation traffic.
-    * **Other phases**: weighted-fair order — minimize ``calls / max_capacity_weight`` so a
-      provider with weight 20 is chosen roughly 20× as often per unit of usage before rotating.
+    Uses one weighted-fair policy across all phases so provider traffic follows
+    the configured target mix consistently. With the default weights this is
+    approximately 80/10/10 across Claude/Copilot/Codex when all are enabled.
     """
     providers_cfg = config.get("providers", {})
     enabled: set[str] = set()
@@ -98,36 +99,6 @@ def tier_aware_provider_order(
         }
     if not enabled:
         enabled = set(adapter_ids)
-
-    ref = helpers.get_balanced_provider_order()
-    is_impl = phase in helpers.implementation_phases()
-
-    max_cap_ids = {p for p in enabled if provider_max_capacity_tagged(config, p)}
-
-    if is_impl:
-        if max_cap_ids:
-            p_raw = config.get("routing_impl_budget_explore_probability", 0.05)
-            try:
-                explore_p = float(p_raw)
-            except (TypeError, ValueError):
-                explore_p = 0.05
-            explore_p = max(0.0, min(1.0, explore_p))
-            budget_enabled = [x for x in helpers.get_budget_providers() if x in enabled]
-            if budget_enabled and explore_p > 0.0 and random.random() < explore_p:
-                budget_set = set(budget_enabled)
-                budget_ordered = budget_provider_order(usage, session_budget_provider, budget_set)
-                used = set(budget_ordered)
-                max_cap_rest = [
-                    p for p in _reference_ordered_subset(max_cap_ids, ref) if p not in used
-                ]
-                tail = enabled - used - set(max_cap_rest)
-                return list(budget_ordered) + max_cap_rest + _reference_ordered_subset(tail, ref)
-            rest = enabled - max_cap_ids
-            return _reference_ordered_subset(max_cap_ids, ref) + _reference_ordered_subset(
-                rest, ref
-            )
-        # No max_capacity providers — same fairness as other phases
-        return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 
     return _weighted_fair_provider_order(config, enabled, usage, session_budget_provider)
 

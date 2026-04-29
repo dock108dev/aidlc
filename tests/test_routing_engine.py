@@ -383,6 +383,140 @@ def test_balanced_budget_routing_uses_pressure_not_single_provider(tmp_path):
     assert second["provider_id"] == "copilot"
 
 
+def test_balanced_routing_normalizes_to_claude_80_10_10_mix(tmp_path):
+    cfg = _config()
+    cfg["providers"]["claude"] = {
+        "enabled": True,
+        "default_model": "sonnet",
+        "phase_models": {"default": "sonnet", "planning": "sonnet"},
+        "max_capacity": True,
+        "max_capacity_weight": 8,
+    }
+    router = ProviderRouter(cfg, logging.getLogger("test.router.target_mix"))
+    success_claude = {
+        "success": True,
+        "output": "ok-claude",
+        "error": None,
+        "failure_type": None,
+        "duration_seconds": 0.0,
+        "retries": 0,
+        "usage": {},
+        "total_cost_usd": None,
+        "model_used": "sonnet",
+        "usage_source": "none",
+    }
+    success_openai = {
+        "success": True,
+        "output": "ok-openai",
+        "error": None,
+        "failure_type": None,
+        "duration_seconds": 0.0,
+        "retries": 0,
+        "usage": {},
+        "total_cost_usd": None,
+        "model_used": "gpt-5.4-mini",
+        "usage_source": "none",
+    }
+    success_copilot = {
+        "success": True,
+        "output": "ok-copilot",
+        "error": None,
+        "failure_type": None,
+        "duration_seconds": 0.0,
+        "retries": 0,
+        "usage": {},
+        "total_cost_usd": None,
+        "model_used": "default",
+        "usage_source": "none",
+    }
+    router._adapters = {
+        "claude": FakeAdapter("claude", [dict(success_claude) for _ in range(8)], default_model="sonnet"),
+        "openai": FakeAdapter("openai", [dict(success_openai)], default_model="gpt-5.4-mini"),
+        "copilot": FakeAdapter("copilot", [dict(success_copilot)], default_model=""),
+    }
+    router._session_budget_provider = "openai"
+    router.set_phase("planning")
+
+    seen: list[str] = []
+    for i in range(10):
+        result = router.execute_prompt(f"prompt-{i}", tmp_path)
+        assert result["success"] is True
+        seen.append(result["provider_id"])
+
+    assert seen.count("claude") == 8
+    assert seen.count("openai") == 1
+    assert seen.count("copilot") == 1
+
+
+def test_model_scoped_rate_limit_tries_next_model_in_chain(tmp_path):
+    cfg = _chain_config()
+    cfg["routing_rate_limit_buffer_base_seconds"] = 0
+    router = ProviderRouter(cfg, logging.getLogger("test.router.model_rate_limit_chain"))
+    router._adapters = {
+        "claude": FakeAdapter(
+            "claude",
+            [
+                {
+                    "success": False,
+                    "output": None,
+                    "error": "claude-sonnet-4-5 rate limit exceeded; try again later",
+                    "failure_type": "issue",
+                    "duration_seconds": 0.0,
+                    "retries": 0,
+                    "usage": {},
+                    "total_cost_usd": None,
+                    "model_used": "sonnet",
+                    "usage_source": "none",
+                },
+                _ok("opus"),
+            ],
+            default_model="sonnet",
+        )
+    }
+
+    result = router.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["provider_id"] == "claude"
+    assert result["model_used"] == "opus"
+
+
+def test_provider_scoped_rate_limit_falls_back_to_other_provider(tmp_path):
+    cfg = _chain_config()
+    cfg["providers"]["openai"] = {
+        "enabled": True,
+        "default_model": "gpt-5.4-mini",
+        "phase_models": {"default": "gpt-5.4-mini"},
+    }
+    router = ProviderRouter(cfg, logging.getLogger("test.router.provider_rate_limit_fallback"))
+    router._adapters = {
+        "claude": FakeAdapter(
+            "claude",
+            [
+                {
+                    "success": False,
+                    "output": None,
+                    "error": "You've hit your usage limit. Please try again at 8:55 PM.",
+                    "failure_type": "issue",
+                    "duration_seconds": 0.0,
+                    "retries": 0,
+                    "usage": {},
+                    "total_cost_usd": None,
+                    "model_used": "sonnet",
+                    "usage_source": "none",
+                }
+            ],
+            default_model="sonnet",
+        ),
+        "openai": FakeAdapter("openai", [_ok("gpt-5.4-mini")], default_model="gpt-5.4-mini"),
+    }
+
+    result = router.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["provider_id"] == "openai"
+
+
 def test_usage_limit_phrase_is_treated_as_rate_limited():
     result = {
         "success": False,

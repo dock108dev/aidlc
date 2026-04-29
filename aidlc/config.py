@@ -12,9 +12,12 @@ CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
 DEFAULTS = {
     "runtime_profile": "standard",  # standard | production
     "routing_strategy": "balanced",  # balanced | cheapest | best_quality | custom
-    # Per implementation routing resolve: probability (0–1) to try Copilot/OpenAI before
-    # max_capacity backends so budget CLIs get occasional usage without starving premium.
-    "routing_impl_budget_explore_probability": 0.05,
+    # Default weighted provider mix across all phases. Weights are normalized across
+    # enabled providers, so the default 8/1/1 behaves like:
+    # - all 3 enabled: Claude 80%, Copilot 10%, Codex/OpenAI 10%
+    # - Claude + one secondary: Claude ~88.9%, secondary ~11.1%
+    # - one enabled: 100%
+    "routing_impl_budget_explore_probability": 0.0,
     "routing_rate_limit_cooldown_seconds": 300,
     # Added on top of any provider-reported restore time (429/retry-after). Doubles per
     # consecutive rate limit on the same (provider, model): 1×, 2×, 4× … capped at 8× base.
@@ -23,9 +26,10 @@ DEFAULTS = {
         "claude": {
             "enabled": True,
             "cli_command": "claude",
-            # High token-capacity backend: preferred for implementation; weighted ~20× on other phases.
+            # Primary provider target share: with budget providers enabled, weighted 8:1:1
+            # by default (normalized over whichever providers are enabled).
             "max_capacity": True,
-            "max_capacity_weight": 20,
+            "max_capacity_weight": 8,
             "default_model": "sonnet",
             # Implementation + finalization run on opus (heavy, code-quality
             # work); everything else uses sonnet (cheaper, sufficient for
