@@ -428,14 +428,14 @@ class ClaudeCLI:
                             stderr_text = "Claude CLI timed out"
                     elif self._is_service_outage(returncode, stderr_text, stdout_text):
                         failure_type = "service_down"
-                    elif (
-                        outage_started_at is not None
-                        and (time.time() - outage_started_at) < outage_max_wait
-                    ):
+                    elif outage_started_at is not None:
                         # Already inside an open outage window: a fast-failing
                         # rc!=0 with only an init JSON event is the same outage,
                         # not a new transient. Stay sticky so we don't reset
-                        # backoff and burn max_retries.
+                        # backoff or burn max_retries on what is really one
+                        # continuous outage. The budget-exhaustion check inside
+                        # the ``if failure_type == "service_down"`` branch
+                        # below is what eventually terminates the loop.
                         failure_type = "service_down"
                         self.logger.info(
                             "Treating fast-fail as continued service outage "
