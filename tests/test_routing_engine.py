@@ -430,7 +430,9 @@ def test_balanced_routing_normalizes_to_claude_80_10_10_mix(tmp_path):
         "usage_source": "none",
     }
     router._adapters = {
-        "claude": FakeAdapter("claude", [dict(success_claude) for _ in range(8)], default_model="sonnet"),
+        "claude": FakeAdapter(
+            "claude", [dict(success_claude) for _ in range(8)], default_model="sonnet"
+        ),
         "openai": FakeAdapter("openai", [dict(success_openai)], default_model="gpt-5.4-mini"),
         "copilot": FakeAdapter("copilot", [dict(success_copilot)], default_model=""),
     }

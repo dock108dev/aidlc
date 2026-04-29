@@ -78,9 +78,7 @@ def resolve_balanced(
                     "weighted-fair mix shared across enabled providers"
                 )
             else:
-                quality_note = (
-                    f"implementation: {provider_id}/{model} — weighted-fair mix active"
-                )
+                quality_note = f"implementation: {provider_id}/{model} — weighted-fair mix active"
         elif max_cap and not is_impl:
             w = provider_max_capacity_weight(router.config, provider_id)
             quality_note = f"weighted routing target ({provider_id}, weight≈{w:.0f})"

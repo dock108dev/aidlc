@@ -62,14 +62,12 @@ def _should_retry_shallow_discovery(
         return False
     total_docs = 0
     if scan_result:
-        total_docs = int(scan_result.get("total_docs") or len(scan_result.get("doc_files", [])) or 0)
+        total_docs = int(
+            scan_result.get("total_docs") or len(scan_result.get("doc_files", [])) or 0
+        )
     braindump_len = len((braindump or "").strip())
     findings_len = len((findings or "").strip())
-    return (
-        braindump_len >= 2500
-        and total_docs >= 20
-        and findings_len < 600
-    )
+    return braindump_len >= 2500 and total_docs >= 20 and findings_len < 600
 
 
 def _build_discovery_retry_prompt(base_prompt: str) -> str:
@@ -127,7 +125,9 @@ def _serialize_result_metadata(result: dict) -> dict:
         "retries": result.get("retries"),
         "usage": usage if isinstance(usage, dict) else {},
         "routing_decision": (
-            result.get("routing_decision") if isinstance(result.get("routing_decision"), dict) else None
+            result.get("routing_decision")
+            if isinstance(result.get("routing_decision"), dict)
+            else None
         ),
         "raw_stdout_chars": len(result.get("raw_stdout") or ""),
         "raw_stderr_chars": len(result.get("raw_stderr") or ""),

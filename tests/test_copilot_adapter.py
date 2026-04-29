@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from aidlc.providers.copilot_adapter import (
     CopilotAdapter,
-    _parse_copilot_usage_blob,
     _copilot_success_payload_is_quota_blocker,
+    _parse_copilot_usage_blob,
     _strip_copilot_trailing_stats,
 )
 

@@ -602,7 +602,9 @@ class Planner:
             "retries": result.get("retries"),
             "usage": usage if isinstance(usage, dict) else {},
             "routing_decision": (
-                result.get("routing_decision") if isinstance(result.get("routing_decision"), dict) else None
+                result.get("routing_decision")
+                if isinstance(result.get("routing_decision"), dict)
+                else None
             ),
             "raw_stdout_chars": len(result.get("raw_stdout") or ""),
             "raw_stderr_chars": len(result.get("raw_stderr") or ""),
@@ -651,7 +653,9 @@ class Planner:
             )
         payload = {
             "cycle": cycle_num,
-            "phase": self.state.phase.value if hasattr(self.state.phase, "value") else str(self.state.phase),
+            "phase": self.state.phase.value
+            if hasattr(self.state.phase, "value")
+            else str(self.state.phase),
             "is_finalization": self.state.phase == RunPhase.PLAN_FINALIZATION,
             "prompt_chars": len(prompt_path.read_text(encoding="utf-8")),
             "prompt_path": prompt_path.name,

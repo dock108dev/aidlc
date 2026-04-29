@@ -220,7 +220,9 @@ def test_run_discovery_retries_implausibly_shallow_zero_topic_output(tmp_path, l
     topics = json.loads(topics_path.read_text())
     assert topics[0]["topic"] == "shop-flow"
     assert (run_dir / "claude_outputs" / "discovery_retry.md").exists()
-    retry_debug = json.loads((run_dir / "claude_outputs" / "discovery_retry.debug.json").read_text())
+    retry_debug = json.loads(
+        (run_dir / "claude_outputs" / "discovery_retry.debug.json").read_text()
+    )
     assert retry_debug["parsed"]["topic_count"] == 1
     assert retry_debug["preflight_routing"]["provider_id"] == "openai"
     assert retry_debug["preflight_routing"]["model"] == "gpt-5.4-mini"

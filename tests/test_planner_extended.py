@@ -86,7 +86,9 @@ class TestPlanningCycleWithRealOutput:
         assert state.issues_created == 2
         assert len(state.issues) == 2
         assert state.issues[0]["id"] == "ISSUE-001"
-        debug_payload = json.loads((run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text())
+        debug_payload = json.loads(
+            (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text()
+        )
         assert debug_payload["parsed"]["parse_status"] == "ok"
         assert debug_payload["parsed"]["action_count"] == 2
         assert (run_dir / "claude_outputs" / "plan_cycle_0001.prompt.md").exists()
@@ -218,7 +220,9 @@ class TestPlanningCycleWithRealOutput:
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
-        debug_payload = json.loads((run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text())
+        debug_payload = json.loads(
+            (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text()
+        )
         assert debug_payload["parsed"]["parse_status"] == "parse_error"
 
     # Removed: test_empty_actions_with_missing_docs_counts_as_failure.
