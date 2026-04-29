@@ -203,9 +203,7 @@ class Implementer:
                     f"--reset-failed-attempts: reset {n_reset} outage-marked issue(s)."
                 )
             else:
-                self.logger.info(
-                    "--reset-failed-attempts: no outage-marked failed issues found."
-                )
+                self.logger.info("--reset-failed-attempts: no outage-marked failed issues found.")
 
         # Auto-reopen transient failures (or all if --retry-failed).
         force_retry = bool(self.config.get("_retry_failed_flag", False))
@@ -299,9 +297,7 @@ class Implementer:
                         break
 
             if outage_signal:
-                pause = max(
-                    0, int(self.config.get("implementation_outage_pause_seconds", 300))
-                )
+                pause = max(0, int(self.config.get("implementation_outage_pause_seconds", 300)))
                 self.logger.warning(
                     f"Service-outage signal received; pausing {pause}s before next iteration."
                 )

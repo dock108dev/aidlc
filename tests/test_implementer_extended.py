@@ -1137,9 +1137,7 @@ class TestImplementIssueOutageRollback:
         assert len(pending) == 1
         assert pending[0].id == "ISSUE-001"
 
-    def test_outage_branch_runs_before_token_exhausted_branch(
-        self, config, logger, tmp_path
-    ):
+    def test_outage_branch_runs_before_token_exhausted_branch(self, config, logger, tmp_path):
         # Make a CLI that emits both signals — service_down failure_type and
         # token-exhausted message text. Outage branch must win, otherwise
         # the issue would be tagged FAILED with FAILURE_CAUSE_TOKEN_EXHAUSTED
@@ -1173,9 +1171,7 @@ class TestRunLoopOutagePause:
     """Fix D: cross-call outage pause."""
 
     @patch("aidlc.implementer.time.sleep")
-    def test_run_loop_pauses_and_clears_stop_reason(
-        self, mock_sleep, config, logger, tmp_path
-    ):
+    def test_run_loop_pauses_and_clears_stop_reason(self, mock_sleep, config, logger, tmp_path):
         # First call: outage. Second call: success. Run loop should pause
         # between them, clear the outage stop_reason, and not enter the
         # early-stop block.
@@ -1263,7 +1259,10 @@ class TestSignalHelpers:
         )
 
         assert is_service_outage_stop_reason(SERVICE_OUTAGE_STOP_REASON) is True
-        assert is_service_outage_stop_reason("Claude service outage during implementation; foo") is True
+        assert (
+            is_service_outage_stop_reason("Claude service outage during implementation; foo")
+            is True
+        )
         assert is_service_outage_stop_reason("token exhausted") is False
         assert is_service_outage_stop_reason(None) is False
         assert is_service_outage_stop_reason("") is False
