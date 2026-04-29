@@ -216,9 +216,9 @@ class TestPlanningAction:
         for action_type in ("create_doc", "update_doc"):
             action = PlanningAction(action_type=action_type)
             errors = action.validate()
-            assert any(
-                "Unknown action_type" in e for e in errors
-            ), f"{action_type} should be rejected as unknown"
+            assert any("Unknown action_type" in e for e in errors), (
+                f"{action_type} should be rejected as unknown"
+            )
 
     def test_research_action_removed(self):
         """research action_type is removed — discovery + research are pre-planning phases."""
