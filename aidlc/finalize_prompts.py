@@ -4,6 +4,12 @@ Each constant is a full prompt template with {placeholders} for project-specific
 context injection. The Finalizer class fills these before sending to the
 provider.
 
+Code-oriented passes (ssot, security, abend, cleanup) assume **edit permission
+is for changing the product**: implement fixes and removals in the tree first;
+the markdown under ``docs/audits/`` records *what you changed* and any
+intentional non-fixes — it must not read like a standalone audit you could have
+written without touching files.
+
 Every pass enforces the **Actionability Contract**: each finding must either be
 fixed in-place during the pass OR documented as an intentional non-fix with
 concrete justification, both in the pass report (``docs/audits/<pass>.md``)
@@ -16,10 +22,10 @@ follow-up notes are rejected — pick a side.
 PASS_ORDER = ["ssot", "security", "abend", "cleanup", "docs"]
 
 PASS_DESCRIPTIONS = {
-    "ssot": "SSOT enforcement — diff-driven deletion of legacy / superseded code",
-    "security": "Security audit — implement safe hardening, document the rest",
-    "abend": "Error/warning suppression audit — tighten or document each catch",
-    "cleanup": "Code cleanup — dead code, file size, consistency",
+    "ssot": "SSOT enforcement — diff-driven deletion of legacy / superseded code in-repo",
+    "security": "Security hardening — fix safe issues in code; report summarizes edits + residual risk",
+    "abend": "Error-handling hardening — tighten catches/suppressions in code; report logs dispositions",
+    "cleanup": "Code cleanup — delete dead code and consolidate in-repo; report mirrors changes",
     "docs": "Documentation consolidation — rewrite docs to reflect current reality",
 }
 
@@ -28,6 +34,16 @@ PASS_DESCRIPTIONS = {
 # consistent and easy to audit/update in one place.
 ACTIONABILITY_CONTRACT = """\
 ## Actionability Contract (non-negotiable)
+
+**What “done” means:** Follow this pass’s scope (see the pass instructions
+above). For code passes, **the repo diff is the primary deliverable** — you
+must apply real edits (hardening, deletions, tightening, consolidation) in
+source and config files. The report at `docs/audits/{report_filename}` is a
+*written record* of those edits and of any item you **intentionally** did not
+change (with rationale). It is not acceptable to produce only prose in the
+report while leaving the codebase unchanged when in-scope fixes were
+feasible. For the **docs** pass only, “act” means editing markdown under
+`docs/` and `README.md` as that prompt specifies — no unrelated code refactors.
 
 Every finding gets exactly one of two outcomes:
 
@@ -56,7 +72,9 @@ is. Do not leave bare TODOs in code.
 SSOT_PROMPT = """\
 You are performing an SSOT (Single Source of Truth) enforcement pass. This is
 a *destructive* cleanup driven by the diff between the current branch and
-main: code that contradicts what the branch is becoming gets deleted.
+main: code that contradicts what the branch is becoming gets **deleted from
+the repo** — the report is a log of what you removed or intentionally kept, not
+the main artifact.
 
 ## Project Context
 {project_context}
@@ -86,22 +104,23 @@ main: code that contradicts what the branch is becoming gets deleted.
    fails if a deprecated symbol is reintroduced (when feasible).
 6. **Docs** — strip references to deleted flags/modes from existing docs.
 
-## Output
-Make the deletions in-place. Write the destruction log to
-`docs/audits/ssot-report.md` with:
-- Diff-prioritized deletions (file/symbol, reason from diff, SSOT replacement)
-- Final SSOT modules per domain
-- Risk log: any legacy code intentionally retained, with diff-cited rationale
-- Sanity check: no dangling references to deleted symbols
+## Output (order matters)
+1. **Working tree** — deletions and replacements applied in-place (see Process).
+2. **`docs/audits/ssot-report.md`** — start with **## Changes made this pass**
+   (symbols/files removed or rewritten, SSOT replacement). Then final SSOT
+   modules per domain, risk log for anything intentionally retained, and a
+   sanity check for dangling references.
 
 Do not commit.
 """ + ACTIONABILITY_CONTRACT.replace("{report_filename}", "ssot-report.md")
 
 
 SECURITY_PROMPT = """\
-You are performing a deep security audit *and* applying safe hardening on
-this branch's changes. Audit first, then fix what's safe inline; document the
-rest with severity, evidence, and concrete remediation.
+You are performing **security hardening** on this branch. The point of this
+pass is **edits in the product**: validation, redaction, headers, narrowing
+unsafe patterns, removing accidental exposure — merged into the repo. Walking
+the code to find issues is necessary, but **a report without matching code
+changes (where fixes are safe and in-scope) is a failed pass**.
 
 ## Project Context
 {project_context}
@@ -109,9 +128,21 @@ rest with severity, evidence, and concrete remediation.
 ## Git Diff (main...HEAD)
 {diff_summary}
 
-## Phase 1 — Audit (focus on what changed)
-Walk the diff and surrounding code. Map trust boundaries actually touched by
-this branch. Look for, with evidence from the code:
+## Non-negotiables
+- **Implement first.** When a fix is low-risk and behavior-preserving, apply it
+  in the file immediately; do not defer to prose “recommendations” you could
+  execute yourself.
+- Use the diff to prioritize where to look; widen to call sites and trust
+  boundaries the branch touches.
+- Do **not** make speculative breaking changes (auth model rewrites, large
+  dependency upgrades, schema migrations). Those belong in the report with
+  evidence and the smallest concrete follow-up — after you have applied every
+  safe inline fix you reasonably can.
+
+## What to inspect (evidence-backed; fix as you go when safe)
+Walk the diff and surrounding code. Map trust boundaries this branch touches.
+For each class of issue below, **prefer a patch** over a writeup when the patch
+is small and preserves intended behavior:
 - AuthN/Z gaps, missing server-side checks, IDOR-shaped routes
 - Input handling: injection, traversal, deserialization, SSRF, unsafe regex
 - Frontend: XSS sinks, unsafe HTML/markdown render, token leakage to client
@@ -122,8 +153,7 @@ this branch. Look for, with evidence from the code:
 - Abuse: rate limits, brute force, resource exhaustion, replay
 - Suppressed errors hiding security-relevant failures
 
-## Phase 2 — Apply safe hardening inline
-Make these changes directly when low-risk and behavior-preserving:
+Typical **safe hardening** edits (examples — do what the codebase needs):
 - Tighten validation; add allow-lists; reject malformed input
 - Redact secrets from logs and error messages
 - Add missing security headers / cookie flags
@@ -131,26 +161,25 @@ Make these changes directly when low-risk and behavior-preserving:
 - Add `noindex` / `rel="noopener noreferrer"` where appropriate
 - Remove accidental debug exposure
 
-Do **not** make speculative breaking changes (auth model rewrites, big lib
-upgrades, schema migrations). Those go in the report with a remediation plan.
-
-## Output
-Make safe hardening changes in-place. Write the audit to
-`docs/audits/security-report.md`:
-- Repo understanding (trust boundaries, sensitive surfaces)
-- Findings table: title / severity / confidence / evidence / status
-- Detailed findings per item with realistic exploit scenario + recommended fix
-- "Safe hardening implemented this pass" — what you changed
-- Remediation roadmap for the rest, prioritized by exposure
+## Output (order matters)
+1. **Working tree** — all safe hardening edits applied in-place; build/tests
+   still pass if the repo defines them.
+2. **`docs/audits/security-report.md`** — start with **## Changes made this
+   pass** (bullet list: `path` + one line per edit). Then trust boundaries /
+   sensitive surfaces briefly, then a **findings** section only for items you
+   did **not** fix here (severity / confidence / evidence / smallest next step).
+   Do not bury the actual code work under a generic audit narrative.
 
 Do not commit.
 """ + ACTIONABILITY_CONTRACT.replace("{report_filename}", "security-report.md")
 
 
 ABEND_PROMPT = """\
-You are auditing intentionally-handled / suppressed / downgraded errors,
-warnings, logs, and guardrails. Goal: prove production posture is safe, or
-tighten the cases that aren't.
+You are **hardening** intentionally-handled / suppressed / downgraded errors,
+warnings, logs, and guardrails. Goal: **change the code** so production posture
+is safer — narrower catches, real logging, explicit failures instead of silent
+swallows — not to produce a standalone “audit” that leaves behavior unchanged
+where a tight fix was obvious.
 
 ## Project Context
 {project_context}
@@ -158,7 +187,7 @@ tighten the cases that aren't.
 ## Git Diff (main...HEAD)
 {diff_summary}
 
-## Scope
+## Scope (inventory → then edit)
 Find and judge every instance of:
 - `try` / `except` (bare, broad, log-and-continue, silent return)
 - Catches that convert errors to warnings/info or to falsey defaults
@@ -187,28 +216,31 @@ Find and judge every instance of:
 1. Inventory every suppression / catch / fallback in the diff and surrounding
    code (focus on changed files first).
 2. For each: classify the risk lens, severity, confidence.
-3. **Tighten the bad ones now**: narrow `except Exception` to the actual
-   class; remove `pass` after a real failure path; replace silent defaults
-   with explicit raise; add the missing log; fix the wrong severity level.
-4. **Justify the good ones now**: add a one-line comment at the suppression
-   site citing the report section; keep `Note`-level cases as-is.
+3. **Tighten the bad ones now** (in source): narrow `except Exception` to the
+   actual class; remove `pass` after a real failure path; replace silent
+   defaults with explicit raise; add the missing log; fix the wrong severity
+   level.
+4. **Justify the good ones now** (in source): add a one-line comment at the
+   suppression site citing the report section; keep `Note`-level cases as-is.
 
-## Output
-Make tightening changes in-place. Write the audit to
-`docs/audits/error-handling-report.md`:
-- Executive summary: counts by severity, top issues, posture verdict
-- Findings table: ID / location / category / severity / disposition
-- Per-finding details with code reference and rationale
-- Categorization: acceptable-prod-notes / needs-doc / needs-telemetry /
-  tighten-before-prod / hidden-failure-risk
-- Final verdict: "Prod posture acceptable" or "Notable risk areas"
+## Output (order matters)
+1. **Working tree** — tightening and justification edits merged; build/tests
+   still pass if configured.
+2. **`docs/audits/error-handling-report.md`** — lead with **## Changes made
+   this pass** (paths + what you tightened or annotated). Then executive
+   summary (counts by severity, posture verdict), findings table for anything
+   that still needs follow-up, and per-item rationale. The report reflects the
+   code you changed; it does not replace those edits.
 
 Do not commit.
 """ + ACTIONABILITY_CONTRACT.replace("{report_filename}", "error-handling-report.md")
 
 
 CLEANUP_PROMPT = """\
-You are performing a code quality cleanup pass on this repository.
+You are performing a code quality cleanup pass on this repository. **Edits in
+the tree come first** — remove dead code, consolidate duplicates, trim noise —
+then the report summarizes what you changed; it is not a substitute for doing
+the cleanup.
 
 ## Project Context
 {project_context}
@@ -235,14 +267,11 @@ You are performing a code quality cleanup pass on this repository.
 - No behavioral changes. No new features. No refactors that change call
   signatures of public API.
 
-## Output
-Make the cleanup changes in-place. Write the report to
-`docs/audits/cleanup-report.md`:
-- Dead code removed (file:line summaries)
-- Files refactored / split
-- Duplicates consolidated (chosen home + removed paths)
-- Files still >500 LOC: each one with extraction plan OR justification
-- Consistency changes made (one-line per file)
+## Output (order matters)
+1. **Working tree** — cleanup edits applied in-place per Scope and Rules.
+2. **`docs/audits/cleanup-report.md`** — start with **## Changes made this
+   pass**, then dead code removed, splits/consolidations, files still >500 LOC
+   with plan or justification, and consistency edits (one line per file).
 
 Do not commit.
 """ + ACTIONABILITY_CONTRACT.replace("{report_filename}", "cleanup-report.md")
@@ -281,12 +310,11 @@ every doc statement is verifiable from current code; nothing else exists.
 - Deployment basics
 - Pointer to /docs
 
-## Output
-Rewrite docs in-place; delete obsolete docs. Write the change log to
-`docs/audits/docs-consolidation.md`:
-- Files added / deleted / consolidated
-- Statements removed because unverifiable
-- Intentional doc gaps left for future work (with reason)
+## Output (order matters)
+1. **Working tree** — README and `/docs` markdown updated or removed per Rules.
+2. **`docs/audits/docs-consolidation.md`** — lists what you **changed** in those
+   files (added/deleted/rewritten), statements removed as unverifiable, and any
+   intentional gaps with reason — not a standalone essay that skips the edits.
 
 Do not commit.
 """ + ACTIONABILITY_CONTRACT.replace("{report_filename}", "docs-consolidation.md")

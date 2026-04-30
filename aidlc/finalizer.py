@@ -1,8 +1,10 @@
 """Finalization engine for AIDLC.
 
-Runs configurable cleanup/audit passes after implementation. Each pass calls
-the provider with edit permissions and a focused prompt; reports land in
-``docs/audits/`` and the raw provider output in ``run_dir/claude_outputs``.
+Runs configurable cleanup passes after implementation. Each pass calls the
+provider with edit permissions and a focused prompt: **code passes are
+expected to change the product** (deletions, hardening, cleanup) with
+``docs/audits/*.md`` as a written record of those edits; the docs pass rewrites
+markdown only. Raw provider output is stored under ``run_dir/claude_outputs``.
 
 Two cadences:
 
@@ -13,8 +15,9 @@ Two cadences:
   ``PASS_ORDER``). Driven from the runner.
 
 Every pass enforces an *Actionability Contract*: each finding must either be
-fixed in-place or documented as an intentional non-fix with concrete rationale
-in both the pass report and at the code site. Bare "TODO" outputs are rejected.
+acted on in-scope (code or markdown per pass) or documented as an intentional
+non-fix with concrete rationale in both the pass report and at the site. Bare
+"TODO" outputs are rejected.
 """
 
 import subprocess
