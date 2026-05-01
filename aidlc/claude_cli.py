@@ -204,12 +204,12 @@ class ClaudeCLI:
             cmd.extend(["--session-id", continuation_session_id])
         cmd.extend(
             [
-            "--print",
-            "--model",
-            model,
-            "--output-format",
-            "stream-json",
-            "--verbose",
+                "--print",
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+                "--verbose",
             ]
         )
         if allow_edits:

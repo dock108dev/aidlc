@@ -150,7 +150,9 @@ class Implementer:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data), encoding="utf-8")
 
-    def _load_or_create_impl_continuation(self, issue: Issue, resuming: bool) -> dict[str, str | None]:
+    def _load_or_create_impl_continuation(
+        self, issue: Issue, resuming: bool
+    ) -> dict[str, str | None]:
         """Per-provider session hints for this issue attempt (Claude / Codex / Copilot)."""
         if not self.config.get("claude_implementation_cli_threading", True):
             return {}

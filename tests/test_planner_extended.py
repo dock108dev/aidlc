@@ -127,9 +127,7 @@ class TestPlanningCycleWithRealOutput:
         assert state.planning_cycles == 2
         assert "verify" in (state.stop_reason or "").lower()
 
-    def test_verify_finds_gaps_then_reverify_on_next_empty(
-        self, config, logger, tmp_path
-    ):
+    def test_verify_finds_gaps_then_reverify_on_next_empty(self, config, logger, tmp_path):
         """After verify files new issues, the next 0-new cycle schedules verify
         again — planning only finishes when a verify pass returns no new work."""
         empty_response = make_planning_response(actions=[])

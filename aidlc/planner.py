@@ -279,11 +279,7 @@ class Planner:
             if m:
                 self.state.planning_pinned_model = m
                 save_state(self.state, self.run_dir)
-        if (
-            use_threading
-            and result.get("success")
-            and result.get("provider_id") == "openai"
-        ):
+        if use_threading and result.get("success") and result.get("provider_id") == "openai":
             ext = result.get("continuation_session_id")
             if ext and not self.state.planning_openai_thread_id:
                 self.state.planning_openai_thread_id = ext

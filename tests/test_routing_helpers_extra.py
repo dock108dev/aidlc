@@ -15,9 +15,7 @@ def test_routed_model_from_result_prefers_routing_decision():
     from aidlc.routing.helpers import routed_model_from_result
 
     assert (
-        routed_model_from_result(
-            {"routing_decision": {"model": "opus"}, "model_used": "sonnet"}
-        )
+        routed_model_from_result({"routing_decision": {"model": "opus"}, "model_used": "sonnet"})
         == "opus"
     )
     assert routed_model_from_result({"model_used": "haiku"}) == "haiku"
