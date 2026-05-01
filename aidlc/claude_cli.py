@@ -7,8 +7,8 @@ import json
 import logging
 import re
 import signal
-import sys
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -464,9 +464,7 @@ class ClaudeCLI:
                         self._extract_cli_metadata(stdout, model)
                     )
                     extracted_sid = _extract_session_id_from_stream_json(stdout)
-                    cont_sid = (
-                        extracted_sid or effective_session_id or continuation_session_id
-                    )
+                    cont_sid = extracted_sid or effective_session_id or continuation_session_id
                     self.logger.debug(
                         "Claude CLI completed successfully "
                         f"(duration={duration:.1f}s, stdout_chars={len(stdout)}, retries={retries})"
@@ -501,9 +499,7 @@ class ClaudeCLI:
                             "(adopt `session_id` from stream output on success)."
                         )
                         effective_session_id = None
-                        pause = float(
-                            self.config.get("claude_session_conflict_retry_seconds", 2.0)
-                        )
+                        pause = float(self.config.get("claude_session_conflict_retry_seconds", 2.0))
                         if pause > 0:
                             time.sleep(pause)
                         continue
