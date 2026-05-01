@@ -64,6 +64,7 @@ class ProviderAdapter(ABC):
         allow_edits: bool = False,
         model_override: str | None = None,
         account_id: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         """Execute a prompt and return a normalized result dict.
 

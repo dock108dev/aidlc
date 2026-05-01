@@ -290,7 +290,7 @@ Top-level:
 - `frontier_assessment`: ≤400 chars — what you checked and why these actions.
 - `cycle_notes`: ≤300 chars — notes for the next cycle.
 - `actions[]`: 1–15 items; one of the shapes below. **Use the exact field names shown — no aliases.**
-- `planning_complete` / `completion_reason`: top-level completion signal. Do NOT emit `action_type: "set_planning_complete"`.
+- `planning_complete` / `completion_reason`: **VERIFY MODE only.** When this prompt does **not** include the heading `## VERIFY MODE — Final Coverage Check`, omit both fields or set `planning_complete`: false. The runner **ignores** `planning_complete`: true on normal and finalization cycles — do not claim done each cycle; it wastes output. On VERIFY MODE cycles, follow the verify block: empty `actions` + `planning_complete`: true + a concrete `completion_reason` when coverage is confirmed, or file gap issues otherwise. Do NOT emit `action_type: "set_planning_complete"`.
 
 Action shapes (canonical keys only — unknown keys are ignored, missing required keys fail validation):
 

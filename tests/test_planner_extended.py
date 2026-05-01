@@ -127,14 +127,11 @@ class TestPlanningCycleWithRealOutput:
         assert state.planning_cycles == 2
         assert "verify" in (state.stop_reason or "").lower()
 
-    def test_verify_finds_gaps_then_next_empty_ends_without_re_verifying(
+    def test_verify_finds_gaps_then_reverify_on_next_empty(
         self, config, logger, tmp_path
     ):
-        """Verify is one-shot: it fires once after the first empty cycle.
-        If verify surfaces new issues (real gap), planning returns to
-        normal mode. The NEXT empty cycle ends planning directly without
-        firing verify again — the verify has already given the model its
-        explicit chance to surface gaps; trust the empty cycle from there."""
+        """After verify files new issues, the next 0-new cycle schedules verify
+        again — planning only finishes when a verify pass returns no new work."""
         empty_response = make_planning_response(actions=[])
         new_issue_response = make_planning_response(
             actions=[
@@ -151,7 +148,7 @@ class TestPlanningCycleWithRealOutput:
         )
         cli = MagicMock()
         cli.execute_prompt.side_effect = [
-            # Cycle 1: empty → switch to verify mode
+            # Cycle 1: empty → verify next
             {
                 "success": True,
                 "output": empty_response,
@@ -160,7 +157,7 @@ class TestPlanningCycleWithRealOutput:
                 "duration_seconds": 1.0,
                 "retries": 0,
             },
-            # Cycle 2 (verify mode): finds a gap and files it
+            # Cycle 2 (verify): files gap
             {
                 "success": True,
                 "output": new_issue_response,
@@ -169,7 +166,16 @@ class TestPlanningCycleWithRealOutput:
                 "duration_seconds": 1.0,
                 "retries": 0,
             },
-            # Cycle 3 (back to normal mode, _verify_used is True): empty → end without re-verify
+            # Cycle 3: empty → verify next (not immediate stop)
+            {
+                "success": True,
+                "output": empty_response,
+                "error": None,
+                "failure_type": None,
+                "duration_seconds": 1.0,
+                "retries": 0,
+            },
+            # Cycle 4 (verify): clean
             {
                 "success": True,
                 "output": empty_response,
@@ -192,13 +198,9 @@ class TestPlanningCycleWithRealOutput:
         state.update_issue(seed)
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
-        # Exactly 3 cycles: empty → verify (gap) → empty (done).
-        assert state.planning_cycles == 3
-        # Stop reason cites the "verify already ran" path, not "verify confirmed".
-        assert "verify pass already ran" in (state.stop_reason or "").lower()
-        # Verify is one-shot — must NOT have re-fired on cycle 3.
-        assert planner._verify_mode is False
-        assert planner._verify_used is True
+        assert state.planning_cycles == 4
+        assert "verify" in (state.stop_reason or "").lower()
+        assert "verify pass already ran" not in (state.stop_reason or "").lower()
 
     def test_invalid_json_counts_as_failure(self, config, logger, tmp_path):
         cli = MagicMock()

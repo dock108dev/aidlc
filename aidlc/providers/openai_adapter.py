@@ -14,6 +14,26 @@ from .base import HealthResult, HealthStatus, ProviderAdapter
 _DEFAULT_OPENAI_MODEL = "gpt-4o"
 
 
+def extract_codex_thread_id(stdout: str) -> str | None:
+    """Return Codex ``thread_id`` from JSONL ``thread.started`` events, if any."""
+    for raw in (stdout or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") != "thread.started":
+            continue
+        tid = obj.get("thread_id")
+        if isinstance(tid, str) and tid.strip():
+            return tid.strip()
+    return None
+
+
 def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
     """Parse `codex exec --json` JSONL: assistant text + normalized usage from last turn.completed."""
     output_text = ""
@@ -218,6 +238,7 @@ class OpenAIAdapter(ProviderAdapter):
         allow_edits: bool = False,
         model_override: str | None = None,
         account_id: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         if self.dry_run:
             self.logger.info(f"[DRY RUN] OpenAI prompt ({len(prompt)} chars) in {working_dir}")
@@ -225,8 +246,7 @@ class OpenAIAdapter(ProviderAdapter):
 
         model = model_override or self.default_model
 
-        # Build codex CLI command: codex exec --model <model> [--full-auto] <prompt>
-        cmd = self._build_command(model, allow_edits, prompt)
+        cmd = self._build_command(model, allow_edits, prompt, continuation_session_id)
 
         try:
             proc = subprocess.Popen(
@@ -270,7 +290,8 @@ class OpenAIAdapter(ProviderAdapter):
                         output=out_tail,
                     )
                 usage_source = "codex_jsonl" if usage else "openai_cli"
-                return {
+                tid = extract_codex_thread_id(stdout or "") or continuation_session_id
+                payload = {
                     "success": True,
                     "output": out_text,
                     "error": None,
@@ -284,6 +305,9 @@ class OpenAIAdapter(ProviderAdapter):
                     "provider_id": self.PROVIDER_ID,
                     "account_id": account_id,
                 }
+                if tid:
+                    payload["continuation_session_id"] = tid
+                return payload
             else:
                 diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
                 if not diagnostic:
@@ -308,8 +332,27 @@ class OpenAIAdapter(ProviderAdapter):
                 failure_type="provider_error",
             )
 
-    def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
-        """Build the codex exec CLI command (--json enables JSONL with turn.completed usage)."""
+    def _build_command(
+        self,
+        model: str,
+        allow_edits: bool,
+        prompt: str,
+        continuation_session_id: str | None = None,
+    ) -> list[str]:
+        """Build ``codex exec`` or ``codex exec resume`` (--json JSONL)."""
+        if continuation_session_id:
+            cmd = [
+                self.cli_command,
+                "exec",
+                "resume",
+                "--json",
+                "--model",
+                model,
+            ]
+            if allow_edits:
+                cmd.append("--full-auto")
+            cmd.extend([continuation_session_id, prompt])
+            return cmd
         cmd = [self.cli_command, "exec", "--json", "--model", model]
         if allow_edits:
             cmd.append("--full-auto")

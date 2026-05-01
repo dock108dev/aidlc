@@ -7,7 +7,29 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from aidlc.providers.base import HealthStatus
-from aidlc.providers.openai_adapter import OpenAIAdapter, _parse_codex_jsonl
+from aidlc.providers.openai_adapter import (
+    OpenAIAdapter,
+    _parse_codex_jsonl,
+    extract_codex_thread_id,
+)
+
+
+def test_extract_codex_thread_id_from_thread_started():
+    tid = "0199a213-81c0-7800-8aa1-bbab2a035a53"
+    line = json.dumps({"type": "thread.started", "thread_id": tid})
+    assert extract_codex_thread_id(line) == tid
+    assert extract_codex_thread_id("") is None
+
+
+def test_openai_build_command_resume_includes_thread_and_prompt():
+    log = logging.getLogger("t_codex_cmd")
+    cfg = {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5"}}}
+    ad = OpenAIAdapter(cfg, log)
+    cmd = ad._build_command("gpt-5", True, "next task", "thread-uuid-1")
+    assert cmd[:6] == ["codex", "exec", "resume", "--json", "--model", "gpt-5"]
+    assert "--full-auto" in cmd
+    assert cmd[-2] == "thread-uuid-1"
+    assert cmd[-1] == "next task"
 
 
 def test_parse_codex_jsonl_empty():

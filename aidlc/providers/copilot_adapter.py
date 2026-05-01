@@ -184,6 +184,7 @@ class CopilotAdapter(ProviderAdapter):
         allow_edits: bool = False,
         model_override: str | None = None,
         account_id: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         if self.dry_run:
             self.logger.info(f"[DRY RUN] Copilot prompt ({len(prompt)} chars) in {working_dir}")
@@ -191,8 +192,8 @@ class CopilotAdapter(ProviderAdapter):
 
         model = str(model_override or self.default_model or "")
 
-        # Build command: copilot -p <prompt> --allow-all [--no-ask-user] [-s] [--model ...]
-        cmd = self._build_command(model, allow_edits, prompt)
+        # Build command: copilot [--resume=id] -p <prompt> --allow-all ...
+        cmd = self._build_command(model, allow_edits, prompt, continuation_session_id)
 
         try:
             proc = subprocess.Popen(
@@ -270,13 +271,22 @@ class CopilotAdapter(ProviderAdapter):
                 failure_type="provider_error",
             )
 
-    def _build_command(self, model: str, allow_edits: bool, prompt: str) -> list[str]:
+    def _build_command(
+        self,
+        model: str,
+        allow_edits: bool,
+        prompt: str,
+        continuation_session_id: str | None = None,
+    ) -> list[str]:
         """Build the copilot CLI programmatic command.
 
         By default omits -s so the CLI can print usage lines we parse into ``usage``.
         Set ``providers.copilot.silent`` to true for pipe-friendly output only (no token stats).
         """
-        cmd = [self.cli_command, "-p", prompt, "--allow-all", "--no-ask-user"]
+        cmd = [self.cli_command]
+        if continuation_session_id:
+            cmd.append(f"--resume={continuation_session_id}")
+        cmd.extend(["-p", prompt, "--allow-all", "--no-ask-user"])
         if self._silent:
             cmd.append("-s")
         if model and model.lower() not in {"default", "auto"}:

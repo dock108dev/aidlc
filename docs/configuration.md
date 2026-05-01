@@ -108,6 +108,8 @@ The "Stopping run" log line includes the chain attempted, e.g.:
 | `claude_stall_warn_seconds` | `300` (flip the heartbeat log from INFO to WARNING after this much silence; never kills) |
 | `claude_stall_kill_seconds` | `0` (disabled; opt-in safety valve for unattended runs — kills only on real silence anywhere in the run, never on wall-clock alone) |
 | `claude_post_terminal_idle_seconds` | `30` (kills the CLI when it hangs *after* the model has emitted the terminal `result` stream event — model is done, CLI just isn't exiting). Set 0 to disable. |
+| `claude_planning_cli_threading` | `true` — planning passes a per-provider continuation map to the router: Claude (`--session-id` UUIDs on `RunState`), Copilot (`--resume=` UUID on `RunState`), Codex (first successful run captures `thread_id` from JSONL `thread.started` into `RunState`); `model_override` is pinned from the first successful routed call. |
+| `claude_implementation_cli_threading` | `true` — each issue **attempt** stores `claude_sessions/impl_ISSUE_aNN.continuation.json` with Claude + Copilot UUIDs and (after the first Codex call in that attempt) the Codex thread id; main implement + test-fix reuse that map. Legacy `impl_*_aNN.uuid` is migrated as the Claude entry. |
 | `claude_timeout_grace_seconds` | `30` (graceful shutdown window before SIGKILL) |
 | `provider_call_timeout_seconds` | `1800` (wall-clock timeout for non-streaming provider CLIs — Copilot, OpenAI Codex. Claude CLI does NOT use this; it streams.) |
 
@@ -175,11 +177,11 @@ based knobs replace it:
 | `doc_gap_detection_enabled` | `false` |
 | `doc_gap_max_items` | `50` |
 
-**Verify-mode planning exit (one-shot).** When a planning cycle produces 0 new issues (no actions, or only `update_issue` actions), the planner switches to **verify mode** for the next cycle. The verify prompt explicitly walks through `BRAINDUMP.md`, `.aidlc/discovery/findings.md`, `.aidlc/research/*.md`, and the existing issue set. Three outcomes:
+**Verify-mode planning exit.** When a planning cycle produces 0 new issues (no actions, or only `update_issue` actions), the planner switches to **verify mode** for the next cycle. The verify prompt explicitly walks through `BRAINDUMP.md`, `.aidlc/discovery/findings.md`, `.aidlc/research/*.md`, and the existing issue set. Outcomes:
 
 - **Verify finds nothing → planning complete.** Stop reason is the model's `completion_reason` if it set one, else `"Verify cycle confirmed coverage: no new issues needed."`
-- **Verify finds gaps → file them, return to normal mode, mark verify "used".** The next empty cycle ends planning directly without firing verify again — the verify has already given the model its one explicit chance to surface gaps, and a follow-up empty cycle confirms.
-- **Productive cycle declares `planning_complete: true` (only honored on a verify cycle)** → exit immediately.
+- **Verify finds gaps → file them, return to normal mode.** The next cycle that again produces 0 new issues schedules **another** verify pass, until a verify pass returns no new work (or budget / cycle caps apply).
+- **Productive verify cycle declares `planning_complete: true` (only honored on a verify cycle)** → exit immediately.
 
 The legacy keys `diminishing_returns_window`, `planning_diminishing_returns_min_threshold`, `planning_diminishing_returns_max_threshold`, and `diminishing_returns_threshold` have all been removed and are silently ignored if present in legacy configs.
 

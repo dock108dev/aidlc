@@ -199,6 +199,16 @@ class TestExecutePrompt:
         assert "--verbose" in cmd
 
     @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_session_id_flag(self, mock_popen, base_config, logger, tmp_path):
+        mock_popen.return_value = _mock_popen_success("ok")
+        cli = ClaudeCLI(base_config, logger)
+        sid = "12345678-1234-5678-1234-567812345678"
+        cli.execute_prompt("prompt", tmp_path, continuation_session_id=sid)
+        cmd = mock_popen.call_args[0][0]
+        assert "--session-id" in cmd
+        assert cmd[cmd.index("--session-id") + 1] == sid
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
     def test_extracts_cost_model_and_tool_usage(self, mock_popen, base_config, logger, tmp_path):
         payload = {
             "result": "done",

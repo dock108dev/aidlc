@@ -139,17 +139,19 @@ Planner completion is controlled by cycle outcomes and guards:
 
 - budget/cycle caps
 - a no-new-issue cycle (no actions, or only `update_issue` actions)
-  triggers **verify mode** (one-shot) for the next cycle. Verify swaps
-  the normal prompt for an explicit coverage-check prompt that walks
-  through BRAINDUMP, discovery findings, research files, and the
-  existing issue set. If verify also returns no new issues, planning
-  completes. If verify surfaces missing work, the planner files those
-  issues and returns to normal mode — the next empty cycle then ends
-  planning directly without re-verifying (verify is one-shot per run)
+  schedules **verify mode** for the next cycle. Verify swaps the normal
+  prompt for an explicit coverage-check prompt that walks through
+  BRAINDUMP, discovery findings, research files, and the existing issue
+  set. If verify also returns no new issues, planning completes. If
+  verify surfaces missing work, the planner files those issues and
+  returns to normal mode — the **next** no-new-issue cycle schedules
+  verify again, until a verify pass returns no new work (or budget /
+  cycle caps stop the loop)
 - explicit `planning_complete` accepted only when completion is offered and
   core planning docs are sufficient
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)
 - action-failure ratio threshold (`planning_action_failure_ratio_threshold`)
+- **CLI threading** (default on via `claude_planning_cli_threading`): the router passes the active provider’s continuation hint — Claude `--session-id`, Copilot `--resume=`, or Codex `exec resume <thread_id>` once a `thread.started` id has been captured from JSONL — and pins `model_override` from the first successful routed call for later planning cycles in the same run.
 
 The planner's prompt also includes:
 
@@ -200,6 +202,7 @@ default** because it created spurious issues on mature repos.
   issue would cost ~$5 per attempt for no functional benefit; the test
   step is the real gate.
 - tests are run when configured or auto-detected.
+- **CLI threading** (default on via `claude_implementation_cli_threading`): each issue **attempt** uses `claude_sessions/impl_*_aNN.continuation.json` (Claude + Copilot UUIDs, Codex thread id after the first Codex call); the main implementation prompt and any test-fix prompt reuse that map, with the model pinned after the first successful routed call in that attempt. A new issue or retry attempt starts a new continuation file.
 - final verification marks implemented issues as verified and can fail/pause
   on test failures (`fail_on_final_test_failure`).
 - optional strict git change verification can fail implementations

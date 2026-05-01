@@ -9,6 +9,7 @@ Runs time-constrained planning sessions that:
 
 import json
 import time
+import uuid
 from pathlib import Path
 
 from .logger import log_checkpoint
@@ -27,6 +28,7 @@ from .planner_text import (
     VERIFY_INSTRUCTIONS,
 )
 from .reporting import generate_checkpoint_summary
+from .routing.helpers import routed_model_from_result
 from .schemas import (
     PlanningAction,
     PlanningOutput,
@@ -76,21 +78,25 @@ class Planner:
         finalization_grace_used = 0
 
         self._pending_completion_reason = None
-        # Verify is a *one-shot* coverage check that fires after the first
-        # 0-new-issues cycle:
-        #   - `_verify_mode`  : True only on the cycle whose prompt is the
-        #                       VERIFY_INSTRUCTIONS variant. Cleared as soon
-        #                       as the cycle returns.
-        #   - `_verify_used`  : sticky for the rest of the run. Once verify
-        #                       has fired once, we don't fire it again — if
-        #                       the next 0-new cycle happens, planning is
-        #                       complete (the gap that verify surfaced has
-        #                       since been filed; another empty cycle now
-        #                       means we're really done).
-        # This replaces the earlier multi-empty-cycle diminishing-returns
-        # dance: one explicit coverage check, then trust.
+        # Verify fires after every cycle that files **no new issues** (empty
+        # actions or updates-only). `_verify_mode` is True only on the cycle
+        # whose prompt includes VERIFY_INSTRUCTIONS. If that cycle also
+        # produces no new issues, planning is complete. If verify surfaces
+        # gaps (new `create_issue` actions), we clear `_verify_mode` and
+        # return to normal planning — the *next* 0-new cycle schedules
+        # verify again until a verify pass returns no new work.
         self._verify_mode = False
-        self._verify_used = False
+
+        if self.config.get("claude_planning_cli_threading", True):
+            changed = False
+            if not self.state.planning_claude_session_id:
+                self.state.planning_claude_session_id = str(uuid.uuid4())
+                changed = True
+            if not self.state.planning_copilot_session_id:
+                self.state.planning_copilot_session_id = str(uuid.uuid4())
+                changed = True
+            if changed:
+                save_state(self.state, self.run_dir)
 
         # Dry-run cycle cap
         max_cycles = self.config.get("max_planning_cycles", 0)
@@ -162,15 +168,10 @@ class Planner:
 
             if new_this_cycle == 0:
                 # No new issues this cycle — no actions at all OR only
-                # update_issue actions. Three outcomes by state:
+                # update_issue actions.
                 #   1. Just finished a verify cycle (0 new) → coverage
                 #      confirmed; planning complete.
-                #   2. Already used the one-shot verify earlier this run →
-                #      trust this empty cycle; planning complete. We do
-                #      NOT re-verify; the verify has already given the
-                #      model its one explicit chance to surface gaps.
-                #   3. First 0-new cycle and verify not yet used → switch
-                #      to verify mode for the next cycle.
+                #   2. Otherwise → next cycle is verify (coverage check).
                 if self._verify_mode:
                     reason = (
                         self._pending_completion_reason
@@ -178,36 +179,26 @@ class Planner:
                     )
                     self.state.stop_reason = reason
                     self.logger.info(f"Planning complete: {reason}")
+                    self._verify_mode = False
                     break
-                elif self._verify_used:
-                    self.state.stop_reason = (
-                        "Planning complete: verify pass already ran earlier this run "
-                        "and this empty cycle confirms no remaining gaps."
-                    )
-                    self.logger.info(self.state.stop_reason)
-                    break
-                else:
-                    self._verify_mode = True
-                    self.logger.info(
-                        "No new issues this cycle — switching to verify mode for the next "
-                        "cycle. The verify prompt walks through BRAINDUMP + discovery findings "
-                        "+ existing issues to confirm coverage or surface missing pieces."
-                    )
+                self._verify_mode = True
+                self.logger.info(
+                    "No new issues this cycle — switching to verify mode for the next "
+                    "cycle. The verify prompt walks through BRAINDUMP + discovery findings "
+                    "+ existing issues to confirm coverage or surface missing pieces."
+                )
             else:
                 # Cycle produced new issues. If we were in verify mode,
-                # that's a real coverage gap verify surfaced — file the
-                # issues, exit verify mode, mark verify as used so we
-                # do NOT re-verify on a future empty cycle. Normal cycles
-                # resume; the next 0-new cycle will be the planning-
-                # complete signal directly.
+                # verify surfaced real gaps — file them, exit verify mode,
+                # resume normal planning. The next 0-new cycle schedules
+                # verify again.
                 if self._verify_mode:
                     self.logger.info(
                         f"Verify cycle surfaced {new_this_cycle} new issue(s) — filed; "
-                        "returning to normal planning. Verify will not fire again this run; "
-                        "the next empty cycle will end planning."
+                        "returning to normal planning. The next cycle with no new issues "
+                        "will enter verify again."
                     )
                     self._verify_mode = False
-                    self._verify_used = True
                 # Honor an explicit planning_complete from a productive verify
                 # cycle (model said "I filed N issues and now we're done").
                 if self._pending_completion_reason:
@@ -216,6 +207,7 @@ class Planner:
                         f"Planning complete (model self-declared): "
                         f"{self._pending_completion_reason}"
                     )
+                    self._verify_mode = False
                     break
 
             save_state(self.state, self.run_dir)
@@ -260,13 +252,42 @@ class Planner:
 
         # Execute Claude with file access (can read project files + write issues/docs)
         start_time = time.time()
+        use_threading = self.config.get("claude_planning_cli_threading", True)
+        model_pin = self.state.planning_pinned_model if use_threading else None
+        if use_threading:
+            if not self.state.planning_claude_session_id:
+                self.state.planning_claude_session_id = str(uuid.uuid4())
+            if not self.state.planning_copilot_session_id:
+                self.state.planning_copilot_session_id = str(uuid.uuid4())
+                save_state(self.state, self.run_dir)
+        session_cont = self._planning_session_continuation() if use_threading else None
         result = self.cli.execute_prompt(
             prompt,
             self.project_root,
             allow_edits=True,
+            model_override=model_pin,
+            session_continuation=session_cont,
         )
         self._log_provider_result(cycle_num, result)
         self.state.record_provider_result(result, self.config, phase="planning")
+        if (
+            self.config.get("claude_planning_cli_threading", True)
+            and result.get("success")
+            and not self.state.planning_pinned_model
+        ):
+            m = routed_model_from_result(result)
+            if m:
+                self.state.planning_pinned_model = m
+                save_state(self.state, self.run_dir)
+        if (
+            use_threading
+            and result.get("success")
+            and result.get("provider_id") == "openai"
+        ):
+            ext = result.get("continuation_session_id")
+            if ext and not self.state.planning_openai_thread_id:
+                self.state.planning_openai_thread_id = ext
+                save_state(self.state, self.run_dir)
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
@@ -391,9 +412,9 @@ class Planner:
                 f"Model signaled planning_complete (accepted in verify mode): {reason}"
             )
         elif planning_output.planning_complete:
-            self.logger.info(
-                "Model signaled planning_complete on a normal cycle — ignoring "
-                "(only accepted in verify mode, which fires after an empty cycle)."
+            self.logger.debug(
+                "Model signaled planning_complete outside verify mode — ignored "
+                "(only honored when VERIFY MODE instructions are in the prompt)."
             )
 
         if not planning_output.actions:
@@ -474,6 +495,14 @@ class Planner:
 
     def _verify_instructions(self) -> str:
         return VERIFY_INSTRUCTIONS
+
+    def _planning_session_continuation(self) -> dict[str, str | None]:
+        """Per-provider opaque ids for CLI-native conversation threading."""
+        return {
+            "claude": self.state.planning_claude_session_id,
+            "openai": self.state.planning_openai_thread_id,
+            "copilot": self.state.planning_copilot_session_id,
+        }
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

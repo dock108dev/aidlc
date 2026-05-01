@@ -39,6 +39,25 @@ def get_quality_sensitive_phases() -> frozenset[str]:
     return frozenset({"planning", "implementation_complex", "finalization", "audit"})
 
 
+def routed_model_from_result(result: dict | None) -> str | None:
+    """Best-effort model string from a post-``execute_prompt`` result dict.
+
+    Used to pin the same model on follow-up calls in the same Claude CLI
+    session (planning cycles, implementation + test-fix for one issue).
+    """
+    if not result or not isinstance(result, dict):
+        return None
+    rd = result.get("routing_decision")
+    if isinstance(rd, dict):
+        m = rd.get("model")
+        if m:
+            return str(m)
+    mu = result.get("model_used")
+    if mu and str(mu) != "unknown":
+        return str(mu)
+    return None
+
+
 def implementation_phases() -> frozenset[str]:
     """Phases that implement code — prefer config ``max_capacity`` providers."""
     return frozenset({"implementation", "implementation_complex"})

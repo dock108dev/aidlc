@@ -326,6 +326,7 @@ def fix_failing_tests(
     model_override: str | None = None,
     *,
     files_changed: list[str] | None = None,
+    session_continuation: dict[str, str | None] | None = None,
 ) -> FixTestsOutcome:
     """Run test-fix prompt, re-run tests, optionally accept documented pre-existing debt."""
     impl.logger.info(f"Attempting to fix failing tests for {issue.id}")
@@ -358,6 +359,7 @@ Do not delete or weaken tests to get green unless the test is objectively wrong 
         impl.project_root,
         allow_edits=True,
         model_override=model_override,
+        session_continuation=session_continuation,
     )
     impl.state.record_provider_result(result, impl.config, phase="fix_tests")
     if not result.get("success"):

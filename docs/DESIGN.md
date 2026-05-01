@@ -20,11 +20,12 @@ Per-fix design notes for the prior remediation effort
 >   threshold mechanism (the `planning_diminishing_returns_min_threshold` /
 >   `_max_threshold` SSOT pair, `_adaptive_diminishing_threshold`,
 >   `_offer_completion`, `recent_cycles[]` tracking) was *also*
->   subsequently removed and replaced by a one-shot **verify cycle**:
->   the first cycle that produces 0 new issues triggers a
->   coverage-check prompt that walks BRAINDUMP + discovery findings +
->   existing issues. See `aidlc/planner_text.py:VERIFY_INSTRUCTIONS`
->   and the `_verify_mode` / `_verify_used` flags in
+>   subsequently removed and replaced by **verify cycles**: any cycle that
+>   produces 0 new issues schedules a coverage-check prompt that walks
+>   BRAINDUMP + discovery findings + existing issues. If verify files new
+>   issues, normal planning resumes and the next 0-new cycle schedules verify
+>   again until a verify pass returns no new work. See
+>   `aidlc/planner_text.py:VERIFY_INSTRUCTIONS` and `_verify_mode` in
 >   `aidlc/planner.py`.
 >
 > The notes are kept here as engineering context for anyone re-touching

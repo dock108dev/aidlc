@@ -23,6 +23,7 @@ class ClaudeCLIAdapter(ProviderAdapter):
         allow_edits: bool = False,
         model_override: str | None = None,
         account_id: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         try:
             result = self._cli.execute_prompt(
@@ -30,6 +31,7 @@ class ClaudeCLIAdapter(ProviderAdapter):
                 working_dir=working_dir,
                 allow_edits=allow_edits,
                 model_override=model_override,
+                continuation_session_id=continuation_session_id,
             )
         except ClaudeCLIError as e:
             return {

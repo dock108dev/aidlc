@@ -36,6 +36,17 @@ def test_omits_model_flag_when_no_model_is_configured(tmp_path):
     assert cmd == ["copilot", "-p", "hello", "--allow-all", "--no-ask-user"]
 
 
+def test_build_command_inserts_resume_before_prompt():
+    adapter = CopilotAdapter(
+        {"providers": {"copilot": {"cli_command": "copilot", "default_model": ""}}},
+        logging.getLogger("test.copilot"),
+    )
+    sid = "00000000-0000-4000-8000-000000000001"
+    cmd = adapter._build_command("", False, "hello", sid)
+    assert cmd[:2] == ["copilot", f"--resume={sid}"]
+    assert cmd[2:6] == ["-p", "hello", "--allow-all", "--no-ask-user"]
+
+
 @patch("aidlc.providers.copilot_adapter.subprocess.Popen")
 def test_passes_explicit_model_when_configured(mock_popen, tmp_path):
     mock_popen.return_value = _mock_popen_success()

@@ -14,7 +14,13 @@ Usage:
     result = router.execute_prompt(prompt, working_dir)
 
     # Or as a drop-in for ClaudeCLI (same interface):
-    result = router.execute_prompt(prompt, working_dir, allow_edits=True, model_override="opus")
+    result = router.execute_prompt(
+        prompt,
+        working_dir,
+        allow_edits=True,
+        model_override="opus",
+        session_continuation=None,
+    )
 """
 
 from __future__ import annotations
@@ -98,11 +104,15 @@ class ProviderRouter:
         model_override: str | None = None,
         phase: str | None = None,
         complexity: str | None = None,
+        session_continuation: dict[str, str | None] | None = None,
     ) -> dict:
         """Execute a prompt via the resolved provider/account/model.
 
         Accepts all ClaudeCLI.execute_prompt() parameters plus optional
-        `phase` and `complexity` for more precise routing.
+        `phase`, `complexity`, and ``session_continuation``: a map of
+        ``provider_id`` → opaque session/thread id for that CLI (``claude``,
+        ``openai``/Codex ``thread_id``, ``copilot`` resume id). Only the entry
+        for the routed provider is forwarded.
         """
         effective_phase = phase or self._current_phase
         effective_complexity = complexity or self._complexity
@@ -152,12 +162,18 @@ class ProviderRouter:
                 )
                 self._log_routing_note(decision, effective_phase)
 
+                cont_id: str | None = None
+                if session_continuation and isinstance(session_continuation, dict):
+                    cont_id = session_continuation.get(decision.provider_id)
+                    if cont_id is not None and not str(cont_id).strip():
+                        cont_id = None
                 result = decision.adapter.execute_prompt(
                     prompt=prompt,
                     working_dir=working_dir,
                     allow_edits=allow_edits,
                     model_override=decision.model,
                     account_id=decision.account_id,
+                    continuation_session_id=cont_id,
                 )
                 result = result_signals.reclassify_quota_chatter_success(result)
 

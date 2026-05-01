@@ -251,12 +251,12 @@ The planner and implementer each have explicit stop conditions.
 
 **Planner** (`planner.py`):
 - Budget exhausted → `plan_finalization` phase, then exit.
-- A no-new-issue cycle triggers **verify mode** (one-shot) for the next
-  cycle. Verify uses an explicit coverage-check prompt (BRAINDUMP +
-  findings + research + existing issues). If verify also returns 0 new
-  issues, planning completes. If verify surfaces gaps, those issues
-  are filed and normal cycles resume; verify will not fire again this
-  run, so the next empty cycle ends planning directly.
+- A no-new-issue cycle schedules **verify mode** for the next cycle.
+  Verify uses an explicit coverage-check prompt (BRAINDUMP + findings +
+  research + existing issues). If verify also returns 0 new issues,
+  planning completes. If verify surfaces gaps, those issues are filed and
+  normal cycles resume; the next no-new-issue cycle schedules verify
+  again until a verify pass returns no new work.
 - Explicit `planning_complete` from the model (only honored after completion is
   offered).
 - 3 consecutive failures.

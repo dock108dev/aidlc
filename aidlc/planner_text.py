@@ -4,7 +4,7 @@ Dense wording for token efficiency; rules unchanged. Version bumps when content 
 """
 
 # Bump when instructions change materially (operators can correlate with cache behavior).
-PLANNING_INSTRUCTIONS_VERSION = "2026-04-29-v8"
+PLANNING_INSTRUCTIONS_VERSION = "2026-04-30-v9"
 
 PLANNING_INSTRUCTIONS = f"""## Instructions — Planning ({PLANNING_INSTRUCTIONS_VERSION})
 
@@ -37,7 +37,9 @@ The BRAINDUMP's tone tells you which mode this run is in. Honor it.
 
 **Sizing follows mode.** Don't default to "fewer issues = better". Match the BRAINDUMP. A scoped-fix BRAINDUMP with 3–5 named bugs gets 3–6 issues. A vision / big-build BRAINDUMP enumerating phases / steps / acceptance tests / zones gets one issue per concrete deliverable, plus prereq/infra/cleanup issues you discover along the way — easily 10–20+ when the BRAINDUMP is genuinely a redesign pass. If you find yourself collapsing a vision BRAINDUMP into a small set of differential fixes against findings, stop and re-read the BRAINDUMP's tone — you're probably under-decomposing.
 
-**Throughput:** up to 15 actions/cycle (create + update). It is fine for early cycles to scaffold many issues with skeletal detail and later cycles to deepen them with file references, options, and AC."""
+**Throughput:** up to 15 actions/cycle (create + update). It is fine for early cycles to scaffold many issues with skeletal detail and later cycles to deepen them with file references, options, and AC.
+
+**Do not set `planning_complete` on normal cycles.** The system only interprets that flag during the dedicated VERIFY pass (the cycle whose instructions begin with `## VERIFY MODE — Final Coverage Check`, scheduled automatically after a cycle that files no new issues). On every other cycle, omit it or keep it false — otherwise the runner ignores it and you add noise."""
 
 FINALIZATION_INSTRUCTIONS = """## Instructions — Planning Finalization
 
@@ -45,7 +47,7 @@ Budget almost exhausted. **Refine only** — review issues for completeness, tes
 
 **Do not:** expand scope; add nice-to-haves; create issues except **critical gaps** (`critical_gap`: true, `priority`: high). A "critical gap" is intent that won't be deliverable from the current issue set — either an uncovered BRAINDUMP ask, or a discovered prereq/infra issue without which a covered ask can't ship.
 
-**Complete:** set top-level `planning_complete`: true when the filed-or-prior issue set is sufficient to deliver every concrete BRAINDUMP intent — including the prereq/infra issues you discovered. "Sufficient" not "literal coverage." Do not emit `set_planning_complete` as an action type."""
+**Do not** set top-level `planning_complete` here — that flag is **only** read on the VERIFY MODE cycle (see schema). In finalization, output refinements via `update_issue` (and rare `critical_gap` `create_issue` only); sufficiency is judged on the next verify or empty-cycle rules, not via this field. Do not emit `set_planning_complete` as an action type."""
 
 VERIFY_INSTRUCTIONS = """## VERIFY MODE — Final Coverage Check
 

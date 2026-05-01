@@ -104,6 +104,14 @@ DEFAULTS = {
     # long Bash test is fine, a 30s gap *after* the terminal result is not.
     # Set 0 to disable.
     "claude_post_terminal_idle_seconds": 30,
+    # Planning: per-provider session hints — Claude ``--session-id``, Copilot
+    # ``--resume=``, Codex ``thread_id`` from first JSONL ``thread.started`` —
+    # plus pin ``model_override`` from the first successful routed call.
+    "claude_planning_cli_threading": True,
+    # Implementation: ``claude_sessions/impl_*_aNN.continuation.json`` holds
+    # claude/copilot UUIDs and Codex thread id after first Codex call; main +
+    # test-fix reuse the map. New issue or attempt gets a new file.
+    "claude_implementation_cli_threading": True,
     "claude_timeout_grace_seconds": 30,  # wait for graceful Claude shutdown before force-kill
     # Wall-clock timeout for non-streaming provider CLIs (Copilot, OpenAI
     # Codex). These don't emit stream-json so activity-based stall

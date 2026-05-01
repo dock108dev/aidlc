@@ -23,6 +23,7 @@ class FakeAdapter:
         allow_edits: bool = False,
         model_override: str | None = None,
         account_id: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         if self._results:
             return self._results.pop(0)

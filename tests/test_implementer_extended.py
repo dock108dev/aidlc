@@ -132,7 +132,10 @@ class TestImplementIssueSuccess:
         assert result is True
         cli.set_complexity.assert_called_once_with("normal")
         kwargs = cli.execute_prompt.call_args.kwargs
-        assert "model_override" not in kwargs
+        assert kwargs.get("model_override") is None
+        cont = kwargs.get("session_continuation") or {}
+        assert cont.get("claude") and len(cont["claude"]) == 36
+        assert cont.get("copilot") and len(cont["copilot"]) == 36
 
     @patch("aidlc.implementer.run_with_group_kill")
     def test_escalates_complex_issue_to_complex_model(self, mock_subproc, config, logger, tmp_path):

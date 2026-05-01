@@ -1,6 +1,8 @@
 """Implementation engine for AIDLC issue execution and verification."""
 
+import json
 import time
+import uuid
 from pathlib import Path
 
 from . import implementer_finalize
@@ -41,6 +43,7 @@ from .logger import log_checkpoint
 from .models import Issue, IssueStatus, RunPhase, RunState
 from .planner_helpers import render_issue_md
 from .reporting import generate_checkpoint_summary
+from .routing.helpers import routed_model_from_result
 from .schemas import (
     ImplementationResult,
     parse_implementation_result,
@@ -131,6 +134,57 @@ class Implementer:
         self.stop_on_all_models_token_exhausted = bool(
             config.get("stop_on_all_models_token_exhausted", True)
         )
+
+    def _impl_continuation_path(self, issue: Issue) -> Path:
+        return (
+            self.run_dir
+            / "claude_sessions"
+            / f"impl_{issue.id}_a{issue.attempt_count:02d}.continuation.json"
+        )
+
+    def _legacy_impl_uuid_path(self, issue: Issue) -> Path:
+        return self.run_dir / "claude_sessions" / f"impl_{issue.id}_a{issue.attempt_count:02d}.uuid"
+
+    def _save_impl_continuation(self, issue: Issue, data: dict[str, str | None]) -> None:
+        path = self._impl_continuation_path(issue)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def _load_or_create_impl_continuation(self, issue: Issue, resuming: bool) -> dict[str, str | None]:
+        """Per-provider session hints for this issue attempt (Claude / Codex / Copilot)."""
+        if not self.config.get("claude_implementation_cli_threading", True):
+            return {}
+        sess_dir = self.run_dir / "claude_sessions"
+        sess_dir.mkdir(parents=True, exist_ok=True)
+        path = self._impl_continuation_path(issue)
+        legacy = self._legacy_impl_uuid_path(issue)
+        if path.exists():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                raw = {}
+            if isinstance(raw, dict):
+                return {
+                    "claude": raw.get("claude") if raw.get("claude") else None,
+                    "openai": raw.get("openai") if raw.get("openai") else None,
+                    "copilot": raw.get("copilot") if raw.get("copilot") else None,
+                }
+        if legacy.exists():
+            cid = legacy.read_text(encoding="utf-8").strip() or None
+            out: dict[str, str | None] = {
+                "claude": cid,
+                "openai": None,
+                "copilot": str(uuid.uuid4()),
+            }
+            self._save_impl_continuation(issue, out)
+            return out
+        out = {
+            "claude": str(uuid.uuid4()),
+            "openai": None,
+            "copilot": str(uuid.uuid4()),
+        }
+        self._save_impl_continuation(issue, out)
+        return out
 
     def _maybe_reopen_transient_failures(self, force_all: bool = False) -> int:
         """Delegate to ``implementer_helpers.reopen_transient_failures`` (kept as a method for callers)."""
@@ -412,6 +466,15 @@ class Implementer:
         self.state.update_issue(issue)
         self._sync_issue_markdown(issue)
 
+        use_impl_threading = self.config.get("claude_implementation_cli_threading", True)
+        self._impl_continuation = (
+            self._load_or_create_impl_continuation(issue, resuming_interrupted)
+            if use_impl_threading
+            else {}
+        )
+        session_cont = self._impl_continuation if use_impl_threading else None
+        impl_model_pin: str | None = None
+
         # Build prompt
         prompt = self._build_implementation_prompt(issue)
         self.logger.info(f"  Prompt size: {len(prompt):,} chars (~{len(prompt) // 4:,} tokens)")
@@ -427,9 +490,20 @@ class Implementer:
             prompt,
             self.project_root,
             allow_edits=True,
+            model_override=impl_model_pin,
+            session_continuation=session_cont,
         )
         self._log_provider_result(issue, result)
         self.state.record_provider_result(result, self.config, phase="implementation")
+        if use_impl_threading and result.get("success"):
+            m = routed_model_from_result(result)
+            if m:
+                impl_model_pin = m
+            if result.get("provider_id") == "openai":
+                ext = result.get("continuation_session_id")
+                if ext:
+                    self._impl_continuation["openai"] = ext
+                    self._save_impl_continuation(issue, self._impl_continuation)
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration
 
@@ -574,7 +648,10 @@ class Implementer:
             if not tests_pass:
                 self.logger.warning(f"Tests failed after implementing {issue.id}")
                 fix_outcome = self._fix_failing_tests(
-                    issue, files_changed=impl_result.files_changed
+                    issue,
+                    files_changed=impl_result.files_changed,
+                    session_continuation=session_cont,
+                    model_override=impl_model_pin,
                 )
                 if fix_outcome.tests_now_passing:
                     impl_result.tests_passed = True
@@ -664,10 +741,15 @@ class Implementer:
         model_override: str | None = None,
         *,
         files_changed: list[str] | None = None,
+        session_continuation: dict[str, str | None] | None = None,
     ) -> FixTestsOutcome:
         """Give Claude a chance to fix failing tests."""
         return fix_failing_tests(
-            self, issue, model_override=model_override, files_changed=files_changed
+            self,
+            issue,
+            model_override=model_override,
+            files_changed=files_changed,
+            session_continuation=session_continuation,
         )
 
     def _is_complex_issue(self, issue: Issue) -> bool:

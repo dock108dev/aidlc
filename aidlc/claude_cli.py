@@ -161,6 +161,7 @@ class ClaudeCLI:
         working_dir: Path,
         allow_edits: bool = False,
         model_override: str | None = None,
+        continuation_session_id: str | None = None,
     ) -> dict:
         """Execute a prompt via Claude CLI.
 
@@ -170,6 +171,9 @@ class ClaudeCLI:
             allow_edits: If True, uses --dangerously-skip-permissions so Claude
                          can edit files directly during implementation
             model_override: Use a specific model for this call (e.g., "sonnet", "opus")
+            continuation_session_id: If set, passed as Claude Code ``--session-id``
+                (UUID) so this process joins the same session as prior calls with
+                that id in ``working_dir``.
 
         Returns:
             dict with: success, output, error, failure_type, duration_seconds, retries
@@ -195,15 +199,19 @@ class ClaudeCLI:
         # same `result`/`usage`/`total_cost_usd` fields the old single-JSON
         # format did, so the downstream parser still works via its JSONL
         # fallback path.
-        cmd = [
-            self.cli_command,
+        cmd = [self.cli_command]
+        if continuation_session_id:
+            cmd.extend(["--session-id", continuation_session_id])
+        cmd.extend(
+            [
             "--print",
             "--model",
             model,
             "--output-format",
             "stream-json",
             "--verbose",
-        ]
+            ]
+        )
         if allow_edits:
             cmd.append("--dangerously-skip-permissions")
 
