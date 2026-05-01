@@ -102,8 +102,23 @@ DEFAULTS = {
     # This is much shorter than `claude_stall_kill_seconds` because real
     # work cannot be happening (the model is done); a 200s gap during a
     # long Bash test is fine, a 30s gap *after* the terminal result is not.
-    # Set 0 to disable.
+    # Set 0 to disable. For debugger-driven runs with no automated teardown,
+    # also set ``claude_sigint_after_terminal_result`` to false.
     "claude_post_terminal_idle_seconds": 30,
+    # After stream-json emits the terminal ``result`` event, send SIGINT once
+    # (same signal as Ctrl+C) so Claude Code tears down the session/subprocess
+    # promptly instead of lingering and holding ``--session-id`` for the next
+    # cycle. If the CLI still hangs, ``claude_post_terminal_idle_seconds``
+    # remains the backstop.
+    "claude_sigint_after_terminal_result": True,
+    # After a successful Claude CLI call with threading, pause briefly so the
+    # CLI can release the session lock before the next attach (planning cycle
+    # / implementation step).
+    "claude_session_release_delay_seconds": 2.0,
+    # When Claude reports ``session id … already in use``, wait this long,
+    # then retry once without ``--session-id`` and adopt ``session_id`` from
+    # stream-json ``system/init``.
+    "claude_session_conflict_retry_seconds": 2.0,
     # Planning: per-provider session hints — Claude ``--session-id``, Copilot
     # ``--resume=``, Codex ``thread_id`` from first JSONL ``thread.started`` —
     # plus pin ``model_override`` from the first successful routed call.

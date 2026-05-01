@@ -208,6 +208,39 @@ class TestExecutePrompt:
         assert "--session-id" in cmd
         assert cmd[cmd.index("--session-id") + 1] == sid
 
+    @patch("aidlc.claude_cli.time.sleep")
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_session_already_in_use_retries_without_session_id(
+        self, mock_popen, mock_sleep, base_config, logger, tmp_path
+    ):
+        sid = "12345678-1234-5678-1234-567812345678"
+        conflict = _mock_popen_failure(
+            1,
+            "Error: Session ID 12345678-1234-5678-1234-567812345678 is already in use.\n",
+        )
+        payload = {"result": "done", "model": "opus", "usage": {}}
+        ok_stdout = (
+            '{"type":"system","subtype":"init","session_id":"cli-session-xyz"}\n'
+            + json.dumps(payload)
+            + "\n"
+        )
+        success = _mock_popen_success(ok_stdout)
+        mock_popen.side_effect = [conflict, success]
+
+        base_config["retry_max_attempts"] = 0
+        cli = ClaudeCLI(base_config, logger)
+        result = cli.execute_prompt("prompt", tmp_path, continuation_session_id=sid)
+
+        assert result["success"] is True
+        assert mock_popen.call_count == 2
+        first_cmd = mock_popen.call_args_list[0][0][0]
+        second_cmd = mock_popen.call_args_list[1][0][0]
+        assert "--session-id" in first_cmd
+        assert sid == first_cmd[first_cmd.index("--session-id") + 1]
+        assert "--session-id" not in second_cmd
+        assert result.get("continuation_session_id") == "cli-session-xyz"
+        mock_sleep.assert_called()
+
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_extracts_cost_model_and_tool_usage(self, mock_popen, base_config, logger, tmp_path):
         payload = {
@@ -569,8 +602,8 @@ class TestLivenessLoop:
         self, mock_popen, mock_time, base_config, logger, caplog, tmp_path
     ):
         """``claude_post_terminal_idle_seconds=0`` disables the post-terminal
-        kill — useful when running with a debugger attached or when a user
-        has external lifecycle management."""
+        idle kill — useful when running with a debugger attached or when a user
+        has external lifecycle management. Also disable immediate SIGINT-on-terminal."""
         terminal_event = '{"type": "result", "subtype": "success"}\n'
         proc = MagicMock()
         # Process exits naturally on the third poll; without the kill path
@@ -591,6 +624,7 @@ class TestLivenessLoop:
         mock_popen.return_value = proc
 
         base_config["claude_post_terminal_idle_seconds"] = 0  # disabled
+        base_config["claude_sigint_after_terminal_result"] = False
         base_config["claude_stall_kill_seconds"] = 0
         base_config["retry_max_attempts"] = 0
         clock = itertools.count(start=0.0, step=60.0)  # huge idle gaps

@@ -495,6 +495,14 @@ class Implementer:
             model_override=impl_model_pin,
             session_continuation=session_cont,
         )
+        if (
+            use_impl_threading
+            and result.get("success")
+            and result.get("provider_id") == "claude"
+        ):
+            delay = float(self.config.get("claude_session_release_delay_seconds", 2.0))
+            if delay > 0:
+                time.sleep(delay)
         self._log_provider_result(issue, result)
         self.state.record_provider_result(result, self.config, phase="implementation")
         if use_impl_threading and result.get("success"):
@@ -505,6 +513,11 @@ class Implementer:
                 ext = result.get("continuation_session_id")
                 if ext:
                     self._impl_continuation["openai"] = ext
+                    self._save_impl_continuation(issue, self._impl_continuation)
+            elif result.get("provider_id") == "claude":
+                ext = result.get("continuation_session_id")
+                if ext:
+                    self._impl_continuation["claude"] = ext
                     self._save_impl_continuation(issue, self._impl_continuation)
         duration = time.time() - start_time
         self.state.elapsed_seconds += duration

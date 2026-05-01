@@ -268,6 +268,14 @@ class Planner:
             model_override=model_pin,
             session_continuation=session_cont,
         )
+        if (
+            use_threading
+            and result.get("success")
+            and result.get("provider_id") == "claude"
+        ):
+            delay = float(self.config.get("claude_session_release_delay_seconds", 2.0))
+            if delay > 0:
+                time.sleep(delay)
         self._log_provider_result(cycle_num, result)
         self.state.record_provider_result(result, self.config, phase="planning")
         if (
@@ -283,6 +291,11 @@ class Planner:
             ext = result.get("continuation_session_id")
             if ext and not self.state.planning_openai_thread_id:
                 self.state.planning_openai_thread_id = ext
+                save_state(self.state, self.run_dir)
+        if use_threading and result.get("success") and result.get("provider_id") == "claude":
+            ext = result.get("continuation_session_id")
+            if ext:
+                self.state.planning_claude_session_id = ext
                 save_state(self.state, self.run_dir)
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration

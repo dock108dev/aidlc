@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import signal
+import sys
 import subprocess
 import threading
 import time
@@ -31,6 +32,31 @@ _SERVICE_OUTAGE_PATTERNS = re.compile(
     ),
     re.IGNORECASE,
 )
+# Claude Code returns this when another process still holds --session-id (or the
+# CLI has not finished releasing the lock between back-to-back invocations).
+_SESSION_ID_IN_USE = re.compile(
+    r"session\s+id\s+\S+\s+is\s+already\s+in\s+use",
+    re.IGNORECASE,
+)
+
+
+def _extract_session_id_from_stream_json(stdout: str) -> str | None:
+    """Return ``session_id`` from the first ``system/init`` stream-json line, if any."""
+    for raw_line in (stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "system" and event.get("subtype") == "init":
+            sid = event.get("session_id")
+            if isinstance(sid, str) and sid.strip():
+                return sid.strip()
+    return None
 
 
 def _compact_text(value: str | None, max_len: int = 240) -> str:
@@ -172,8 +198,11 @@ class ClaudeCLI:
                          can edit files directly during implementation
             model_override: Use a specific model for this call (e.g., "sonnet", "opus")
             continuation_session_id: If set, passed as Claude Code ``--session-id``
-                (UUID) so this process joins the same session as prior calls with
-                that id in ``working_dir``.
+                so this process joins the same session as prior calls with that id
+                in ``working_dir``. If Claude reports that id is already in use,
+                AIDLC retries once without the flag and adopts ``session_id`` from
+                the stream ``system/init`` event (see ``continuation_session_id``
+                on success).
 
         Returns:
             dict with: success, output, error, failure_type, duration_seconds, retries
@@ -194,26 +223,10 @@ class ClaudeCLI:
             }
 
         model = model_override or self.model
-        # stream-json + verbose: one JSON event per line. Each line gives us a
-        # natural liveness signal, and the terminal `result` event carries the
-        # same `result`/`usage`/`total_cost_usd` fields the old single-JSON
-        # format did, so the downstream parser still works via its JSONL
-        # fallback path.
-        cmd = [self.cli_command]
-        if continuation_session_id:
-            cmd.extend(["--session-id", continuation_session_id])
-        cmd.extend(
-            [
-                "--print",
-                "--model",
-                model,
-                "--output-format",
-                "stream-json",
-                "--verbose",
-            ]
-        )
-        if allow_edits:
-            cmd.append("--dangerously-skip-permissions")
+        # Effective session id may be cleared mid-loop when Claude reports the id
+        # is already held by another CLI attachment — we retry once without
+        # ``--session-id`` and adopt ``session_id`` from the stream ``init`` event.
+        effective_session_id: str | None = continuation_session_id
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
         # Activity-based stall detection only — wall-clock kills were removed
@@ -262,6 +275,22 @@ class ClaudeCLI:
                     )
                 else:
                     self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
+
+                cmd = [self.cli_command]
+                if effective_session_id:
+                    cmd.extend(["--session-id", effective_session_id])
+                cmd.extend(
+                    [
+                        "--print",
+                        "--model",
+                        model,
+                        "--output-format",
+                        "stream-json",
+                        "--verbose",
+                    ]
+                )
+                if allow_edits:
+                    cmd.append("--dangerously-skip-permissions")
 
                 # No wall-clock timeout — Claude CLI in stream-json mode
                 # emits steady tool-use events even on multi-hour work.
@@ -324,18 +353,21 @@ class ClaudeCLI:
                     idle = now - last_activity_at[0]
 
                     # Detect the terminal event once. After it, the model is
-                    # done; only CLI shutdown remains. Re-scanning the line
-                    # list each iteration is cheap (walks backward to first
-                    # non-empty event); we stop scanning once detected.
-                    if not saw_terminal and idle >= 2:
+                    # done; only CLI shutdown remains.
+                    if not saw_terminal:
                         last_event_brief = _pick_last_nonempty_summary(stdout_lines)
                         if last_event_brief.startswith("result "):
                             saw_terminal = True
                             self.logger.info(
                                 f"Claude CLI emitted terminal '{last_event_brief}' event "
-                                f"(elapsed={elapsed:.0f}s); will kill if the process does "
-                                f"not exit within {post_terminal_idle}s of further silence."
+                                f"(elapsed={elapsed:.0f}s)."
                             )
+                            if self.config.get("claude_sigint_after_terminal_result", True):
+                                self.logger.info(
+                                    "Sending SIGINT to Claude CLI to end this session "
+                                    "(same as Ctrl+C) so it releases before the next cycle."
+                                )
+                                self._request_graceful_stop(proc)
 
                     if now >= next_heartbeat_at:
                         heartbeat_count += 1
@@ -403,6 +435,26 @@ class ClaudeCLI:
                 if timeout_forced and returncode == 0:
                     returncode = 124
 
+                # Ctrl+C style shutdown often exits 130 after stream-json delivered the
+                # terminal ``result`` line — treat as success so planning can continue.
+                if (
+                    saw_terminal
+                    and returncode != 0
+                    and self.config.get("claude_sigint_after_terminal_result", True)
+                    and not timed_out
+                ):
+                    sigint_like = returncode == 130 or (
+                        sys.platform != "win32"
+                        and hasattr(signal, "SIGINT")
+                        and returncode == -signal.SIGINT
+                    )
+                    if sigint_like and '"type":"result"' in stdout:
+                        self.logger.info(
+                            "Claude CLI exited after SIGINT following a terminal result; "
+                            "treating as success."
+                        )
+                        returncode = 0
+
                 if returncode == 0:
                     if timed_out:
                         self.logger.info(
@@ -411,11 +463,15 @@ class ClaudeCLI:
                     output_text, usage, total_cost_usd, model_used, usage_source = (
                         self._extract_cli_metadata(stdout, model)
                     )
+                    extracted_sid = _extract_session_id_from_stream_json(stdout)
+                    cont_sid = (
+                        extracted_sid or effective_session_id or continuation_session_id
+                    )
                     self.logger.debug(
                         "Claude CLI completed successfully "
                         f"(duration={duration:.1f}s, stdout_chars={len(stdout)}, retries={retries})"
                     )
-                    return {
+                    payload = {
                         "success": True,
                         "output": output_text,
                         "error": None,
@@ -427,9 +483,31 @@ class ClaudeCLI:
                         "model_used": model_used,
                         "usage_source": usage_source,
                     }
+                    if cont_sid:
+                        payload["continuation_session_id"] = cont_sid
+                    return payload
                 else:
                     stderr_text = stderr or ""
                     stdout_text = stdout or ""
+                    combined_err = f"{stderr_text}\n{stdout_text}"
+                    if (
+                        not timed_out
+                        and effective_session_id
+                        and _SESSION_ID_IN_USE.search(combined_err)
+                    ):
+                        self.logger.warning(
+                            "Claude CLI reports session id is already in use — dropping "
+                            "`--session-id` for this invocation and retrying after a short pause "
+                            "(adopt `session_id` from stream output on success)."
+                        )
+                        effective_session_id = None
+                        pause = float(
+                            self.config.get("claude_session_conflict_retry_seconds", 2.0)
+                        )
+                        if pause > 0:
+                            time.sleep(pause)
+                        continue
+
                     if timed_out:
                         failure_type = "timeout"
                         if not stderr_text and not stdout_text:
