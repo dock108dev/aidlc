@@ -274,10 +274,7 @@ were removed in the core-focus audit because their semantics had drifted;
 new passes will be reintroduced once their prompts and acceptance criteria
 are nailed down.
 
-During finalization, AIDLC also:
-
-- refreshes config detections into `.aidlc/config.json`
-- writes `AIDLC_FUTURES.md`
+During finalization, AIDLC also refreshes config detections into `.aidlc/config.json`.
 
 ## Concurrency and State
 

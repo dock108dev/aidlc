@@ -22,14 +22,12 @@ non-fix with concrete rationale in both the pass report and at the site. Bare
 
 import subprocess
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from .finalize_prompts import (
     ABEND_PROMPT,
     CLEANUP_PROMPT,
     DOCS_PROMPT,
-    FUTURES_TEMPLATE,
     PASS_DESCRIPTIONS,
     PASS_ORDER,
     SECURITY_PROMPT,
@@ -115,9 +113,6 @@ class Finalizer:
 
         # Update config with any newly detected values (codebase may have changed)
         self._refresh_config()
-
-        # Write AIDLC futures note
-        self._write_futures_note()
 
         self.logger.info(
             f"Finalization complete: {len(self.state.finalize_passes_completed)}/{len(valid)} passes"
@@ -216,57 +211,3 @@ class Finalizer:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
         return ""
-
-    def _write_futures_note(self) -> None:
-        """Write AIDLC_FUTURES.md to repo root."""
-        # Build audit report links
-        audit_dir = self.project_root / "docs" / "audits"
-        report_links = []
-        if audit_dir.exists():
-            for f in sorted(audit_dir.iterdir()):
-                if f.is_file() and f.suffix == ".md":
-                    report_links.append(f"- [{f.stem}](docs/audits/{f.name})")
-
-        # Get current branch
-        branch = "unknown"
-        try:
-            t0 = time.time()
-            try:
-                result = subprocess.run(
-                    ["git", "branch", "--show-current"],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(self.project_root),
-                    timeout=10,
-                )
-            finally:
-                add_console_time(self.state, t0)
-            if result.returncode == 0:
-                branch = result.stdout.strip() or "HEAD"
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        # Detect project type
-        project_type = "unknown"
-        if "project_type" in self.project_context.lower():
-            for line in self.project_context.split("\n"):
-                if "project type" in line.lower():
-                    project_type = line.split(":")[-1].strip() if ":" in line else "unknown"
-                    break
-
-        content = FUTURES_TEMPLATE.format(
-            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            run_id=self.state.run_id,
-            total_issues=self.state.total_issues,
-            issues_implemented=self.state.issues_implemented,
-            issues_verified=self.state.issues_verified,
-            issues_failed=self.state.issues_failed,
-            passes_completed=", ".join(self.state.finalize_passes_completed) or "none",
-            audit_report_links="\n".join(report_links) or "No audit reports generated.",
-            branch=branch,
-            project_type=project_type,
-        )
-
-        futures_path = self.project_root / "AIDLC_FUTURES.md"
-        futures_path.write_text(content)
-        self.logger.info(f"Wrote {futures_path}")

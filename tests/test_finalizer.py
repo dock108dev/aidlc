@@ -117,19 +117,6 @@ class TestFinalizer:
         # Failed pass should NOT be in completed list
         assert "docs" not in state.finalize_passes_completed
 
-    def test_writes_futures_note(self, state, config, cli, logger, tmp_path):
-        run_dir = tmp_path / "run"
-        run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
-        finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
-        finalizer.run(passes=["docs"])
-
-        futures_path = tmp_path / "AIDLC_FUTURES.md"
-        assert futures_path.exists()
-        content = futures_path.read_text()
-        assert "AIDLC Futures" in content
-        assert "test_finalize" in content
-
     def test_creates_audit_dir(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()

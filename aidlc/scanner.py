@@ -439,7 +439,7 @@ class ProjectScanner:
 
         mode="planning" includes all docs, full audit, and the existing-issues
         index. mode="implementation" drops planning-only docs (BRAINDUMP,
-        ROADMAP, vision/futures), omits tech-debt and existing-issues sections
+        ROADMAP, vision), omits tech-debt and existing-issues sections
         (the implementer prompt carries its own curated `Recently completed`
         list), and uses a tighter per-doc cap (implementation_max_doc_chars).
         """
