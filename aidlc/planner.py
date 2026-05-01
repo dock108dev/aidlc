@@ -268,11 +268,7 @@ class Planner:
             model_override=model_pin,
             session_continuation=session_cont,
         )
-        if (
-            use_threading
-            and result.get("success")
-            and result.get("provider_id") == "claude"
-        ):
+        if use_threading and result.get("success") and result.get("provider_id") == "claude":
             delay = float(self.config.get("claude_session_release_delay_seconds", 2.0))
             if delay > 0:
                 time.sleep(delay)
