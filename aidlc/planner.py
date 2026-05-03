@@ -305,12 +305,14 @@ class Planner:
                 self.state.planning_copilot_session_id = str(uuid.uuid4())
                 save_state(self.state, self.run_dir)
         session_cont = self._planning_session_continuation() if use_threading else None
+        session_resume = self._planning_session_resume() if use_threading else None
         result = self.cli.execute_prompt(
             prompt,
             self.project_root,
             allow_edits=True,
             model_override=model_pin,
             session_continuation=session_cont,
+            session_resume=session_resume,
         )
         if use_threading and result.get("success") and result.get("provider_id") == "claude":
             delay = float(self.config.get("claude_session_release_delay_seconds", 2.0))
@@ -336,7 +338,14 @@ class Planner:
             ext = result.get("continuation_session_id")
             if ext:
                 self.state.planning_claude_session_id = ext
-                save_state(self.state, self.run_dir)
+            # First successful Claude cycle seeds the session — subsequent
+            # cycles must use ``--resume`` to join it; ``--session-id`` would
+            # collide. The Claude CLI's stream `init` event always emits a
+            # session_id even on the in-use fallback path, so once we have
+            # success we know there's a live session to resume.
+            if not self.state.planning_claude_session_resumable:
+                self.state.planning_claude_session_resumable = True
+            save_state(self.state, self.run_dir)
         duration = time.time() - start_time
         self.state.plan_elapsed_seconds += duration
         self.state.elapsed_seconds += duration
@@ -590,12 +599,33 @@ class Planner:
         return VERIFY_INSTRUCTIONS
 
     def _planning_session_continuation(self) -> dict[str, str | None]:
-        """Per-provider opaque ids for CLI-native conversation threading."""
+        """Per-provider opaque ids for **fresh-mint** session calls.
+
+        Claude only goes here on cycle 1 (or any cycle where the session is
+        not yet resumable); Claude Code rejects ``--session-id`` when the id
+        already exists, so once we've successfully completed one cycle we
+        switch Claude to the resume path. ``openai`` and ``copilot`` use
+        their own continuation conventions and are not affected.
+        """
+        claude_id: str | None = None
+        if not self.state.planning_claude_session_resumable:
+            claude_id = self.state.planning_claude_session_id
         return {
-            "claude": self.state.planning_claude_session_id,
+            "claude": claude_id,
             "openai": self.state.planning_openai_thread_id,
             "copilot": self.state.planning_copilot_session_id,
         }
+
+    def _planning_session_resume(self) -> dict[str, str | None]:
+        """Per-provider session ids for **resume** calls (claude --resume).
+
+        Populated only for Claude, and only after the first successful cycle
+        flipped ``planning_claude_session_resumable`` to True.
+        """
+        claude_id: str | None = None
+        if self.state.planning_claude_session_resumable:
+            claude_id = self.state.planning_claude_session_id
+        return {"claude": claude_id, "openai": None, "copilot": None}
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

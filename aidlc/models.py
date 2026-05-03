@@ -116,6 +116,10 @@ class RunState:
 
     # Planning — provider-native session/thread continuation + model pin
     planning_claude_session_id: Optional[str] = None
+    # True after the first successful Claude planning cycle: subsequent cycles
+    # use ``claude --resume <id>`` to continue the existing session, not
+    # ``--session-id <id>`` which mints a new session and would collide.
+    planning_claude_session_resumable: bool = False
     planning_openai_thread_id: Optional[str] = None  # Codex JSONL ``thread.started``
     planning_copilot_session_id: Optional[str] = None  # ``copilot --resume=`` id
     planning_pinned_model: Optional[str] = None
@@ -244,6 +248,7 @@ class RunState:
             "research_topics_total": self.research_topics_total,
             "research_topics_completed": self.research_topics_completed,
             "planning_claude_session_id": self.planning_claude_session_id,
+            "planning_claude_session_resumable": self.planning_claude_session_resumable,
             "planning_openai_thread_id": self.planning_openai_thread_id,
             "planning_copilot_session_id": self.planning_copilot_session_id,
             "planning_pinned_model": self.planning_pinned_model,
@@ -315,6 +320,9 @@ class RunState:
         state.research_topics_total = int(data.get("research_topics_total", 0) or 0)
         state.research_topics_completed = int(data.get("research_topics_completed", 0) or 0)
         state.planning_claude_session_id = data.get("planning_claude_session_id")
+        state.planning_claude_session_resumable = bool(
+            data.get("planning_claude_session_resumable", False)
+        )
         state.planning_openai_thread_id = data.get("planning_openai_thread_id")
         state.planning_copilot_session_id = data.get("planning_copilot_session_id")
         state.planning_pinned_model = data.get("planning_pinned_model")

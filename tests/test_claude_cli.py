@@ -208,6 +208,44 @@ class TestExecutePrompt:
         assert "--session-id" in cmd
         assert cmd[cmd.index("--session-id") + 1] == sid
 
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_resume_session_id_uses_resume_flag(self, mock_popen, base_config, logger, tmp_path):
+        """``resume_session_id`` routes to ``--resume <id>``, not
+        ``--session-id``. Used by callers (planner, implementer) on cycles 2+
+        to join the session the first cycle minted with --session-id."""
+        mock_popen.return_value = _mock_popen_success("ok")
+        cli = ClaudeCLI(base_config, logger)
+        sid = "12345678-1234-5678-1234-567812345678"
+        cli.execute_prompt("prompt", tmp_path, resume_session_id=sid)
+        cmd = mock_popen.call_args[0][0]
+        assert "--resume" in cmd
+        assert cmd[cmd.index("--resume") + 1] == sid
+        # The two flags are mutually exclusive on the wire — never emit both.
+        assert "--session-id" not in cmd
+
+    @patch("aidlc.claude_cli.subprocess.Popen")
+    def test_resume_wins_when_both_continuation_and_resume_passed(
+        self, mock_popen, base_config, logger, tmp_path
+    ):
+        """If a caller passes both ``continuation_session_id`` and
+        ``resume_session_id``, the resume path wins — covered for safety so a
+        subtle plumbing bug doesn't silently fall back to --session-id (which
+        would collide on cycles 2+)."""
+        mock_popen.return_value = _mock_popen_success("ok")
+        cli = ClaudeCLI(base_config, logger)
+        cont_sid = "11111111-1111-1111-1111-111111111111"
+        resume_sid = "22222222-2222-2222-2222-222222222222"
+        cli.execute_prompt(
+            "prompt",
+            tmp_path,
+            continuation_session_id=cont_sid,
+            resume_session_id=resume_sid,
+        )
+        cmd = mock_popen.call_args[0][0]
+        assert "--resume" in cmd
+        assert cmd[cmd.index("--resume") + 1] == resume_sid
+        assert "--session-id" not in cmd
+
     @patch("aidlc.claude_cli.time.sleep")
     @patch("aidlc.claude_cli.subprocess.Popen")
     def test_session_already_in_use_retries_without_session_id(

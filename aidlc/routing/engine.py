@@ -105,14 +105,21 @@ class ProviderRouter:
         phase: str | None = None,
         complexity: str | None = None,
         session_continuation: dict[str, str | None] | None = None,
+        session_resume: dict[str, str | None] | None = None,
     ) -> dict:
         """Execute a prompt via the resolved provider/account/model.
 
         Accepts all ClaudeCLI.execute_prompt() parameters plus optional
-        `phase`, `complexity`, and ``session_continuation``: a map of
-        ``provider_id`` → opaque session/thread id for that CLI (``claude``,
-        ``openai``/Codex ``thread_id``, ``copilot`` resume id). Only the entry
-        for the routed provider is forwarded.
+        `phase`, `complexity`, ``session_continuation``, and ``session_resume``.
+
+        ``session_continuation`` is a map of ``provider_id`` → session id for
+        the **first call** of a logical workflow — Claude routes it to
+        ``--session-id`` (mint new). ``session_resume`` is the same shape but
+        signals **continuation** of an existing session — Claude routes it to
+        ``--resume`` (join existing). Only the entry for the routed provider
+        is forwarded; if both maps name the same provider, ``session_resume``
+        wins. Other providers (``openai``, ``copilot``) read from
+        ``session_continuation`` only.
         """
         effective_phase = phase or self._current_phase
         effective_complexity = complexity or self._complexity
@@ -167,6 +174,11 @@ class ProviderRouter:
                     cont_id = session_continuation.get(decision.provider_id)
                     if cont_id is not None and not str(cont_id).strip():
                         cont_id = None
+                resume_id: str | None = None
+                if session_resume and isinstance(session_resume, dict):
+                    resume_id = session_resume.get(decision.provider_id)
+                    if resume_id is not None and not str(resume_id).strip():
+                        resume_id = None
                 result = decision.adapter.execute_prompt(
                     prompt=prompt,
                     working_dir=working_dir,
@@ -174,6 +186,7 @@ class ProviderRouter:
                     model_override=decision.model,
                     account_id=decision.account_id,
                     continuation_session_id=cont_id,
+                    resume_session_id=resume_id,
                 )
                 result = result_signals.reclassify_quota_chatter_success(result)
 

@@ -272,6 +272,61 @@ class TestPlanner:
         errors = action.validate()
         assert any("Unknown action_type" in e for e in errors)
 
+    def test_claude_session_uses_resume_flag_after_first_successful_cycle(
+        self, state, config, logger, tmp_path
+    ):
+        """Cycle 1 mints the Claude session via ``session_continuation`` (the
+        --session-id path); cycle 2+ joins via ``session_resume`` (the
+        --resume path). Without this, cycle 2 would re-pass --session-id with
+        the same UUID and collide with the live session from cycle 1.
+        """
+        cli = MagicMock()
+        empty_response = json.dumps(
+            {"frontier_assessment": "nothing", "actions": [], "cycle_notes": ""}
+        )
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{empty_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+            "provider_id": "claude",
+            "continuation_session_id": "adopted-session-id",
+        }
+        config["max_planning_cycles"] = 2
+        config["dry_run"] = False
+        # Pin to legacy verify gating so the test is about session flag
+        # transitions, not facet sequencing.
+        config["planning_facets_enabled"] = False
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+
+        assert cli.execute_prompt.call_count >= 2
+        first_kwargs = cli.execute_prompt.call_args_list[0].kwargs
+        second_kwargs = cli.execute_prompt.call_args_list[1].kwargs
+
+        # Cycle 1: claude session id appears in session_continuation (mint),
+        # session_resume slot is None.
+        first_cont = (first_kwargs.get("session_continuation") or {}).get("claude")
+        first_resume = (first_kwargs.get("session_resume") or {}).get("claude")
+        assert first_cont, "cycle 1 should pass a Claude session id via session_continuation"
+        assert not first_resume, "cycle 1 must NOT use session_resume yet"
+
+        # Cycle 2: flipped — session_resume carries the id, session_continuation
+        # is None for Claude (so claude_cli emits --resume not --session-id).
+        second_cont = (second_kwargs.get("session_continuation") or {}).get("claude")
+        second_resume = (second_kwargs.get("session_resume") or {}).get("claude")
+        assert second_resume, "cycle 2 should pass a Claude session id via session_resume"
+        assert not second_cont, "cycle 2 must NOT pass --session-id again"
+
+        # State persisted the resumable flip.
+        assert state.planning_claude_session_resumable is True
+
     def test_consecutive_failures_stop(self, state, config, logger, tmp_path):
         cli = MagicMock()
         cli.execute_prompt.return_value = {

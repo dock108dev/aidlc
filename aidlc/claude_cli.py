@@ -188,6 +188,7 @@ class ClaudeCLI:
         allow_edits: bool = False,
         model_override: str | None = None,
         continuation_session_id: str | None = None,
+        resume_session_id: str | None = None,
     ) -> dict:
         """Execute a prompt via Claude CLI.
 
@@ -198,11 +199,17 @@ class ClaudeCLI:
                          can edit files directly during implementation
             model_override: Use a specific model for this call (e.g., "sonnet", "opus")
             continuation_session_id: If set, passed as Claude Code ``--session-id``
-                so this process joins the same session as prior calls with that id
-                in ``working_dir``. If Claude reports that id is already in use,
-                AIDLC retries once without the flag and adopts ``session_id`` from
-                the stream ``system/init`` event (see ``continuation_session_id``
-                on success).
+                to **mint a new session with that id**. Claude Code rejects
+                ``--session-id`` when the id already exists, so this flag is
+                only correct on the very first call of a logical session. On
+                the in-use error AIDLC drops the flag and adopts ``session_id``
+                from the stream ``system/init`` event.
+            resume_session_id: If set, passed as Claude Code ``--resume <id>``
+                to **continue an existing session** that prior calls already
+                established. Mutually exclusive with ``continuation_session_id``;
+                if both are passed, ``resume_session_id`` wins. Use this for
+                cycles 2+ of a multi-call workflow once the first call has
+                seeded the session.
 
         Returns:
             dict with: success, output, error, failure_type, duration_seconds, retries
@@ -223,10 +230,16 @@ class ClaudeCLI:
             }
 
         model = model_override or self.model
-        # Effective session id may be cleared mid-loop when Claude reports the id
-        # is already held by another CLI attachment — we retry once without
-        # ``--session-id`` and adopt ``session_id`` from the stream ``init`` event.
-        effective_session_id: str | None = continuation_session_id
+        # Two distinct continuation modes:
+        #   - ``--resume <id>`` joins an existing session (used for cycles 2+).
+        #   - ``--session-id <id>`` mints a new session with that id (used
+        #     only for the first call of a logical workflow).
+        # ``resume_session_id`` wins when both are passed. The "session id in
+        # use" fallback below clears ``effective_session_id`` (the --session-id
+        # arg) so we retry without it; the resume path is not subject to that
+        # collision because --resume requires the session to already exist.
+        effective_resume_id: str | None = resume_session_id or None
+        effective_session_id: str | None = None if effective_resume_id else continuation_session_id
 
         warn_interval = max(1, int(self.config.get("claude_long_run_warn_seconds", 300)))
         # Activity-based stall detection only — wall-clock kills were removed
@@ -277,7 +290,9 @@ class ClaudeCLI:
                     self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
                 cmd = [self.cli_command]
-                if effective_session_id:
+                if effective_resume_id:
+                    cmd.extend(["--resume", effective_resume_id])
+                elif effective_session_id:
                     cmd.extend(["--session-id", effective_session_id])
                 cmd.extend(
                     [
@@ -464,7 +479,13 @@ class ClaudeCLI:
                         self._extract_cli_metadata(stdout, model)
                     )
                     extracted_sid = _extract_session_id_from_stream_json(stdout)
-                    cont_sid = extracted_sid or effective_session_id or continuation_session_id
+                    cont_sid = (
+                        extracted_sid
+                        or effective_resume_id
+                        or effective_session_id
+                        or resume_session_id
+                        or continuation_session_id
+                    )
                     self.logger.debug(
                         "Claude CLI completed successfully "
                         f"(duration={duration:.1f}s, stdout_chars={len(stdout)}, retries={retries})"

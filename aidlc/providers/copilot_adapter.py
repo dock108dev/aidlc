@@ -185,7 +185,13 @@ class CopilotAdapter(ProviderAdapter):
         model_override: str | None = None,
         account_id: str | None = None,
         continuation_session_id: str | None = None,
+        resume_session_id: str | None = None,
     ) -> dict:
+        # Copilot CLI already uses ``--resume=<id>`` natively via
+        # ``continuation_session_id`` in ``_build_command``; the Claude-style
+        # split between mint and resume doesn't apply. Accept the param for
+        # ProviderAdapter ABI compatibility but ignore it.
+        del resume_session_id
         if self.dry_run:
             self.logger.info(f"[DRY RUN] Copilot prompt ({len(prompt)} chars) in {working_dir}")
             return self._dry_run_result(model_override or self.default_model, account_id)
