@@ -51,6 +51,7 @@ Budget almost exhausted. **Refine only** — review issues for completeness, tes
 
 **Do not** set top-level `planning_complete` here — that flag is **only** read on the VERIFY MODE cycle (see schema). In finalization, output refinements via `update_issue` (and rare `critical_gap` `create_issue` only); sufficiency is judged on the next verify or empty-cycle rules, not via this field. Do not emit `set_planning_complete` as an action type."""
 
+
 @dataclass(frozen=True)
 class Facet:
     """A single product-feedback lens used to scope a planning cycle.

@@ -576,9 +576,7 @@ class Planner:
         total = len(FACETS)
         position = total - len(self._facets_remaining)
         self._current_facet = next_facet
-        self.logger.info(
-            f"Entering facet cycle ({position}/{total}): {next_facet.name}"
-        )
+        self.logger.info(f"Entering facet cycle ({position}/{total}): {next_facet.name}")
         return True
 
     def _finalization_instructions(self) -> str:
