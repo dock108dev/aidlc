@@ -433,6 +433,9 @@ class TestPlanner:
         ]
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
+        # Pin legacy verify gating; facet sequencing is exercised in
+        # tests/test_planner_facets.py.
+        config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -478,6 +481,9 @@ class TestPlanner:
         }
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
+        # Pin legacy verify gating; facet sequencing is exercised in
+        # tests/test_planner_facets.py.
+        config["planning_facets_enabled"] = False
 
         # Pre-seed an existing issue so updates have something to target
         from aidlc.models import Issue
@@ -556,6 +562,9 @@ class TestPlanner:
         }
         config["max_planning_cycles"] = 100
         config["dry_run"] = False
+        # Pin legacy verify gating; facet sequencing is exercised in
+        # tests/test_planner_facets.py.
+        config["planning_facets_enabled"] = False
 
         from aidlc.models import Issue
 

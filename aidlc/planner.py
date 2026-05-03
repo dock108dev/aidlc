@@ -23,9 +23,12 @@ from .planner_helpers import (
     write_planning_index,
 )
 from .planner_text import (
+    FACETS,
     FINALIZATION_INSTRUCTIONS,
     PLANNING_INSTRUCTIONS,
     VERIFY_INSTRUCTIONS,
+    Facet,
+    planning_instructions_faceted,
 )
 from .reporting import generate_checkpoint_summary
 from .routing.helpers import routed_model_from_result
@@ -63,6 +66,17 @@ class Planner:
         self._last_cycle_notes = load_last_cycle_notes(self.run_dir)
         self.logger = logger
         self.project_root = Path(config["_project_root"])
+
+        # Faceted planning. After the general pass produces a quiet cycle,
+        # iterate one cycle per facet (each scoped to a single product lens
+        # via planning_instructions_faceted). Verify only fires once the
+        # facet sequence is exhausted. Disabled → loop reverts to the
+        # legacy single-quiet-cycle-then-verify behavior.
+        facets_enabled = bool(config.get("planning_facets_enabled", True))
+        self._facets_enabled = facets_enabled
+        self._facets_remaining: list[Facet] = list(FACETS) if facets_enabled else []
+        self._current_facet: Facet | None = None
+        self._general_pass_done: bool = False
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
@@ -168,10 +182,15 @@ class Planner:
 
             if new_this_cycle == 0:
                 # No new issues this cycle — no actions at all OR only
-                # update_issue actions.
-                #   1. Just finished a verify cycle (0 new) → coverage
+                # update_issue actions. Decide what runs next:
+                #   1. We just finished a verify cycle (0 new) → coverage
                 #      confirmed; planning complete.
-                #   2. Otherwise → next cycle is verify (coverage check).
+                #   2. Faceted planning is enabled and the general pass just
+                #      ran with 0 new → start the facet sequence.
+                #   3. We're in the facet sequence and the current facet
+                #      produced 0 new → advance to the next facet.
+                #   4. Facet sequence exhausted (or facets disabled) → next
+                #      cycle is verify.
                 if self._verify_mode:
                     reason = (
                         self._pending_completion_reason
@@ -181,24 +200,49 @@ class Planner:
                     self.logger.info(f"Planning complete: {reason}")
                     self._verify_mode = False
                     break
-                self._verify_mode = True
-                self.logger.info(
-                    "No new issues this cycle — switching to verify mode for the next "
-                    "cycle. The verify prompt walks through BRAINDUMP + discovery findings "
-                    "+ existing issues to confirm coverage or surface missing pieces."
-                )
+                if self._advance_facet_sequence():
+                    # _advance_facet_sequence() set _current_facet and logged
+                    # the transition; no verify yet.
+                    pass
+                else:
+                    self._verify_mode = True
+                    self.logger.info(
+                        "No new issues this cycle — switching to verify mode for the "
+                        "next cycle. The verify prompt walks through BRAINDUMP + "
+                        "discovery findings + existing issues to confirm coverage or "
+                        "surface missing pieces."
+                    )
             else:
-                # Cycle produced new issues. If we were in verify mode,
-                # verify surfaced real gaps — file them, exit verify mode,
-                # resume normal planning. The next 0-new cycle schedules
-                # verify again.
+                # Cycle produced new issues.
                 if self._verify_mode:
+                    # Verify surfaced real gaps — file them, exit verify mode,
+                    # resume normal planning. The next 0-new cycle schedules
+                    # verify again (or another facet pass if facets aren't
+                    # exhausted, but they are by the time we reach verify).
                     self.logger.info(
                         f"Verify cycle surfaced {new_this_cycle} new issue(s) — filed; "
                         "returning to normal planning. The next cycle with no new issues "
                         "will enter verify again."
                     )
                     self._verify_mode = False
+                elif self._current_facet is not None:
+                    # Productive facet cycle: advance to the next facet (or
+                    # exit the facet sequence). Facet cycles are one-shot;
+                    # if the model surfaces more facet-specific work next
+                    # session, the next quiet cycle will re-enter verify.
+                    finished = self._current_facet
+                    self._current_facet = None
+                    self.logger.info(
+                        f"Facet '{finished.name}' surfaced {new_this_cycle} action(s); "
+                        "advancing to next facet."
+                    )
+                    self._advance_facet_sequence()
+                elif not self._general_pass_done and self._facets_enabled:
+                    # General pass produced new issues (this is the common
+                    # cycle-1 path) — keep running general until it goes
+                    # quiet, then start the facet sequence. No-op here; the
+                    # quiet branch above handles the transition.
+                    pass
                 # Honor an explicit planning_complete from a productive verify
                 # cycle (model said "I filed N issues and now we're done").
                 if self._pending_completion_reason:
@@ -489,7 +533,53 @@ class Planner:
         return build_prompt(self, is_finalization)
 
     def _planning_instructions(self) -> str:
+        if self._current_facet is not None:
+            return planning_instructions_faceted(self._current_facet)
         return PLANNING_INSTRUCTIONS
+
+    def _advance_facet_sequence(self) -> bool:
+        """Advance the facet pipeline by one step on a 0-new-issues cycle.
+
+        Returns True when a facet was scheduled for the next cycle (so the
+        caller should NOT switch into verify mode); False when the facet
+        sequence is finished (or disabled) and verify is the right next
+        step.
+
+        State transitions on a quiet cycle:
+          - facets disabled → return False (verify next).
+          - general pass not yet marked done → mark it done; pop the first
+            facet into ``_current_facet``; return True.
+          - already in a facet → pop the next facet; return True.
+          - facet list exhausted → clear ``_current_facet``; return False.
+        """
+        if not self._facets_enabled:
+            return False
+
+        if not self._general_pass_done:
+            self._general_pass_done = True
+            self.logger.info(
+                "General planning pass produced no new issues — entering faceted "
+                f"sequence ({len(self._facets_remaining)} facets)."
+            )
+
+        if not self._facets_remaining:
+            if self._current_facet is not None:
+                self.logger.info(
+                    f"Facet '{self._current_facet.name}' produced no new issues; "
+                    "facet sequence complete."
+                )
+            self._current_facet = None
+            return False
+
+        next_facet = self._facets_remaining.pop(0)
+        # Total facet count is len(FACETS). Position = total - remaining (after pop).
+        total = len(FACETS)
+        position = total - len(self._facets_remaining)
+        self._current_facet = next_facet
+        self.logger.info(
+            f"Entering facet cycle ({position}/{total}): {next_facet.name}"
+        )
+        return True
 
     def _finalization_instructions(self) -> str:
         return FINALIZATION_INSTRUCTIONS

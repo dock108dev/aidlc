@@ -33,11 +33,81 @@ def test_build_discovery_prompt_includes_braindump_and_format():
     assert "Repo Summary" in prompt
     assert "Output Format" in prompt
     assert "```json" in prompt
-    # The "would the planner have to guess" bar must be in the prompt — that's
-    # what stops discovery from nominating topics it already knows the answer to.
-    assert "would the planner have to guess" in prompt.lower()
+    # The current nomination bar is "would the planner benefit from a focused
+    # note here" (not the older "would the planner have to guess" bar, which
+    # under-fired by letting the model demonstrate competence in findings.md
+    # while leaving the planner without options/tradeoffs material).
+    lower = prompt.lower()
+    assert "would the planner benefit from a focused note" in lower
     # Empty existing-research case still surfaces the section, not silence.
     assert "Existing Research" in prompt
+
+
+class TestDiscoveryPromptTopicalGuidance:
+    """Regression pins for the v4 prompt rewrite that combats empty-topics-list
+    output. Background: discovery was returning zero topics on real BRAINDUMPs
+    because the v3 prompt anchored the model on "answer in findings.md unless
+    the planner would have to guess." The model demonstrated competence by
+    answering current state in findings, while the planner needed
+    options/tradeoffs/behavior material the docs don't cover.
+
+    The v4 prompt:
+      1. Adds a five-category topical checklist the model must walk for each
+         BRAINDUMP-named system before deciding the topic list.
+      2. Reframes the bar away from "guess?" toward "would the planner benefit
+         from a focused note here?".
+      3. Drops the load-bearing "anything you confidently know goes here, not
+         into topics" sentence that pushed the model away from nominating.
+      4. States that findings/topics are not mutually exclusive — knowing
+         where a system lives doesn't preclude a topic on what to do about it.
+    """
+
+    def _prompt(self) -> str:
+        return build_discovery_prompt("# B\n- something", "- repo: small")
+
+    def test_version_bumped_past_v3(self):
+        from aidlc.discovery_prompt import DISCOVERY_INSTRUCTIONS_VERSION
+
+        assert DISCOVERY_INSTRUCTIONS_VERSION != "2026-04-25-v3"
+
+    def test_topical_checklist_present(self):
+        text = self._prompt().lower()
+        # The five categories the model must walk for each named system.
+        assert "current shape" in text or "current shape & contracts" in text
+        assert "options & patterns" in text or "options" in text and "patterns" in text
+        assert "cross-feature interactions" in text
+        assert "prior decisions" in text and "constraints" in text
+        # The "behavior under" category is the one that catches usability /
+        # edge-case material findings.md doesn't cover.
+        assert "behavior under" in text
+
+    def test_findings_and_topics_are_not_mutually_exclusive(self):
+        text = self._prompt().lower()
+        # The reframe: knowing where a system lives doesn't preclude a topic.
+        assert "not" in text and "mutually exclusive" in text
+
+    def test_docs_answer_what_is_not_what_options(self):
+        text = self._prompt().lower()
+        # The new framing: docs/findings tell you "what is" — they don't
+        # answer the planner's actual questions about options/tradeoffs.
+        assert '"what is"' in text
+        assert "what options" in text
+        assert "tradeoffs" in text
+
+    def test_old_strong_answer_anchor_removed(self):
+        """The v3 line "Anything you confidently know from the scan goes here,
+        not into topics." was the strongest anchor pushing zero-topic
+        outputs. Make sure a future refactor doesn't restore it."""
+        text = self._prompt()
+        assert "Anything you confidently know from the scan goes here, not into topics" not in text
+
+    def test_default_to_nominating_language_present(self):
+        text = self._prompt().lower()
+        # The new instruction explicitly biases toward nominating, with a
+        # named-out reason for the inversion (the old bar under-fires on
+        # product-feedback BRAINDUMPs).
+        assert "default to nominating" in text or "be liberal about nominating" in text
+        assert "under-fires" in text or "under fires" in text
 
 
 def test_build_discovery_prompt_lists_existing_research_files():

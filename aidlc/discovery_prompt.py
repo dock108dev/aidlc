@@ -16,7 +16,7 @@ import json
 import re
 from typing import Iterable
 
-DISCOVERY_INSTRUCTIONS_VERSION = "2026-04-25-v3"
+DISCOVERY_INSTRUCTIONS_VERSION = "2026-05-03-v4"
 
 DISCOVERY_PROMPT_HEADER = f"""# Discovery (pre-planning, {DISCOVERY_INSTRUCTIONS_VERSION})
 
@@ -27,32 +27,74 @@ two artifacts that the planning phase will consume:
 1. **Findings** — current state of every system BRAINDUMP touches. For each
    relevant system: what files implement it, what's wired, what's stubbed,
    what's missing. Cite file paths. This is factual reporting, not planning.
-   **Anything you confidently know from the scan goes here, not into topics.**
-2. **Research topics** — questions the planner will have to *guess at* if you
-   don't answer them. The bar for nominating a topic is one question:
-   *"would the planner have to guess if I didn't research this?"* If yes,
-   it's a topic. If you (or BRAINDUMP, or an existing `.aidlc/research/*.md`)
-   already have the answer, record it in findings.md and do NOT create a
-   topic.
+2. **Research topics** — focused investigation notes the planner will rely on
+   when designing changes. Findings and topics are **not** mutually exclusive:
+   confidently knowing where a system lives doesn't preclude a topic on what
+   options exist for changing it, what behavior it has under the BRAINDUMP's
+   user-facing concerns, or what tradeoffs constrain the redesign.
 
-When you do nominate topics, decompose them properly — better many small
-topics than one vague one (planner consumes them individually):
-   - One topic per system/contract/integration that needs investigation.
-   - Split a fat topic into subtopics when they touch different files,
-     subsystems, or concerns.
-   - Example: "tutorial-graph-shape", "tutorial-step-ui-mapping",
-     "tutorial-skip-input-routing" — not one vague "tutorial-rewrite".
+**Repo docs and findings answer "what is" — not "what to do about it."**
+Findings, BRAINDUMP, ARCHITECTURE/DESIGN/CLAUDE, and any existing
+`.aidlc/research/*.md` files describe **current state and prior decisions**.
+They rarely answer:
+- *What options* exist for the kind of change BRAINDUMP requests.
+- *What tradeoffs* apply between those options.
+- *How the system behaves under the user-facing concerns* BRAINDUMP raises
+  (friction points, edge cases, defaults, surprising interactions).
+- *What cross-feature interactions* the proposed change implicates.
+- *What prior design decisions* constrain the redesign space.
+
+Even when findings.md describes a system in detail, the planner usually still
+benefits from a research note covering shape / options / decisions for that
+system. Default to nominating; only skip a category when you have a strong
+reason it doesn't apply to this BRAINDUMP.
+
+## Topical checklist — work through this before deciding the topic list
+
+For each named system / surface / feature in the BRAINDUMP, walk these five
+categories. Treat each one as a candidate research topic; nominate when the
+planner would benefit from a focused note, not only when you can't answer
+yourself.
+
+1. **Current shape & contracts.** How is this system wired today? What
+   signals / APIs / events / state does it expose? What invariants does it
+   maintain?
+2. **Options & patterns.** What alternative approaches exist for the kind of
+   change BRAINDUMP wants? What patterns does similar code in this repo (or
+   common practice) use? What did the team try and reject before, if visible?
+3. **Behavior under BRAINDUMP-named concerns.** How does the system behave
+   under the specific friction / failure / confusion points BRAINDUMP calls
+   out? Edge cases, defaults, error paths, first-run behavior — is the
+   current behavior actually what the BRAINDUMP describes?
+4. **Cross-feature interactions.** What other systems touch this one? What
+   breaks (or silently no-ops) if it changes? Which contracts other code
+   depends on cannot move without coordinated work?
+5. **Prior decisions & constraints.** What design choices in this area are
+   load-bearing — comments / docs / commits / ADRs that explain why something
+   is the way it is? What's the cost of overriding them?
+
+When you nominate, decompose properly — better many small topics than one
+vague one (planner consumes them individually):
+- One topic per system/contract/integration/concern that needs investigation.
+- Split a fat topic into subtopics when they touch different files,
+  subsystems, or concerns.
+- Example: "tutorial-graph-shape", "tutorial-step-ui-mapping",
+  "tutorial-skip-input-routing" — not one vague "tutorial-rewrite".
 
 The number of topics you return **is** the number we research — there is no
-hidden cap. So be exhaustive about *real unknowns*, and equally disciplined
-about *not* nominating things you already know. Either answer is fine, but
-each topic must clear the "would planning have to guess" bar.
+hidden cap. Be liberal about nominating real investigation needs; the bar is
+*"would the planner benefit from a focused note here"*, not *"would the
+planner have to guess if I didn't research this."* The latter bar
+under-fires on product-feedback BRAINDUMPs because the model can usually
+"answer" current state from the scan, while the planner is actually short on
+options / tradeoffs / behavior — which docs don't cover.
 
 Existing research files (already answered — do NOT re-nominate; cite by path
 in findings.md if relevant) are listed under `## Existing Research` below.
 
-Discovery is single-shot. Decompose real unknowns thoroughly; record
-everything else in findings.md.
+Discovery is single-shot. Walk the checklist for every BRAINDUMP-named
+system; record current-state facts in findings.md and the per-category
+investigation needs as topics.
 """
 
 DISCOVERY_OUTPUT_FORMAT = """## Output Format (strict)

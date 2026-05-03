@@ -3,8 +3,10 @@
 Dense wording for token efficiency; rules unchanged. Version bumps when content changes (cache stability).
 """
 
+from dataclasses import dataclass
+
 # Bump when instructions change materially (operators can correlate with cache behavior).
-PLANNING_INSTRUCTIONS_VERSION = "2026-04-30-v9"
+PLANNING_INSTRUCTIONS_VERSION = "2026-05-03-v10"
 
 PLANNING_INSTRUCTIONS = f"""## Instructions — Planning ({PLANNING_INSTRUCTIONS_VERSION})
 
@@ -49,9 +51,136 @@ Budget almost exhausted. **Refine only** — review issues for completeness, tes
 
 **Do not** set top-level `planning_complete` here — that flag is **only** read on the VERIFY MODE cycle (see schema). In finalization, output refinements via `update_issue` (and rare `critical_gap` `create_issue` only); sufficiency is judged on the next verify or empty-cycle rules, not via this field. Do not emit `set_planning_complete` as an action type."""
 
+@dataclass(frozen=True)
+class Facet:
+    """A single product-feedback lens used to scope a planning cycle.
+
+    Each facet runs as its own cycle after the general pass. The facet's
+    checklist tells the model what to look for under this lens; the
+    exclusion line tells it what belongs to other facets and should be
+    left alone (each of those gets its own cycle).
+    """
+
+    name: str
+    slug: str
+    checklist: tuple[str, ...]
+    exclusion: str
+
+
+# Fixed product-feedback taxonomy. BRAINDUMPs in this codebase are black-box
+# user feedback about how the product works — these lenses match that, not
+# engineering-quality lenses (security/perf/ops/a11y) that don't fit.
+# Order matters: functionality first (what's broken / missing for intent to
+# ship), then usability (friction), then design (coherence), then explicit
+# new feature asks (often build on top of the above).
+FACETS: tuple[Facet, ...] = (
+    Facet(
+        name="Functionality",
+        slug="functionality",
+        checklist=(
+            "Behavior the BRAINDUMP calls out as broken, wrong, or unreliable.",
+            "Missing pieces required for the named intent to be deliverable end-to-end "
+            "(silent gaps the owner expects but didn't enumerate).",
+            "Edge cases / failure modes implied by the intent (empty inputs, errors, "
+            "partial state) that no existing issue covers.",
+            "Cross-feature interactions the BRAINDUMP implies should work together.",
+            "Functional acceptance criteria missing from existing issues.",
+        ),
+        exclusion=(
+            "Friction, confusion, layout, look-and-feel, and explicit new-feature asks "
+            "belong to other facets — leave them alone here."
+        ),
+    ),
+    Facet(
+        name="Usability & flow",
+        slug="usability",
+        checklist=(
+            "Friction points, dead-ends, and surprising interactions when a user tries "
+            "to do the thing the BRAINDUMP describes.",
+            "Confusing labels, error messages, defaults, or modes.",
+            "First-run / discoverability — can someone new figure it out without a guide; "
+            "are sensible defaults in place.",
+            "Flow gaps — steps the user has to do that should be automatic, or vice versa.",
+            "Onboarding and recovery paths (undo, back, retry).",
+        ),
+        exclusion=(
+            "Pure functional bugs, visual / layout coherence, and net-new feature asks "
+            "belong to other facets — leave them alone here."
+        ),
+    ),
+    Facet(
+        name="Design & visual coherence",
+        slug="design",
+        checklist=(
+            "Look, layout, and visual consistency across surfaces / screens / modes.",
+            "Polish and micro-interactions called out in the BRAINDUMP.",
+            "Visual hierarchy: is the important thing prominent; is noise quieted.",
+            "Theming / spacing / typography inconsistencies that fragment the experience.",
+            "Cross-surface design language drift (the same control behaves or looks "
+            "different in different places).",
+        ),
+        exclusion=(
+            "Functional correctness, usability flow, and explicit new feature asks "
+            "belong to other facets — leave them alone here."
+        ),
+    ),
+    Facet(
+        name="New features (explicit asks)",
+        slug="new_features",
+        checklist=(
+            "Net-new capabilities the BRAINDUMP names directly ('add X', 'I want Y').",
+            "Capabilities required to make a stated new feature actually usable "
+            "(prereq toggles, settings, surfaces).",
+            "Acceptance criteria for new-feature issues — does shipping the AC actually "
+            "deliver what the BRAINDUMP asked for.",
+            "Dependencies between new-feature work and existing functionality.",
+            "Cleanup / removal of obsolete behavior that the new feature replaces.",
+        ),
+        exclusion=(
+            "Bugs, friction, and visual coherence on existing features belong to other "
+            "facets — leave them alone here, even if they show up next to a new-feature "
+            "ask."
+        ),
+    ),
+)
+
+
+def _format_facet_checklist(facet: Facet) -> str:
+    bullets = "\n".join(f"- {item}" for item in facet.checklist)
+    return f"{bullets}\n- {facet.exclusion}"
+
+
+def planning_instructions_faceted(facet: Facet) -> str:
+    """Wrap the standard PLANNING_INSTRUCTIONS with a facet-scoped header.
+
+    The header tells the model:
+      1. This cycle is scoped to a single product lens.
+      2. What to look for under that lens (checklist).
+      3. To leave the other facets alone — they each get their own cycle.
+      4. Strongly prefer ``update_issue`` to enrich existing issues with this
+         facet's concerns, rather than creating parallel issues.
+    """
+    checklist = _format_facet_checklist(facet)
+    header = f"""## Faceted Planning Cycle — Scope: {facet.name}
+
+This cycle is **scoped to a single product-feedback lens: {facet.name}**. The general planning pass already ran. Each remaining facet (functionality, usability, design, new features) gets its own dedicated cycle — leave the other lenses alone here.
+
+**Look for under this lens:**
+{checklist}
+
+**Strongly prefer `update_issue` over `create_issue` on this cycle.** Most {facet.name.lower()} concerns will fit on issues already filed by the general pass — enrich those issues with facet-specific acceptance criteria, file references, edge cases, and notes. Only `create_issue` for genuine standalone gaps under this lens that don't belong on any existing issue.
+
+**Do not** re-file or duplicate concerns the general pass already captured. **Do not** stretch into other facets to pad output. A productive facet cycle can be 0–6 actions; the cap is 15 but the goal is coverage, not volume.
+
+---
+
+"""
+    return header + PLANNING_INSTRUCTIONS
+
+
 VERIFY_INSTRUCTIONS = """## VERIFY MODE — Final Coverage Check
 
-The previous cycle proposed no new issues. Before planning is declared complete, run this explicit coverage check.
+The general pass and all faceted cycles (functionality, usability, design, new features) have already run and the most recent cycle proposed no new issues. Before planning is declared complete, run this explicit coverage check.
 
 **Walk this checklist with your file tools:**
 
@@ -65,6 +194,17 @@ The previous cycle proposed no new issues. Before planning is declared complete,
 - *Vision / big-build / redesign mode.* The bar is: have you scaffolded the full set of work the BRAINDUMP is describing — including the parts findings says are "fine" but BRAINDUMP wants reshaped, and including prereq / infra / cleanup work that surfaces from the redesign? If the existing issues read like differential bug fixes against findings while BRAINDUMP asks for composition / coherence / experience, you are under-covered. File the missing scaffolding issues. If existing issues already cover the work but are skeletal, prefer `update_issue` to deepen them rather than declaring complete prematurely.
 - *Scoped-fix mode.* The bar is: is each named bug / deliverable in the BRAINDUMP filed as an issue? Don't pad scope.
 - In both modes: when one issue genuinely covers multiple intent items, that's fine — but `completion_reason` must name the mapping with issue IDs, not just claim "everything is covered".
+
+**Facet coverage check (in addition to the mode-aware check):**
+
+The faceted cycles already had a chance to enrich existing issues and file gaps under each lens. Now sanity-check the result across all four facets:
+
+- *Functionality.* Are broken / wrong / missing behaviors from the BRAINDUMP all captured?
+- *Usability & flow.* Are the friction points, confusing flows, and first-run gaps either filed or merged into a relevant issue's acceptance criteria?
+- *Design & visual coherence.* If BRAINDUMP raises any visual / layout / consistency concern, is it on an issue (its own or rolled in)?
+- *New features.* Is every explicit net-new ask filed as its own issue with concrete acceptance criteria?
+
+If a facet was not applicable to this BRAINDUMP (e.g., no design feedback at all), say so in `completion_reason` rather than silently skipping.
 
 **For each BRAINDUMP intent item:**
 - Covered by an existing issue (any status) → OK.

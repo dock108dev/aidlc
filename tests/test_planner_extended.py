@@ -113,6 +113,9 @@ class TestPlanningCycleWithRealOutput:
         state.plan_budget_seconds = 3600
         state.issues_created = 1
         config["max_planning_cycles"] = 20
+        # Pin to legacy single-quiet-cycle-then-verify behavior; faceted
+        # planning is covered by tests/test_planner_facets.py.
+        config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
@@ -187,6 +190,9 @@ class TestPlanningCycleWithRealOutput:
         state.plan_budget_seconds = 3600
         state.issues_created = 1
         config["max_planning_cycles"] = 20
+        # Pin to legacy single-quiet-cycle-then-verify behavior; faceted
+        # planning is covered by tests/test_planner_facets.py.
+        config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
         (run_dir / "claude_outputs").mkdir()
