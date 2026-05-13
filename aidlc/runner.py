@@ -35,6 +35,7 @@ from .routing import ProviderRouter
 from .scanner import ProjectScanner
 from .state_manager import (
     RunLock,
+    archive_prior_state,
     find_latest_run,
     generate_run_id,
     load_state,
@@ -297,6 +298,21 @@ def run_full(
     except RuntimeError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    # Fresh-run auto-archive: a bare ``aidlc run`` (no flag pointing at prior
+    # state) moves the previous .aidlc/ artifacts to _archive/<ts>/ so the new
+    # run starts clean. Skipped when any flag needs the old state to be in
+    # place: --resume, --implement-only, --retry-failed, --reset-failed-attempts.
+    should_archive = (
+        not resume
+        and not implement_only
+        and not config.get("_retry_failed_flag")
+        and not config.get("_reset_failed_attempts_flag")
+    )
+    if should_archive:
+        archived = archive_prior_state(aidlc_dir)
+        if archived is not None:
+            print(f"Archived prior .aidlc/ state to {archived}", file=sys.stderr)
 
     # Init
     state, run_dir = init_run(config, resume, dry_run)

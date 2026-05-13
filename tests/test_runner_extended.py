@@ -147,6 +147,101 @@ class TestRunFullEdgeCases:
         run_full(config=config, dry_run=True, verbose=True, plan_only=True)
 
 
+class TestRunFullAutoArchive:
+    """Fresh `aidlc run` archives prior .aidlc/ state; flags that depend on
+    prior state (resume/implement_only/retry_failed/reset_failed_attempts)
+    skip the archive so they can still find what they need."""
+
+    def _seed_prior_state(self, aidlc_dir: Path) -> None:
+        (aidlc_dir / "issues" / "ISSUE-OLD.md").write_text("# stale issue")
+        old_run = aidlc_dir / "runs" / "stale_run"
+        old_run.mkdir(parents=True, exist_ok=True)
+        (old_run / "state.json").write_text("{}")
+        (aidlc_dir / "reports").mkdir(exist_ok=True)
+        (aidlc_dir / "reports" / "old.md").write_text("old")
+
+    @patch("aidlc.runner.RunLock")
+    def test_fresh_run_archives_prior_state(self, MockLock, config, tmp_path):
+        (tmp_path / "README.md").write_text("# Test")
+        MockLock.return_value = MagicMock()
+        aidlc_dir = Path(config["_aidlc_dir"])
+        self._seed_prior_state(aidlc_dir)
+
+        run_full(config=config, dry_run=True, verbose=False)
+
+        archive_root = aidlc_dir / "_archive"
+        assert archive_root.exists(), "fresh run should create _archive/"
+        stamps = list(archive_root.iterdir())
+        assert len(stamps) == 1
+        archived = stamps[0]
+        assert (archived / "issues" / "ISSUE-OLD.md").exists()
+        assert (archived / "runs" / "stale_run" / "state.json").exists()
+        assert (archived / "reports" / "old.md").exists()
+        # The stale issue must not bleed into the new run's issues dir.
+        assert not (aidlc_dir / "issues" / "ISSUE-OLD.md").exists()
+
+    @patch("aidlc.runner.RunLock")
+    def test_resume_skips_archive(self, MockLock, config, tmp_path):
+        (tmp_path / "README.md").write_text("# Test")
+        MockLock.return_value = MagicMock()
+        aidlc_dir = Path(config["_aidlc_dir"])
+        (aidlc_dir / "issues" / "ISSUE-OLD.md").write_text("# stale issue")
+        # Seed a real paused run so init_run(resume=True) can actually load it.
+        runs_dir = aidlc_dir / "runs"
+        run_dir = runs_dir / "paused_run"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "claude_outputs").mkdir(exist_ok=True)
+        prior_state = RunState(run_id="paused_run", config_name="default")
+        prior_state.status = RunStatus.PAUSED
+        prior_state.phase = RunPhase.IMPLEMENTING
+        save_state(prior_state, run_dir)
+
+        run_full(config=config, resume=True, dry_run=True, verbose=False)
+
+        # Resume needs prior state to remain in place.
+        assert (aidlc_dir / "issues" / "ISSUE-OLD.md").exists()
+        assert (runs_dir / "paused_run" / "state.json").exists()
+        assert not (aidlc_dir / "_archive").exists()
+
+    @patch("aidlc.runner.RunLock")
+    def test_implement_only_skips_archive(self, MockLock, config, tmp_path):
+        (tmp_path / "README.md").write_text("# Test")
+        MockLock.return_value = MagicMock()
+        aidlc_dir = Path(config["_aidlc_dir"])
+        self._seed_prior_state(aidlc_dir)
+
+        run_full(config=config, dry_run=True, implement_only=True, verbose=False)
+
+        assert (aidlc_dir / "issues" / "ISSUE-OLD.md").exists()
+        assert not (aidlc_dir / "_archive").exists()
+
+    @patch("aidlc.runner.RunLock")
+    def test_retry_failed_flag_skips_archive(self, MockLock, config, tmp_path):
+        (tmp_path / "README.md").write_text("# Test")
+        MockLock.return_value = MagicMock()
+        aidlc_dir = Path(config["_aidlc_dir"])
+        self._seed_prior_state(aidlc_dir)
+        config["_retry_failed_flag"] = True
+
+        run_full(config=config, dry_run=True, verbose=False)
+
+        assert (aidlc_dir / "issues" / "ISSUE-OLD.md").exists()
+        assert not (aidlc_dir / "_archive").exists()
+
+    @patch("aidlc.runner.RunLock")
+    def test_reset_failed_attempts_flag_skips_archive(self, MockLock, config, tmp_path):
+        (tmp_path / "README.md").write_text("# Test")
+        MockLock.return_value = MagicMock()
+        aidlc_dir = Path(config["_aidlc_dir"])
+        self._seed_prior_state(aidlc_dir)
+        config["_reset_failed_attempts_flag"] = True
+
+        run_full(config=config, dry_run=True, verbose=False)
+
+        assert (aidlc_dir / "issues" / "ISSUE-OLD.md").exists()
+        assert not (aidlc_dir / "_archive").exists()
+
+
 class TestResumeSkipsPlanning:
     @patch("aidlc.doc_gap_detector.detect_doc_gaps")
     @patch("aidlc.runner.Implementer")

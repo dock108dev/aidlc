@@ -84,6 +84,78 @@ def generate_run_id(label: str = "run") -> str:
     return f"{base}_{ts}"
 
 
+# Top-level entries in .aidlc/ that belong to "prior run state" — moved into
+# .aidlc/_archive/<timestamp>/ on a fresh ``aidlc run`` so each new run starts
+# clean while remaining recoverable. config.json (durable user config),
+# run.lock (used by RunLock for concurrent-run detection), and _archive/
+# itself (the archive root) are deliberately preserved in place.
+_ARCHIVABLE_ENTRIES = (
+    "runs",
+    "reports",
+    "issues",
+    "session",
+    "discovery",
+    "research",
+    "audit_result.json",
+    "planning_index.md",
+    "CONFLICTS.md",
+)
+_ARCHIVE_DIR_NAME = "_archive"
+
+
+def archive_prior_state(aidlc_dir: Path, logger: logging.Logger | None = None) -> Path | None:
+    """Move prior-run artifacts under .aidlc/ into .aidlc/_archive/<timestamp>/.
+
+    Called at the start of a fresh ``aidlc run`` so the next run begins with
+    empty issues/runs/reports/etc. but the user can still recover anything
+    they need from the archive folder. config.json and run.lock are left in
+    place (durable config + active-run lock detection).
+
+    Returns the archive subdir path if anything was moved, else ``None``.
+    """
+    aidlc_path = Path(aidlc_dir)
+    if not aidlc_path.exists():
+        return None
+
+    to_move = [p for name in _ARCHIVABLE_ENTRIES if (p := aidlc_path / name).exists()]
+    if not to_move:
+        return None
+
+    archive_root = aidlc_path / _ARCHIVE_DIR_NAME
+    archive_root.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    dest = archive_root / stamp
+    # If a same-second archive already exists (rapid successive runs in tests),
+    # disambiguate with a numeric suffix rather than clobbering.
+    suffix = 1
+    while dest.exists():
+        dest = archive_root / f"{stamp}_{suffix}"
+        suffix += 1
+    dest.mkdir(parents=True)
+
+    moved: list[str] = []
+    for src in to_move:
+        try:
+            os.replace(src, dest / src.name)
+            moved.append(src.name)
+        except OSError as exc:
+            if logger is not None:
+                logger.warning(f"archive_prior_state: could not move {src.name}: {exc}")
+
+    if not moved:
+        # Nothing actually moved (all entries failed): clean up the empty dir
+        # so we don't leave a misleading archive timestamp behind.
+        try:
+            dest.rmdir()
+        except OSError:
+            pass
+        return None
+
+    if logger is not None:
+        logger.info(f"Archived prior state to {dest} ({len(moved)} item(s): {', '.join(moved)})")
+    return dest
+
+
 def save_state(state: RunState, run_dir: Path) -> Path:
     state.last_updated = datetime.now(timezone.utc).isoformat()
     state_path = run_dir / "state.json"

@@ -8,6 +8,7 @@ import pytest
 from aidlc.models import RunPhase, RunState, RunStatus
 from aidlc.state_manager import (
     RunLock,
+    archive_prior_state,
     checkpoint,
     find_latest_run,
     generate_run_id,
@@ -298,3 +299,99 @@ class TestFindLatestRunFilter:
         d.mkdir()
         (d / "state.json").write_text("{}")
         assert find_latest_run(tmp_path, config_name="nomatch") is None
+
+
+class TestArchivePriorState:
+    def _seed(self, aidlc_dir):
+        """Populate a representative .aidlc/ tree, returning the seeded paths."""
+        aidlc_dir.mkdir(parents=True, exist_ok=True)
+        (aidlc_dir / "runs").mkdir()
+        (aidlc_dir / "runs" / "old_run").mkdir()
+        (aidlc_dir / "runs" / "old_run" / "state.json").write_text("{}")
+        (aidlc_dir / "reports").mkdir()
+        (aidlc_dir / "reports" / "r.md").write_text("report")
+        (aidlc_dir / "issues").mkdir()
+        (aidlc_dir / "issues" / "ISSUE-001.md").write_text("# old")
+        (aidlc_dir / "discovery").mkdir()
+        (aidlc_dir / "research").mkdir()
+        (aidlc_dir / "session").mkdir()
+        (aidlc_dir / "audit_result.json").write_text("{}")
+        (aidlc_dir / "planning_index.md").write_text("idx")
+        (aidlc_dir / "CONFLICTS.md").write_text("conflicts")
+        (aidlc_dir / "config.json").write_text('{"keep": true}')
+        (aidlc_dir / "run.lock").write_text("12345")
+
+    def test_returns_none_when_aidlc_dir_missing(self, tmp_path):
+        assert archive_prior_state(tmp_path / "nope") is None
+
+    def test_returns_none_when_no_archivable_entries(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        # Only config + lock present — neither is archivable.
+        (aidlc_dir / "config.json").write_text("{}")
+        (aidlc_dir / "run.lock").write_text("1")
+        assert archive_prior_state(aidlc_dir) is None
+        # No empty archive dir left behind.
+        assert not (aidlc_dir / "_archive").exists()
+
+    def test_moves_state_into_timestamped_archive(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        self._seed(aidlc_dir)
+
+        dest = archive_prior_state(aidlc_dir)
+
+        assert dest is not None
+        assert dest.parent == aidlc_dir / "_archive"
+        # Each archivable entry now lives under the archive dir, not the .aidlc root.
+        for name in (
+            "runs",
+            "reports",
+            "issues",
+            "discovery",
+            "research",
+            "session",
+            "audit_result.json",
+            "planning_index.md",
+            "CONFLICTS.md",
+        ):
+            assert (dest / name).exists(), f"missing {name} in archive"
+            assert not (aidlc_dir / name).exists(), f"{name} still in place"
+        # Nested content preserved.
+        assert (dest / "runs" / "old_run" / "state.json").read_text() == "{}"
+        assert (dest / "issues" / "ISSUE-001.md").read_text() == "# old"
+
+    def test_preserves_config_and_lock(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        self._seed(aidlc_dir)
+
+        archive_prior_state(aidlc_dir)
+
+        # config.json and run.lock are durable — never archived.
+        assert (aidlc_dir / "config.json").read_text() == '{"keep": true}'
+        assert (aidlc_dir / "run.lock").read_text() == "12345"
+
+    def test_does_not_archive_existing_archive_dir(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        (aidlc_dir / "runs").mkdir()
+        # A pre-existing archive folder must not be nested inside the new archive.
+        old_archive = aidlc_dir / "_archive" / "earlier"
+        old_archive.mkdir(parents=True)
+        (old_archive / "marker").write_text("preserved")
+
+        dest = archive_prior_state(aidlc_dir)
+        assert dest is not None
+        assert (aidlc_dir / "_archive" / "earlier" / "marker").read_text() == "preserved"
+        assert not (dest / "_archive").exists()
+
+    def test_disambiguates_same_second_archives(self, tmp_path):
+        aidlc_dir = tmp_path / ".aidlc"
+        aidlc_dir.mkdir()
+        (aidlc_dir / "runs").mkdir()
+        first = archive_prior_state(aidlc_dir)
+        assert first is not None
+        # Re-seed and archive again within the same wall-clock second.
+        (aidlc_dir / "runs").mkdir()
+        second = archive_prior_state(aidlc_dir)
+        assert second is not None
+        assert first != second

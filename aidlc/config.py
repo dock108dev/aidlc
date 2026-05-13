@@ -556,7 +556,9 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
     # Add .gitignore entries
     project_root = aidlc_dir.parent
     gitignore = project_root / ".gitignore"
-    ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
+    ignore_entry = (
+        "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n.aidlc/_archive/\n"
+    )
     if gitignore.exists():
         content = gitignore.read_text()
         if ".aidlc/" not in content:

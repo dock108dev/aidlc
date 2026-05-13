@@ -86,7 +86,9 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
                 print(f"    {_green('+')} {line}")
 
         gitignore = project_root / ".gitignore"
-        ignore_entry = "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n"
+        ignore_entry = (
+            "\n# AIDLC working directory\n.aidlc/runs/\n.aidlc/reports/\n.aidlc/_archive/\n"
+        )
         if gitignore.exists():
             content = gitignore.read_text()
             if ".aidlc/" not in content:
@@ -277,6 +279,9 @@ def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> li
         aidlc_dir / "planning_index.md",
         aidlc_dir / "CONFLICTS.md",
         aidlc_dir / "run.lock",
+        # Fresh-run auto-archive directory. Reset should fully clear it too —
+        # otherwise the user would have to manually rm .aidlc/_archive/.
+        aidlc_dir / "_archive",
     ]
     if not keep_issues:
         targets.append(aidlc_dir / "issues")
