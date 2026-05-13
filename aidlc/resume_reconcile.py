@@ -46,6 +46,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from ._git_repos import discover_repos
 from .models import Issue, IssueStatus, RunState
 
 _RECONCILE_NOTE = (
@@ -82,6 +83,23 @@ def _git_repo_root(project_root: Path) -> Path | None:
         return None
 
 
+def _git_repo_roots(project_root: Path) -> list[Path]:
+    """Resolve the actual git toplevel for each discovered repo.
+
+    ``discover_repos`` works off the presence of a ``.git`` entry, so
+    the directory it returns is already a repo root; we still run
+    ``git rev-parse --show-toplevel`` so the result is normalized the
+    same way as the single-repo path and any non-repo fallback is
+    filtered out.
+    """
+    roots: list[Path] = []
+    for repo in discover_repos(project_root):
+        root = _git_repo_root(repo)
+        if root is not None:
+            roots.append(root)
+    return roots
+
+
 def _looks_like_test_path(path: str) -> bool:
     """True when ``path`` is a test file or lives under a test directory."""
     p = (path or "").lower().replace("\\", "/").strip("/")
@@ -101,33 +119,41 @@ def _looks_like_test_path(path: str) -> bool:
 
 
 def _issue_id_in_non_test_source(project_root: Path, issue_id: str) -> bool:
-    """True when ``git grep`` finds the issue id in at least one non-test file."""
-    root = _git_repo_root(project_root)
-    if root is None:
+    """True when ``git grep`` finds the issue id in at least one non-test file.
+
+    Searches every git repo discovered under ``project_root`` so nested
+    layouts (parent dir with multiple sub-repos) work the same as the
+    classic single-repo layout.
+    """
+    roots = _git_repo_roots(project_root)
+    if not roots:
         return False
-    try:
-        proc = subprocess.run(
-            [
-                "git",
-                "grep",
-                "-l",
-                "-F",
-                issue_id,
-                "--",
-                ":!.aidlc",
-                ":!.git",
-            ],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    if proc.returncode != 0:
-        return False
-    paths = [p for p in proc.stdout.splitlines() if p.strip()]
-    return any(not _looks_like_test_path(p) for p in paths)
+    for root in roots:
+        try:
+            proc = subprocess.run(
+                [
+                    "git",
+                    "grep",
+                    "-l",
+                    "-F",
+                    issue_id,
+                    "--",
+                    ":!.aidlc",
+                    ":!.git",
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode != 0:
+            continue
+        paths = [p for p in proc.stdout.splitlines() if p.strip()]
+        if any(not _looks_like_test_path(p) for p in paths):
+            return True
+    return False
 
 
 def reconcile_issues_on_resume(
