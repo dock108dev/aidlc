@@ -33,6 +33,14 @@ def _git_init(repo: Path) -> None:
         check=True,
         capture_output=True,
     )
+    # Disable commit signing in case the host's global git config requires
+    # a signing key — tests don't sign and can't reach a signer.
+    subprocess.run(
+        ["git", "config", "commit.gpgsign", "false"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
 
 
 @pytest.fixture
@@ -283,3 +291,150 @@ def test_git_push_current_branch_warns_without_upstream(git_repo: Path, monkeypa
 
     monkeypatch.setattr("aidlc.implementer_workspace.subprocess.run", fake_run)
     assert git_push_current_branch(git_repo, logger, state) is False
+
+
+# --- Nested sub-repo layouts (e.g. sports/sda/.git + sports/scroll-down-web/.git) ---
+
+
+@pytest.fixture
+def nested_repos(tmp_path: Path) -> Path:
+    """Parent dir with two real git sub-repos one level down. The parent itself
+    has no ``.git`` — exactly the ``sports/`` layout this support was added for.
+    """
+    for name in ("sda", "scroll-down-web"):
+        sub = tmp_path / name
+        sub.mkdir()
+        _git_init(sub)
+        (sub / "README.md").write_text(f"init {name}\n")
+        subprocess.run(["git", "add", "-A"], cwd=sub, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=sub,
+            check=True,
+            capture_output=True,
+        )
+    return tmp_path
+
+
+def test_get_changed_files_nested_repos_prefixes_paths(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    logger = MagicMock()
+    # Touch a file in one repo, add an untracked file in the other.
+    (nested_repos / "sda" / "README.md").write_text("changed\n")
+    (nested_repos / "scroll-down-web" / "new.py").write_text("u\n")
+
+    files = get_changed_files(nested_repos, state, logger)
+    # Sub-repo dir prefix lets the implementer warning point at the right repo.
+    assert "sda/README.md" in files
+    assert "scroll-down-web/new.py" in files
+
+
+def test_get_changed_files_nested_repos_detection_status(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    (nested_repos / "sda" / "x.py").write_text("u")
+    files, ok = get_changed_files(nested_repos, state, MagicMock(), with_status=True)
+    assert ok is True
+    assert any(f.startswith("sda/") for f in files)
+
+
+def test_git_has_changes_nested_repos_any_dirty(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    assert git_has_changes(nested_repos, state, MagicMock()) is False
+    (nested_repos / "scroll-down-web" / "n.txt").write_text("u")
+    assert git_has_changes(nested_repos, state, MagicMock()) is True
+
+
+def test_git_current_branch_nested_repos_unanimous(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    # Both sub-repos were created on `main`.
+    assert git_current_branch(nested_repos, state, MagicMock()) == "main"
+
+
+def test_git_current_branch_nested_repos_diverged(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    # Rename one sub-repo's branch so the two no longer agree.
+    subprocess.run(
+        ["git", "branch", "-m", "main", "feat"],
+        cwd=nested_repos / "sda",
+        check=True,
+        capture_output=True,
+    )
+    assert git_current_branch(nested_repos, state, MagicMock()) is None
+
+
+def test_git_commit_cycle_snapshot_nested_repos_commits_each(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    logger = MagicMock()
+    (nested_repos / "sda" / "a.txt").write_text("1")
+    (nested_repos / "scroll-down-web" / "b.txt").write_text("2")
+
+    assert git_commit_cycle_snapshot(nested_repos, 7, logger, state, "cycle {cycle}") is True
+
+    for name in ("sda", "scroll-down-web"):
+        log = subprocess.run(
+            ["git", "log", "--oneline"],
+            cwd=nested_repos / name,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "cycle 7" in log.stdout, f"missing cycle commit in {name}"
+
+
+def test_git_commit_cycle_snapshot_nested_skips_clean_repos(nested_repos: Path):
+    state = RunState(run_id="r1", config_name="default")
+    logger = MagicMock()
+    # Only one sub-repo is dirty; the other should not get an empty commit.
+    (nested_repos / "sda" / "a.txt").write_text("1")
+
+    assert git_commit_cycle_snapshot(nested_repos, 9, logger, state, "cycle {cycle}") is True
+
+    sda_log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=nested_repos / "sda",
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    web_log = subprocess.run(
+        ["git", "log", "--oneline"],
+        cwd=nested_repos / "scroll-down-web",
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "cycle 9" in sda_log.stdout
+    assert "cycle 9" not in web_log.stdout
+
+
+def test_git_push_current_branch_nested_repos_all_succeed(nested_repos: Path, monkeypatch):
+    state = RunState(run_id="r1", config_name="default")
+    logger = MagicMock()
+    real_run = subprocess.run
+
+    def fake(cmd, **kwargs):
+        if cmd and cmd[:2] == ["git", "push"]:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr("aidlc.implementer_workspace.subprocess.run", fake)
+    assert git_push_current_branch(nested_repos, logger, state) is True
+
+
+def test_git_push_current_branch_nested_repos_one_fails(nested_repos: Path, monkeypatch):
+    state = RunState(run_id="r1", config_name="default")
+    logger = MagicMock()
+    real_run = subprocess.run
+    seen = {"push_calls": 0}
+
+    def fake(cmd, **kwargs):
+        if cmd and cmd[:2] == ["git", "push"]:
+            seen["push_calls"] += 1
+            # First repo's push succeeds; second repo's push fails outright.
+            if seen["push_calls"] == 1:
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=1, stdout="", stderr="boom")
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr("aidlc.implementer_workspace.subprocess.run", fake)
+    assert git_push_current_branch(nested_repos, logger, state) is False

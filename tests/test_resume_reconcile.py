@@ -19,6 +19,7 @@ def git_project(tmp_path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@t.co"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, check=True)
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "x.py").write_text("# ISSUE-001 helper\n")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
@@ -34,6 +35,7 @@ def git_project_test_only(tmp_path):
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "t@t.co"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, check=True)
     (tmp_path / "tests" / "gut").mkdir(parents=True)
     (tmp_path / "tests" / "gut" / "test_retro_scene_issue_006.gd").write_text(
         "# Generated test for ISSUE-006\n"
@@ -189,6 +191,40 @@ def test_reconcile_no_git_is_noop(tmp_path):
     ]
     n = reconcile_issues_on_resume(state, tmp_path, MagicMock(), ENABLED)
     assert n == 0
+
+
+def _init_repo_with_file(repo: Path, rel: str, contents: str) -> None:
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t.co"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=repo, check=True)
+    target = repo / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(contents)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True, capture_output=True)
+
+
+def test_reconcile_finds_issue_id_in_nested_sub_repo(tmp_path):
+    """Parent dir isn't a git repo; the id lives in one of the sub-repos.
+
+    This is the ``sports/sda/.git`` + ``sports/scroll-down-web/.git`` layout
+    — without nested discovery, ``git grep`` from the parent would fail.
+    """
+    sda = tmp_path / "sda"
+    web = tmp_path / "scroll-down-web"
+    sda.mkdir()
+    web.mkdir()
+    _init_repo_with_file(sda, "src/x.py", "# ISSUE-042 implementation\n")
+    _init_repo_with_file(web, "README.md", "no id here\n")
+
+    state = RunState(run_id="r", config_name="c")
+    state.issues = [
+        Issue(id="ISSUE-042", title="t", description="", status=IssueStatus.PENDING).to_dict()
+    ]
+    n = reconcile_issues_on_resume(state, tmp_path, MagicMock(), ENABLED)
+    assert n == 1
+    assert state.get_issue("ISSUE-042").status == IssueStatus.IMPLEMENTED
 
 
 @patch("aidlc.resume_reconcile.subprocess.run", side_effect=OSError("no git"))
