@@ -56,10 +56,7 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
         item = obj.get("item")
         if not isinstance(item, dict):
             continue
-        itype = item.get("item_type") or item.get("type")
-        if itype not in ("assistant_message", "agent_message"):
-            continue
-        text = item.get("text")
+        text = _extract_codex_item_text(item)
         if isinstance(text, str) and text.strip():
             output_text = text
 
@@ -78,6 +75,41 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
             "cache_creation_input_tokens": 0,
         }
     return output_text, usage
+
+
+def _extract_codex_item_text(item: dict) -> str:
+    """Return assistant text from known Codex JSONL item shapes."""
+    itype = item.get("item_type") or item.get("type")
+    if itype in ("assistant_message", "agent_message"):
+        text = item.get("text")
+        return text if isinstance(text, str) else ""
+
+    # Newer Codex JSONL emits assistant messages as:
+    # {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "..."}]}
+    if itype != "message" or item.get("role") != "assistant":
+        return ""
+
+    content = item.get("content")
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+
+    parts: list[str] = []
+    for entry in content:
+        if isinstance(entry, str):
+            if entry.strip():
+                parts.append(entry)
+            continue
+        if not isinstance(entry, dict):
+            continue
+        text = entry.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        entry_type = str(entry.get("type") or "")
+        if entry_type in ("", "text", "output_text", "assistant_text"):
+            parts.append(text)
+    return "".join(parts)
 
 
 def _extract_codex_agent_message_text(stdout: str) -> str:
@@ -319,7 +351,11 @@ def _classify_openai_cli_failure(diagnostic: str) -> str:
             "timed out",
             "connection reset",
             "econnreset",
-            "unavailable",
+            "service unavailable",
+            "server unavailable",
+            "upstream unavailable",
+            "provider unavailable",
+            "api unavailable",
             "bad gateway",
         )
     ):
@@ -487,9 +523,7 @@ class OpenAIAdapter(ProviderAdapter):
                         payload["continuation_session_id"] = tid
                     return payload
 
-                diagnostic = explicit_diagnostic or _extract_codex_failure_diagnostics(
-                    stderr or "", stdout or ""
-                )
+                diagnostic = explicit_diagnostic
                 if not diagnostic:
                     diagnostic = "OpenAI CLI returned non-zero exit code"
                 failure_type = _classify_openai_cli_failure(diagnostic)

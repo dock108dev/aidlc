@@ -103,6 +103,8 @@ def test_extract_codex_failure_diagnostics_can_skip_stdout_tail():
 def test_classify_openai_cli_failure_rate_limited():
     assert _classify_openai_cli_failure("429 too many requests") == "rate_limited"
     assert _classify_openai_cli_failure("something else") == "issue"
+    assert _classify_openai_cli_failure("Prompt hides when unavailable") == "issue"
+    assert _classify_openai_cli_failure("503 service unavailable") == "transient"
 
 
 def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
@@ -116,6 +118,46 @@ def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
     assert usage["input_tokens"] == 100
     assert usage["output_tokens"] == 20
     assert usage["cache_read_input_tokens"] == 40
+
+
+def test_parse_codex_jsonl_extracts_assistant_message_content_shape():
+    raw = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "msg1",
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"actions": [], "planning_complete": false}',
+                            }
+                        ],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 10,
+                        "cached_input_tokens": 4,
+                        "output_tokens": 3,
+                    },
+                }
+            ),
+        ]
+    )
+
+    out, usage = _parse_codex_jsonl(raw)
+
+    assert out == '{"actions": [], "planning_complete": false}'
+    assert usage["input_tokens"] == 10
+    assert usage["cache_read_input_tokens"] == 4
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
@@ -247,6 +289,61 @@ def test_nonzero_exit_with_completed_turn_and_agent_message_is_success(mock_pope
     assert result["usage_source"] == "codex_jsonl"
     assert result["continuation_session_id"] == "t1"
     assert result["usage"]["input_tokens"] == 12
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_with_completed_turn_and_message_content_is_success(mock_popen, tmp_path):
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    '{"frontier_assessment":"ok","actions":[{"action_type":"create_issue",'
+                                    '"issue_id":"ISSUE-001","title":"Prompt hides when unavailable",'
+                                    '"description":"Normal planning text.","priority":"high",'
+                                    '"acceptance_criteria":["Prompt hides when unavailable."],'
+                                    '"critical_gap":false}],"planning_complete":false}'
+                                ),
+                            }
+                        ],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 12,
+                        "cached_input_tokens": 3,
+                        "output_tokens": 4,
+                    },
+                }
+            ),
+        ]
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert "Prompt hides when unavailable" in result["output"]
+    assert result["failure_type"] is None
+    assert result["usage_source"] == "codex_jsonl"
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
