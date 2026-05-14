@@ -84,6 +84,22 @@ def test_extract_codex_failure_diagnostics_nested_openai_error():
     assert "too many" in diag.lower() or "rate_limit" in diag.lower()
 
 
+def test_extract_codex_failure_diagnostics_can_skip_stdout_tail():
+    event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "sed -n '1,20p' file.tsx",
+                "aggregated_output": "source code",
+                "exit_code": 0,
+            },
+        }
+    )
+    assert _extract_codex_failure_diagnostics("", event, include_stdout_tail=False) == ""
+    assert "command_execution" in _extract_codex_failure_diagnostics("", event)
+
+
 def test_classify_openai_cli_failure_rate_limited():
     assert _classify_openai_cli_failure("429 too many requests") == "rate_limited"
     assert _classify_openai_cli_failure("something else") == "issue"
@@ -150,6 +166,43 @@ again at 5:41 PM.
     assert result["success"] is False
     assert result["failure_type"] == "rate_limited"
     assert "usage limit" in (result.get("error") or "").lower()
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_with_last_message_and_only_tool_json_is_success(mock_popen, tmp_path):
+    def make_proc(cmd, **_kwargs):
+        output_path = cmd[cmd.index("--output-last-message") + 1]
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("# Findings\n\nDone.")
+        proc = MagicMock()
+        proc.communicate.return_value = (
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "command_execution",
+                        "command": "sed -n '1,20p' file.tsx",
+                        "aggregated_output": "source code",
+                        "exit_code": 0,
+                    },
+                }
+            ),
+            "",
+        )
+        proc.returncode = 1
+        return proc
+
+    mock_popen.side_effect = make_proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["output"] == "# Findings\n\nDone."
+    assert result["usage_source"] == "codex_last_message"
 
 
 def test_codex_exit_zero_blocker_helper_negative():

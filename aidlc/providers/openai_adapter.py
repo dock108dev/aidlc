@@ -7,6 +7,7 @@ Supports GPT-4o and other OpenAI models as first-class citizens.
 import json
 import logging
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .base import HealthResult, HealthStatus, ProviderAdapter
@@ -76,7 +77,9 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
     return output_text, usage
 
 
-def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
+def _extract_codex_failure_diagnostics(
+    stderr: str, stdout: str, *, include_stdout_tail: bool = True
+) -> str:
     """Best-effort: stderr first; then JSONL error payloads from codex --json stdout."""
     parts: list[str] = []
     err = (stderr or "").strip()
@@ -152,11 +155,20 @@ def _extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
             parts.append(line)
 
     combined = "\n".join(dict.fromkeys(parts))
-    if not combined.strip():
+    if include_stdout_tail and not combined.strip():
         tail = (stdout or "").strip()
         if tail:
             combined = tail[-12000:] if len(tail) > 12000 else tail
     return combined.strip()
+
+
+def _read_text_if_present(path: Path | None) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
 
 
 def _codex_exit_zero_is_quota_blocker(
@@ -259,12 +271,19 @@ class OpenAIAdapter(ProviderAdapter):
             )
             self._dangerous_mode_warned = True
 
+        final_message_path: Path | None = None
+        with tempfile.NamedTemporaryFile(
+            prefix="aidlc-codex-last-", suffix=".md", delete=False
+        ) as f:
+            final_message_path = Path(f.name)
+
         cmd = self._build_command(
             model,
             allow_edits,
             prompt,
             effective_session_id,
             reasoning_effort=self.model_reasoning_effort,
+            output_last_message_path=final_message_path,
         )
 
         try:
@@ -283,6 +302,7 @@ class OpenAIAdapter(ProviderAdapter):
                 warn_interval=self.warn_interval,
                 account_id=account_id,
             )
+            last_message = _read_text_if_present(final_message_path).strip()
             if timed_out:
                 return self._failure_result(
                     model,
@@ -293,7 +313,9 @@ class OpenAIAdapter(ProviderAdapter):
                 )
             if proc.returncode == 0:
                 parsed_out, usage = _parse_codex_jsonl(stdout or "")
-                out_text = parsed_out if parsed_out.strip() else (stdout or "")
+                out_text = last_message
+                if not out_text:
+                    out_text = parsed_out if parsed_out.strip() else (stdout or "")
                 blocked, diag = _codex_exit_zero_is_quota_blocker(
                     stdout or "", stderr or "", parsed_out
                 )
@@ -308,7 +330,10 @@ class OpenAIAdapter(ProviderAdapter):
                         failure_type=failure_type,
                         output=out_tail,
                     )
-                usage_source = "codex_jsonl" if usage else "openai_cli"
+                if last_message:
+                    usage_source = "codex_last_message"
+                else:
+                    usage_source = "codex_jsonl" if usage else "openai_cli"
                 tid = extract_codex_thread_id(stdout or "") or effective_session_id
                 payload = {
                     "success": True,
@@ -328,11 +353,39 @@ class OpenAIAdapter(ProviderAdapter):
                     payload["continuation_session_id"] = tid
                 return payload
             else:
-                diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
+                parsed_out, usage = _parse_codex_jsonl(stdout or "")
+                explicit_diagnostic = _extract_codex_failure_diagnostics(
+                    stderr or "", stdout or "", include_stdout_tail=False
+                )
+                if last_message and not explicit_diagnostic:
+                    tid = extract_codex_thread_id(stdout or "") or effective_session_id
+                    payload = {
+                        "success": True,
+                        "output": last_message,
+                        "error": None,
+                        "failure_type": None,
+                        "duration_seconds": duration,
+                        "retries": 0,
+                        "usage": usage,
+                        "total_cost_usd": None,
+                        "model_used": model,
+                        "usage_source": "codex_last_message",
+                        "provider_id": self.PROVIDER_ID,
+                        "account_id": account_id,
+                    }
+                    if tid:
+                        payload["continuation_session_id"] = tid
+                    return payload
+
+                diagnostic = explicit_diagnostic or _extract_codex_failure_diagnostics(
+                    stderr or "", stdout or ""
+                )
                 if not diagnostic:
                     diagnostic = "OpenAI CLI returned non-zero exit code"
                 failure_type = _classify_openai_cli_failure(diagnostic)
-                out_tail = (stdout or "")[-16000:] if stdout else None
+                out_tail = last_message or parsed_out or (
+                    (stdout or "")[-16000:] if stdout else None
+                )
                 return self._failure_result(
                     model,
                     account_id,
@@ -350,6 +403,12 @@ class OpenAIAdapter(ProviderAdapter):
                 error=f"OpenAI CLI not found at '{self.cli_command}'. Install with: npm install -g @openai/codex",
                 failure_type="provider_error",
             )
+        finally:
+            if final_message_path is not None:
+                try:
+                    final_message_path.unlink()
+                except OSError:
+                    pass
 
     def _build_command(
         self,
@@ -358,6 +417,7 @@ class OpenAIAdapter(ProviderAdapter):
         prompt: str,
         continuation_session_id: str | None = None,
         reasoning_effort: str | None = None,
+        output_last_message_path: Path | None = None,
     ) -> list[str]:
         """Build ``codex exec`` or ``codex exec resume`` (--json JSONL)."""
         reasoning_effort = str(reasoning_effort or "").strip()
@@ -375,6 +435,8 @@ class OpenAIAdapter(ProviderAdapter):
                 cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
             if allow_edits:
                 cmd.append("--dangerously-bypass-approvals-and-sandbox")
+            if output_last_message_path is not None:
+                cmd.extend(["--output-last-message", str(output_last_message_path)])
             cmd.extend([continuation_session_id, prompt])
             return cmd
         cmd = [
@@ -389,6 +451,8 @@ class OpenAIAdapter(ProviderAdapter):
             cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
         if allow_edits:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        if output_last_message_path is not None:
+            cmd.extend(["--output-last-message", str(output_last_message_path)])
         cmd.append(prompt)
         return cmd
 
