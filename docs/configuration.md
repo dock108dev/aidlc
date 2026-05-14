@@ -46,8 +46,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
     "claude": {
       "enabled": false,
       "cli_command": "claude",
-      "max_capacity": true,
-      "max_capacity_weight": 20,
+      "max_capacity": false,
       "default_model": "sonnet",
       "phase_models": {
         "discovery": "sonnet",
@@ -63,7 +62,18 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
     "openai": {
       "enabled": true,
       "cli_command": "codex",
-      "default_model": "gpt-5.4"
+      "max_capacity": true,
+      "max_capacity_weight": 20,
+      "default_model": "gpt-5.4",
+      "accounts": [
+        {
+          "id": "default",
+          "display_name": "Codex (default)",
+          "tier": "unknown",
+          "role_tags": ["primary"],
+          "enabled": true
+        }
+      ]
     }
   }
 }
@@ -73,13 +83,13 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 |---|---|
 | `enabled` | Master switch for the provider. Disabled providers are skipped entirely. |
 | `cli_command` | Path/name of the CLI binary. |
-| `max_capacity` | Mark a backend as **high token capacity** (vs. Copilot/OpenAI-style). Default `true` for `claude`, `false` otherwise. |
-| `max_capacity_weight` | On planning/research/audit, balanced mode rotates by weighted fairness: lower `calls ÷ weight` is preferred, so a weight-20 provider gets ~20× the first-choice share over time. Default `20` when `max_capacity` is true. |
+| `max_capacity` | Mark a backend as **high token capacity**. Init defaults this to `true` for Codex/OpenAI and `false` for Claude/Copilot. |
+| `max_capacity_weight` | On planning/research/audit, balanced mode rotates by weighted fairness: lower `calls ÷ weight` is preferred, so a weight-20 provider gets ~20× the first-choice share over time. |
 | `default_model` | Fallback model when no `phase_models[phase]` entry resolves. **A user-set value overrides DEFAULT `phase_models` entries** — see precedence below. |
 | `phase_models` | Per-phase model selection. Keys: `discovery`, `planning`, `research`, `implementation`, `implementation_complex`, `finalization`, `audit`. |
 | `model_fallback_chain` | Ordered list of models to try on the same provider when one returns "out of tokens". Default for Claude: `["sonnet", "opus", "haiku"]`. Empty/missing chain disables intra-provider fallback (router excludes the provider on first exhaustion). |
 
-For **`implementation`** and **`implementation_complex`**, every provider with `max_capacity: true` is ordered **before** other providers (stable order: claude → copilot → openai among those enabled). Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
+For **`implementation`** and **`implementation_complex`**, every provider with `max_capacity: true` is ordered **before** other providers. Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
 
 ### Model selection precedence
 

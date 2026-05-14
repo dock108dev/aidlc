@@ -518,15 +518,8 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "claude": {
                     "enabled": False,
                     "cli_command": "claude",
-                    "accounts": [
-                        {
-                            "id": "default",
-                            "display_name": "Claude (default)",
-                            "tier": "unknown",
-                            "role_tags": ["primary"],
-                            "enabled": True,
-                        }
-                    ],
+                    "max_capacity": False,
+                    "accounts": [],
                 },
                 "copilot": {
                     "enabled": False,
@@ -536,7 +529,17 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                 "openai": {
                     "enabled": True,
                     "cli_command": "codex",
-                    "accounts": [],
+                    "max_capacity": True,
+                    "max_capacity_weight": 20,
+                    "accounts": [
+                        {
+                            "id": "default",
+                            "display_name": "Codex (default)",
+                            "tier": "unknown",
+                            "role_tags": ["primary"],
+                            "enabled": True,
+                        }
+                    ],
                 },
             },
             "max_implementation_attempts": 3,

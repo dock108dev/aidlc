@@ -92,8 +92,25 @@ def test_write_default_config_uses_codex_primary_defaults(tmp_path):
     assert data["plan_budget_hours"] == 2
     assert data["checkpoint_interval_minutes"] == 45
     assert data["providers"]["claude"]["enabled"] is False
+    assert data["providers"]["claude"]["max_capacity"] is False
+    assert data["providers"]["claude"]["accounts"] == []
     assert data["providers"]["copilot"]["enabled"] is False
     assert data["providers"]["openai"]["enabled"] is True
+    assert data["providers"]["openai"]["max_capacity"] is True
+    assert data["providers"]["openai"]["max_capacity_weight"] == 20
+    assert data["providers"]["openai"]["accounts"] == [
+        {
+            "id": "default",
+            "display_name": "Codex (default)",
+            "tier": "unknown",
+            "role_tags": ["primary"],
+            "enabled": True,
+        }
+    ]
+    loaded = load_config(project_root=str(tmp_path))
+    assert loaded["providers"]["claude"]["max_capacity"] is False
+    assert loaded["providers"]["openai"]["max_capacity"] is True
+    assert loaded["providers"]["openai"]["max_capacity_weight"] == 20
 
 
 def test_load_config_resolves_name_from_package_configs(tmp_path):

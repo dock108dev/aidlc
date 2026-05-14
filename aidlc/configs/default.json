@@ -7,8 +7,7 @@
     "claude": {
       "enabled": false,
       "cli_command": "claude",
-      "max_capacity": true,
-      "max_capacity_weight": 20,
+      "max_capacity": false,
       "default_model": "sonnet",
       "phase_models": {
         "discovery": "sonnet",
@@ -19,15 +18,7 @@
         "finalization": "sonnet",
         "audit": "sonnet"
       },
-      "accounts": [
-        {
-          "id": "default",
-          "display_name": "Claude (default)",
-          "tier": "unknown",
-          "role_tags": ["primary"],
-          "enabled": true
-        }
-      ]
+      "accounts": []
     },
     "copilot": {
       "enabled": false,
@@ -47,6 +38,8 @@
     "openai": {
       "enabled": true,
       "cli_command": "codex",
+      "max_capacity": true,
+      "max_capacity_weight": 20,
       "default_model": "gpt-5.4",
       "phase_models": {
         "discovery": "gpt-5.4-mini",
@@ -57,7 +50,15 @@
         "finalization": "gpt-5.4-mini",
         "audit": "gpt-5.4-mini"
       },
-      "accounts": []
+      "accounts": [
+        {
+          "id": "default",
+          "display_name": "Codex (default)",
+          "tier": "unknown",
+          "role_tags": ["primary"],
+          "enabled": true
+        }
+      ]
     }
   },
   "telemetry_cost_mode": "auto",
