@@ -63,6 +63,9 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
         if isinstance(text, str) and text.strip():
             output_text = text
 
+    if not output_text:
+        output_text = _extract_codex_agent_message_text(stdout or "")
+
     usage: dict = {}
     if last_usage:
         inp = int(last_usage.get("input_tokens", 0) or 0)
@@ -75,6 +78,107 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
             "cache_creation_input_tokens": 0,
         }
     return output_text, usage
+
+
+def _extract_codex_agent_message_text(stdout: str) -> str:
+    """Extract the last agent/assistant message text from raw Codex JSON-ish stdout.
+
+    Codex occasionally exits non-zero after emitting a completed turn. In the
+    observed failure, the useful answer was present in a very large
+    ``item.completed`` JSONL event, but normal line-level parsing did not yield
+    it and the adapter fell back to logging a truncated raw stdout tail as an
+    error. This scanner is deliberately narrow: only events that identify an
+    ``agent_message`` or ``assistant_message`` are considered, and the value is
+    decoded with Python's JSON decoder rather than ad hoc unescaping.
+    """
+    if not stdout:
+        return ""
+
+    markers = (
+        '"type":"agent_message"',
+        '"type": "agent_message"',
+        '"item_type":"agent_message"',
+        '"item_type": "agent_message"',
+        '"type":"assistant_message"',
+        '"type": "assistant_message"',
+        '"item_type":"assistant_message"',
+        '"item_type": "assistant_message"',
+    )
+    decoder = json.JSONDecoder()
+    text_values: list[str] = []
+
+    for marker in markers:
+        start = 0
+        while True:
+            marker_pos = stdout.find(marker, start)
+            if marker_pos == -1:
+                break
+            text_key_pos = stdout.find('"text"', marker_pos)
+            if text_key_pos == -1:
+                start = marker_pos + len(marker)
+                continue
+            colon_pos = stdout.find(":", text_key_pos + len('"text"'))
+            if colon_pos == -1:
+                start = marker_pos + len(marker)
+                continue
+            value_start = colon_pos + 1
+            while value_start < len(stdout) and stdout[value_start].isspace():
+                value_start += 1
+            try:
+                value, _end = decoder.raw_decode(stdout[value_start:])
+            except json.JSONDecodeError:
+                start = marker_pos + len(marker)
+                continue
+            if isinstance(value, str) and value.strip():
+                text_values.append(value)
+            start = marker_pos + len(marker)
+
+    return text_values[-1] if text_values else ""
+
+
+def _codex_stdout_has_completed_turn(stdout: str) -> bool:
+    """Return True when Codex stdout contains a completed turn event."""
+    if not stdout:
+        return False
+    if '"type":"turn.completed"' in stdout or '"type": "turn.completed"' in stdout:
+        return True
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "turn.completed":
+            return True
+    return False
+
+
+def _codex_nonzero_output_is_usable(
+    *,
+    stdout: str,
+    stderr: str,
+    output_text: str,
+    diagnostic: str,
+) -> bool:
+    """True when Codex produced a completed answer despite a non-zero exit.
+
+    We still honor concrete provider failures (quota/rate limits, transient
+    outages). A generic non-zero exit with a completed turn and usable answer is
+    treated as success because downstream phases can parse and use the answer.
+    """
+    if not (output_text or "").strip():
+        return False
+
+    failure_type = _classify_openai_cli_failure(diagnostic or stderr or "")
+    if failure_type in {"rate_limited", "token_exhausted", "transient"}:
+        return False
+
+    if _codex_stdout_has_completed_turn(stdout):
+        return True
+
+    return False
 
 
 def _extract_codex_failure_diagnostics(
@@ -357,11 +461,17 @@ class OpenAIAdapter(ProviderAdapter):
                 explicit_diagnostic = _extract_codex_failure_diagnostics(
                     stderr or "", stdout or "", include_stdout_tail=False
                 )
-                if last_message and not explicit_diagnostic:
+                usable_output = last_message or parsed_out
+                if (last_message and not explicit_diagnostic) or _codex_nonzero_output_is_usable(
+                    stdout=stdout or "",
+                    stderr=stderr or "",
+                    output_text=usable_output,
+                    diagnostic=explicit_diagnostic,
+                ):
                     tid = extract_codex_thread_id(stdout or "") or effective_session_id
                     payload = {
                         "success": True,
-                        "output": last_message,
+                        "output": usable_output,
                         "error": None,
                         "failure_type": None,
                         "duration_seconds": duration,
@@ -369,7 +479,7 @@ class OpenAIAdapter(ProviderAdapter):
                         "usage": usage,
                         "total_cost_usd": None,
                         "model_used": model,
-                        "usage_source": "codex_last_message",
+                        "usage_source": "codex_last_message" if last_message else "codex_jsonl",
                         "provider_id": self.PROVIDER_ID,
                         "account_id": account_id,
                     }

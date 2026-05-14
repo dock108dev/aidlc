@@ -55,6 +55,19 @@ _POST_PLANNING_PHASES = frozenset(
 )
 
 
+def _has_failed_discovery_placeholder(config: dict) -> bool:
+    """True when prior discovery wrote the known failure placeholder."""
+    aidlc_dir = config.get("_aidlc_dir")
+    if not aidlc_dir:
+        return False
+    findings_path = Path(aidlc_dir) / "discovery" / "findings.md"
+    try:
+        text = findings_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "Discovery model call failed; planning will proceed without findings" in text
+
+
 def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]:
     """Initialize or resume a run."""
     if dry_run:
@@ -352,6 +365,16 @@ def run_full(
                 "skipping new planning (scan refreshed context only)."
             )
             reconcile_issues_on_resume(state, Path(config["_project_root"]), logger, config)
+        elif (
+            not implement_only
+            and state.phase in (RunPhase.RESEARCH, RunPhase.PLANNING)
+            and _has_failed_discovery_placeholder(config)
+        ):
+            logger.warning(
+                "Prior discovery artifacts are the failure placeholder; "
+                "rewinding to discovery so the provider can retry."
+            )
+            state.phase = RunPhase.DISCOVERY
 
         save_state(state, run_dir)
 

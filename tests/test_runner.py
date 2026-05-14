@@ -1,12 +1,19 @@
 """Tests for aidlc.runner module."""
 
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.issue_model import Issue
 from aidlc.models import IssueStatus, RunPhase, RunState
-from aidlc.runner import hydrate_existing_issues, init_run, run_full, scan_project
+from aidlc.runner import (
+    _has_failed_discovery_placeholder,
+    hydrate_existing_issues,
+    init_run,
+    run_full,
+    scan_project,
+)
 
 
 @pytest.fixture
@@ -254,6 +261,18 @@ class TestHydrateExistingIssues:
 
 
 class TestRunFull:
+    def test_detects_failed_discovery_placeholder(self, config):
+        discovery_dir = Path(config["_aidlc_dir"]) / "discovery"
+        discovery_dir.mkdir()
+        findings = discovery_dir / "findings.md"
+        findings.write_text(
+            "# Findings\n\n_Discovery model call failed; planning will proceed without findings._\n"
+        )
+        assert _has_failed_discovery_placeholder(config) is True
+
+        findings.write_text("# Findings\n\nreal")
+        assert _has_failed_discovery_placeholder(config) is False
+
     @patch("aidlc.runner.RunLock")
     def test_dry_run_completes(self, MockLock, config, tmp_path):
         (tmp_path / "README.md").write_text("# Test")

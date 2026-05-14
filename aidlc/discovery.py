@@ -86,6 +86,14 @@ def _build_discovery_retry_prompt(base_prompt: str) -> str:
     )
 
 
+def _is_failed_discovery_placeholder(findings_path: Path) -> bool:
+    try:
+        text = findings_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "Discovery model call failed; planning will proceed without findings" in text
+
+
 def _preflight_routing_snapshot(cli) -> dict | None:
     """Best-effort routing preview before the discovery call starts."""
     resolve_fn = getattr(type(cli), "resolve", None)
@@ -195,7 +203,11 @@ def run_discovery(
     findings_path = discovery_dir / "findings.md"
     topics_path = discovery_dir / "topics.json"
 
-    if findings_path.exists() and topics_path.exists():
+    if (
+        findings_path.exists()
+        and topics_path.exists()
+        and not _is_failed_discovery_placeholder(findings_path)
+    ):
         logger.info(
             f"Discovery artifacts already present at {findings_path.relative_to(project_root)} "
             "and topics.json — skipping discovery model call."

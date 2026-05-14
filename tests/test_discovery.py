@@ -450,6 +450,33 @@ def test_run_discovery_idempotent_when_artifacts_exist(tmp_path, logger):
     assert state.research_topics_total == 1
 
 
+def test_run_discovery_retries_failed_placeholder_artifacts(tmp_path, logger):
+    (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- one ask\n")
+    discovery_dir = tmp_path / ".aidlc" / "discovery"
+    discovery_dir.mkdir(parents=True)
+    (discovery_dir / "findings.md").write_text(
+        "# Findings\n\n_Discovery model call failed; planning will proceed without findings._\n"
+    )
+    (discovery_dir / "topics.json").write_text("[]\n")
+    run_dir = _make_run_dir(tmp_path)
+    state = RunState(run_id="r", config_name="c")
+    cli = MagicMock()
+    cli.execute_prompt.return_value = {
+        "success": True,
+        "output": "# Findings\n\nfresh\n\n```json\n[]\n```\n",
+        "error": None,
+        "retries": 0,
+        "usage": {},
+    }
+    config = {"_project_root": str(tmp_path), "_aidlc_dir": str(tmp_path / ".aidlc")}
+
+    findings_path, topics_path = run_discovery(state, config, cli, tmp_path, run_dir, logger)
+
+    cli.execute_prompt.assert_called_once()
+    assert "fresh" in findings_path.read_text()
+    assert json.loads(topics_path.read_text()) == []
+
+
 def test_run_discovery_logs_model_and_output_size(tmp_path, caplog):
     (tmp_path / "BRAINDUMP.md").write_text("# Brain\n- one ask\n")
     run_dir = _make_run_dir(tmp_path)

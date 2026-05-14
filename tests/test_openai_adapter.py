@@ -205,6 +205,78 @@ def test_nonzero_exit_with_last_message_and_only_tool_json_is_success(mock_popen
     assert result["usage_source"] == "codex_last_message"
 
 
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_with_completed_turn_and_agent_message_is_success(mock_popen, tmp_path):
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": "# Findings\n\nUsable.\n\n```json\n[]\n```",
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 12,
+                        "cached_input_tokens": 3,
+                        "output_tokens": 4,
+                    },
+                }
+            ),
+        ]
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["output"].startswith("# Findings")
+    assert result["usage_source"] == "codex_jsonl"
+    assert result["continuation_session_id"] == "t1"
+    assert result["usage"]["input_tokens"] == 12
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_completed_turn_still_honors_rate_limit(mock_popen, tmp_path):
+    stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": "partial answer"},
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {}}),
+        ]
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "Rate limit reached for gpt-5.5")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is False
+    assert result["failure_type"] == "rate_limited"
+
+
 def test_codex_exit_zero_blocker_helper_negative():
     ok, _ = _codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
     assert ok is False
