@@ -383,8 +383,8 @@ class OpenAIAdapter(ProviderAdapter):
                 if not diagnostic:
                     diagnostic = "OpenAI CLI returned non-zero exit code"
                 failure_type = _classify_openai_cli_failure(diagnostic)
-                out_tail = last_message or parsed_out or (
-                    (stdout or "")[-16000:] if stdout else None
+                out_tail = (
+                    last_message or parsed_out or ((stdout or "")[-16000:] if stdout else None)
                 )
                 return self._failure_result(
                     model,
