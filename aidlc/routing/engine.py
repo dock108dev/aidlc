@@ -118,8 +118,9 @@ class ProviderRouter:
         signals **continuation** of an existing session — Claude routes it to
         ``--resume`` (join existing). Only the entry for the routed provider
         is forwarded; if both maps name the same provider, ``session_resume``
-        wins. Other providers (``openai``, ``copilot``) read from
-        ``session_continuation`` only.
+        wins. Codex/OpenAI maps either value to ``codex exec resume`` because
+        Codex thread ids are only known after the first JSONL ``thread.started``
+        event. Copilot reads from ``session_continuation`` only.
         """
         effective_phase = phase or self._current_phase
         effective_complexity = complexity or self._complexity

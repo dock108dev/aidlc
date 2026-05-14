@@ -6,6 +6,7 @@ import logging
 from types import SimpleNamespace
 
 from aidlc.accounts.models import MembershipTier
+from aidlc.config import DEFAULTS
 from aidlc.routing import context
 from aidlc.routing.types import UsagePressure
 
@@ -129,6 +130,12 @@ def test_resolve_model_no_user_override_uses_default_phase_models():
     ad = _fake("claude", "haiku")
     assert context.resolve_model_for_phase(cfg, ad, "planning", "normal") == "sonnet"
     assert context.resolve_model_for_phase(cfg, ad, "implementation", "complex") == "opus"
+
+
+def test_default_openai_discovery_resolves_to_gpt55():
+    cfg = {"providers": DEFAULTS["providers"], "_user_provider_overrides": {}}
+    ad = _fake("openai", "fallback")
+    assert context.resolve_model_for_phase(cfg, ad, "discovery", "normal") == "gpt-5.5"
 
 
 def test_resolve_model_falls_through_to_adapter_default():

@@ -64,7 +64,17 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
       "cli_command": "codex",
       "max_capacity": true,
       "max_capacity_weight": 20,
-      "default_model": "gpt-5.4",
+      "default_model": "gpt-5.5",
+      "model_reasoning_effort": "high",
+      "phase_models": {
+        "discovery": "gpt-5.5",
+        "planning": "gpt-5.5",
+        "research": "gpt-5.5",
+        "implementation": "gpt-5.5",
+        "implementation_complex": "gpt-5.5",
+        "finalization": "gpt-5.5",
+        "audit": "gpt-5.5"
+      },
       "accounts": [
         {
           "id": "default",
@@ -87,6 +97,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 | `max_capacity_weight` | On planning/research/audit, balanced mode rotates by weighted fairness: lower `calls ÷ weight` is preferred, so a weight-20 provider gets ~20× the first-choice share over time. |
 | `default_model` | Fallback model when no `phase_models[phase]` entry resolves. **A user-set value overrides DEFAULT `phase_models` entries** — see precedence below. |
 | `phase_models` | Per-phase model selection. Keys: `discovery`, `planning`, `research`, `implementation`, `implementation_complex`, `finalization`, `audit`. |
+| `model_reasoning_effort` | Codex/OpenAI reasoning effort passed to the CLI via `-c model_reasoning_effort="..."`. Default: `high`. |
 | `model_fallback_chain` | Ordered list of models to try on the same provider when one returns "out of tokens". Default for Claude: `["sonnet", "opus", "haiku"]`. Empty/missing chain disables intra-provider fallback (router excludes the provider on first exhaustion). |
 
 For **`implementation`** and **`implementation_complex`**, every provider with `max_capacity: true` is ordered **before** other providers. Model IDs per phase are still driven by `phase_models` — this only chooses **which CLI** runs first.
@@ -152,7 +163,7 @@ based knobs replace it:
   terminal event has been emitted yet.
 | `telemetry_cost_mode` | `"auto"` |
 | `telemetry_estimate_usd` | `false` |
-| `telemetry_model_pricing_usd_per_million_tokens` | See `aidlc/config.py` for the full table (sonnet/opus/haiku/gpt-5.4 family). |
+| `telemetry_model_pricing_usd_per_million_tokens` | See `aidlc/config.py` for the full table (sonnet/opus/haiku/GPT-5 family). |
 | `retry_max_attempts` | `2` |
 | `retry_base_delay_seconds` | `30` |
 | `retry_max_delay_seconds` | `300` |

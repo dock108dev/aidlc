@@ -604,28 +604,33 @@ class Planner:
         Claude only goes here on cycle 1 (or any cycle where the session is
         not yet resumable); Claude Code rejects ``--session-id`` when the id
         already exists, so once we've successfully completed one cycle we
-        switch Claude to the resume path. ``openai`` and ``copilot`` use
-        their own continuation conventions and are not affected.
+        switch Claude to the resume path. Codex also resumes captured threads
+        through the resume path. Copilot uses its own continuation convention.
         """
         claude_id: str | None = None
         if not self.state.planning_claude_session_resumable:
             claude_id = self.state.planning_claude_session_id
         return {
             "claude": claude_id,
-            "openai": self.state.planning_openai_thread_id,
+            "openai": None,
             "copilot": self.state.planning_copilot_session_id,
         }
 
     def _planning_session_resume(self) -> dict[str, str | None]:
-        """Per-provider session ids for **resume** calls (claude --resume).
+        """Per-provider session ids for **resume** calls.
 
-        Populated only for Claude, and only after the first successful cycle
-        flipped ``planning_claude_session_resumable`` to True.
+        Claude is populated only after the first successful cycle flipped
+        ``planning_claude_session_resumable`` to True. Codex is populated once
+        a JSONL ``thread.started`` id has been captured.
         """
         claude_id: str | None = None
         if self.state.planning_claude_session_resumable:
             claude_id = self.state.planning_claude_session_id
-        return {"claude": claude_id, "openai": None, "copilot": None}
+        return {
+            "claude": claude_id,
+            "openai": self.state.planning_openai_thread_id,
+            "copilot": None,
+        }
 
     def _apply_action(self, action: PlanningAction) -> None:
         """Apply a single planning action."""

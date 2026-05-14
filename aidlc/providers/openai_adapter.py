@@ -11,7 +11,7 @@ from pathlib import Path
 
 from .base import HealthResult, HealthStatus, ProviderAdapter
 
-_DEFAULT_OPENAI_MODEL = "gpt-4o"
+_DEFAULT_OPENAI_MODEL = "gpt-5.5"
 
 
 def extract_codex_thread_id(stdout: str) -> str | None:
@@ -221,6 +221,7 @@ class OpenAIAdapter(ProviderAdapter):
         provider_cfg = self._provider_config()
         self.cli_command = provider_cfg.get("cli_command", "codex")
         self.default_model = provider_cfg.get("default_model", _DEFAULT_OPENAI_MODEL)
+        self.model_reasoning_effort = provider_cfg.get("model_reasoning_effort")
         self.dry_run = config.get("dry_run", False)
         self._dangerous_mode_warned = False
         # Non-streaming provider — wall-clock timeout is appropriate here
@@ -242,11 +243,9 @@ class OpenAIAdapter(ProviderAdapter):
         continuation_session_id: str | None = None,
         resume_session_id: str | None = None,
     ) -> dict:
-        # OpenAI / Codex CLI uses thread.started JSON events for continuation,
-        # not a Claude-style --session-id vs --resume distinction. Accept the
-        # resume_session_id parameter for ProviderAdapter ABI compatibility
-        # but ignore it; ``continuation_session_id`` is the only path here.
-        del resume_session_id
+        # Codex emits a thread id in JSONL. Any later call with that id should
+        # use ``codex exec resume``; an explicit resume id wins when both are set.
+        effective_session_id = resume_session_id or continuation_session_id
         if self.dry_run:
             self.logger.info(f"[DRY RUN] OpenAI prompt ({len(prompt)} chars) in {working_dir}")
             return self._dry_run_result(model_override or self.default_model, account_id)
@@ -254,14 +253,19 @@ class OpenAIAdapter(ProviderAdapter):
         model = model_override or self.default_model
         if allow_edits and not self._dangerous_mode_warned:
             self.logger.warning(
-                "Codex edit runs use --full-auto plus "
-                "--dangerously-bypass-approvals-and-sandbox: no approval prompts "
-                "and no sandbox. EXTREMELY DANGEROUS. Use only in externally "
-                "sandboxed environments."
+                "Codex edit runs use --dangerously-bypass-approvals-and-sandbox: "
+                "no approval prompts and no sandbox. EXTREMELY DANGEROUS. Use only "
+                "in externally sandboxed environments."
             )
             self._dangerous_mode_warned = True
 
-        cmd = self._build_command(model, allow_edits, prompt, continuation_session_id)
+        cmd = self._build_command(
+            model,
+            allow_edits,
+            prompt,
+            effective_session_id,
+            reasoning_effort=self.model_reasoning_effort,
+        )
 
         try:
             proc = subprocess.Popen(
@@ -305,7 +309,7 @@ class OpenAIAdapter(ProviderAdapter):
                         output=out_tail,
                     )
                 usage_source = "codex_jsonl" if usage else "openai_cli"
-                tid = extract_codex_thread_id(stdout or "") or continuation_session_id
+                tid = extract_codex_thread_id(stdout or "") or effective_session_id
                 payload = {
                     "success": True,
                     "output": out_text,
@@ -353,8 +357,10 @@ class OpenAIAdapter(ProviderAdapter):
         allow_edits: bool,
         prompt: str,
         continuation_session_id: str | None = None,
+        reasoning_effort: str | None = None,
     ) -> list[str]:
         """Build ``codex exec`` or ``codex exec resume`` (--json JSONL)."""
+        reasoning_effort = str(reasoning_effort or "").strip()
         if continuation_session_id:
             cmd = [
                 self.cli_command,
@@ -363,14 +369,26 @@ class OpenAIAdapter(ProviderAdapter):
                 "--json",
                 "--model",
                 model,
+                "--skip-git-repo-check",
             ]
+            if reasoning_effort:
+                cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
             if allow_edits:
-                cmd.extend(["--full-auto", "--dangerously-bypass-approvals-and-sandbox"])
+                cmd.append("--dangerously-bypass-approvals-and-sandbox")
             cmd.extend([continuation_session_id, prompt])
             return cmd
-        cmd = [self.cli_command, "exec", "--json", "--model", model]
+        cmd = [
+            self.cli_command,
+            "exec",
+            "--json",
+            "--model",
+            model,
+            "--skip-git-repo-check",
+        ]
+        if reasoning_effort:
+            cmd.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
         if allow_edits:
-            cmd.extend(["--full-auto", "--dangerously-bypass-approvals-and-sandbox"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
         cmd.append(prompt)
         return cmd
 

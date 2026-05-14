@@ -170,10 +170,11 @@ def test_exec_command_includes_json_flag(mock_popen, tmp_path):
     adapter.execute_prompt("p", tmp_path)
     cmd = mock_popen.call_args[0][0]
     assert cmd[:4] == ["codex", "exec", "--json", "--model"]
+    assert "--skip-git-repo-check" in cmd
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
-def test_exec_command_edit_mode_adds_dangerous_flag_and_warning(mock_popen, tmp_path):
+def test_exec_command_edit_mode_adds_dangerous_flag_without_full_auto(mock_popen, tmp_path):
     proc = MagicMock()
     proc.communicate.return_value = ('{"type":"turn.completed","usage":{}}\n', "")
     proc.returncode = 0
@@ -187,7 +188,8 @@ def test_exec_command_edit_mode_adds_dangerous_flag_and_warning(mock_popen, tmp_
     adapter.execute_prompt("p", tmp_path, allow_edits=True)
 
     cmd = mock_popen.call_args[0][0]
-    assert "--full-auto" in cmd
+    assert "--full-auto" not in cmd
+    assert "--skip-git-repo-check" in cmd
     assert "--dangerously-bypass-approvals-and-sandbox" in cmd
     logger.warning.assert_called_once()
 
@@ -208,3 +210,55 @@ def test_exec_command_edit_mode_warns_once_per_adapter(mock_popen, tmp_path):
     adapter.execute_prompt("p2", tmp_path, allow_edits=True)
 
     assert logger.warning.call_count == 1
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_exec_command_resume_session_id_wins_for_codex_resume(mock_popen, tmp_path):
+    proc = MagicMock()
+    proc.communicate.return_value = ('{"type":"turn.completed","usage":{}}\n', "")
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-4o"}}},
+        MagicMock(),
+    )
+
+    adapter.execute_prompt(
+        "p",
+        tmp_path,
+        continuation_session_id="continuation-thread",
+        resume_session_id="resume-thread",
+    )
+
+    cmd = mock_popen.call_args[0][0]
+    assert cmd[:6] == ["codex", "exec", "resume", "--json", "--model", "gpt-4o"]
+    assert "--skip-git-repo-check" in cmd
+    assert "continuation-thread" not in cmd
+    assert cmd[-2] == "resume-thread"
+    assert cmd[-1] == "p"
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_exec_command_adds_configured_reasoning_effort(mock_popen, tmp_path):
+    proc = MagicMock()
+    proc.communicate.return_value = ('{"type":"turn.completed","usage":{}}\n', "")
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {
+            "providers": {
+                "openai": {
+                    "cli_command": "codex",
+                    "default_model": "gpt-5.5",
+                    "model_reasoning_effort": "high",
+                }
+            }
+        },
+        MagicMock(),
+    )
+
+    adapter.execute_prompt("p", tmp_path)
+
+    cmd = mock_popen.call_args[0][0]
+    assert "-c" in cmd
+    assert 'model_reasoning_effort="high"' in cmd

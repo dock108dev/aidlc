@@ -57,6 +57,13 @@ class TestLoadConfig:
         assert config["providers"]["copilot"]["enabled"] is False
         assert config["providers"]["openai"]["enabled"] is True
 
+    def test_default_openai_routes_use_gpt55_high_effort(self, tmp_path):
+        config = load_config(project_root=str(tmp_path))
+        openai = config["providers"]["openai"]
+        assert openai["default_model"] == "gpt-5.5"
+        assert openai["model_reasoning_effort"] == "high"
+        assert set(openai["phase_models"].values()) == {"gpt-5.5"}
+
     def test_explicit_config_path(self, tmp_path):
         config_file = tmp_path / "custom.json"
         config_file.write_text(json.dumps({"plan_budget_hours": 2}))

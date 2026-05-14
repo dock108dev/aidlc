@@ -151,7 +151,7 @@ Planner completion is controlled by cycle outcomes and guards:
   core planning docs are sufficient
 - consecutive-cycle failure ceiling (`max_consecutive_failures`)
 - action-failure ratio threshold (`planning_action_failure_ratio_threshold`)
-- **CLI threading** (default on via `claude_planning_cli_threading`): the router passes the active provider’s continuation hint — Claude `--session-id`, Copilot `--resume=`, or Codex `exec resume <thread_id>` once a `thread.started` id has been captured from JSONL — and pins `model_override` from the first successful routed call for later planning cycles in the same run.
+- **CLI threading** (default on via `claude_planning_cli_threading`): the router passes the active provider’s continuation hint — Claude `--session-id` then `--resume`, Copilot `--resume=`, or Codex `exec resume <thread_id>` once a `thread.started` id has been captured from JSONL — and pins `model_override` from the first successful routed call for later planning cycles in the same run.
 
 The planner's prompt also includes:
 

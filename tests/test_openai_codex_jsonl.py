@@ -27,7 +27,8 @@ def test_openai_build_command_resume_includes_thread_and_prompt():
     ad = OpenAIAdapter(cfg, log)
     cmd = ad._build_command("gpt-5", True, "next task", "thread-uuid-1")
     assert cmd[:6] == ["codex", "exec", "resume", "--json", "--model", "gpt-5"]
-    assert "--full-auto" in cmd
+    assert "--full-auto" not in cmd
+    assert "--skip-git-repo-check" in cmd
     assert "--dangerously-bypass-approvals-and-sandbox" in cmd
     assert cmd[-2] == "thread-uuid-1"
     assert cmd[-1] == "next task"

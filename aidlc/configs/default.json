@@ -40,15 +40,16 @@
       "cli_command": "codex",
       "max_capacity": true,
       "max_capacity_weight": 20,
-      "default_model": "gpt-5.4",
+      "default_model": "gpt-5.5",
+      "model_reasoning_effort": "high",
       "phase_models": {
-        "discovery": "gpt-5.4-mini",
-        "planning": "gpt-5.4-mini",
-        "research": "gpt-5.4-mini",
-        "implementation": "gpt-5.4",
-        "implementation_complex": "gpt-5.3-codex",
-        "finalization": "gpt-5.4-mini",
-        "audit": "gpt-5.4-mini"
+        "discovery": "gpt-5.5",
+        "planning": "gpt-5.5",
+        "research": "gpt-5.5",
+        "implementation": "gpt-5.5",
+        "implementation_complex": "gpt-5.5",
+        "finalization": "gpt-5.5",
+        "audit": "gpt-5.5"
       },
       "accounts": [
         {
@@ -87,6 +88,12 @@
       "output": 4.0,
       "cache_creation_input": 1.0,
       "cache_read_input": 0.08
+    },
+    "gpt-5.5": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_creation_input": 3.75,
+      "cache_read_input": 0.3
     },
     "gpt-5.4": {
       "input": 2.50,

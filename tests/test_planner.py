@@ -327,6 +327,42 @@ class TestPlanner:
         # State persisted the resumable flip.
         assert state.planning_claude_session_resumable is True
 
+    def test_openai_thread_id_moves_to_resume_after_first_successful_cycle(
+        self, state, config, logger, tmp_path
+    ):
+        cli = MagicMock()
+        empty_response = json.dumps(
+            {"frontier_assessment": "nothing", "actions": [], "cycle_notes": ""}
+        )
+        cli.execute_prompt.return_value = {
+            "success": True,
+            "output": f"```json\n{empty_response}\n```",
+            "error": None,
+            "failure_type": None,
+            "duration_seconds": 1.0,
+            "retries": 0,
+            "provider_id": "openai",
+            "continuation_session_id": "codex-thread-id",
+        }
+        config["max_planning_cycles"] = 2
+        config["dry_run"] = False
+        config["planning_facets_enabled"] = False
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        (run_dir / "claude_outputs").mkdir()
+
+        planner = Planner(state, run_dir, config, cli, "context", logger)
+        planner.run()
+
+        assert cli.execute_prompt.call_count >= 2
+        first_kwargs = cli.execute_prompt.call_args_list[0].kwargs
+        second_kwargs = cli.execute_prompt.call_args_list[1].kwargs
+        assert not (first_kwargs.get("session_resume") or {}).get("openai")
+        assert not (first_kwargs.get("session_continuation") or {}).get("openai")
+        assert (second_kwargs.get("session_resume") or {}).get("openai") == "codex-thread-id"
+        assert not (second_kwargs.get("session_continuation") or {}).get("openai")
+        assert state.planning_openai_thread_id == "codex-thread-id"
+
     def test_consecutive_failures_stop(self, state, config, logger, tmp_path):
         cli = MagicMock()
         cli.execute_prompt.return_value = {

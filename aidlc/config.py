@@ -66,17 +66,18 @@ DEFAULTS = {
         "openai": {
             "enabled": True,
             "cli_command": "codex",
-            "default_model": "gpt-5.4",
+            "default_model": "gpt-5.5",
+            "model_reasoning_effort": "high",
             "phase_models": {
-                "discovery": "gpt-5.4-mini",
-                "planning": "gpt-5.4-mini",
-                "research": "gpt-5.4-mini",
-                "implementation": "gpt-5.4",
-                "implementation_complex": "gpt-5.3-codex",
-                "finalization": "gpt-5.4-mini",
-                "audit": "gpt-5.4-mini",
+                "discovery": "gpt-5.5",
+                "planning": "gpt-5.5",
+                "research": "gpt-5.5",
+                "implementation": "gpt-5.5",
+                "implementation_complex": "gpt-5.5",
+                "finalization": "gpt-5.5",
+                "audit": "gpt-5.5",
             },
-            "model_fallback_chain": ["gpt-5.4", "gpt-5.4-mini"],
+            "model_fallback_chain": ["gpt-5.5", "gpt-5.4"],
         },
     },
     "plan_budget_hours": 2,
@@ -167,7 +168,13 @@ DEFAULTS = {
             "cache_creation_input": 1.0,
             "cache_read_input": 0.08,
         },
-        # OpenAI GPT-5 family (current as of April 2026)
+        # OpenAI GPT-5 family (budgeting estimates only).
+        "gpt-5.5": {
+            "input": 3.0,
+            "output": 15.0,
+            "cache_creation_input": 3.75,
+            "cache_read_input": 0.30,
+        },
         "gpt-5.4": {
             "input": 2.50,
             "output": 15.0,
