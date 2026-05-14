@@ -1,5 +1,6 @@
 """Config loader for AIDLC runner. Project-agnostic."""
 
+import copy
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,8 @@ DEFAULTS = {
         "openai": {
             "enabled": True,
             "cli_command": "codex",
+            "max_capacity": True,
+            "max_capacity_weight": 20,
             "default_model": "gpt-5.5",
             "model_reasoning_effort": "high",
             "phase_models": {
@@ -582,7 +585,7 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
 
 def load_config(config_path: str | None = None, project_root: str | None = None) -> dict:
     """Load and validate config. Merges defaults with user config."""
-    config = dict(DEFAULTS)
+    config = copy.deepcopy(DEFAULTS)
     # Always present so consumers can do ``config["_user_provider_overrides"].get(pid)``
     # without checking for the key first. Populated by ``_merge_user_config`` when a
     # user config is loaded.

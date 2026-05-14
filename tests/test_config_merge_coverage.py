@@ -60,6 +60,14 @@ def test_load_config_relative_name_from_project_dot_aidlc(tmp_path):
     assert cfg["_project_root"]
 
 
+def test_load_config_deep_copies_nested_defaults(tmp_path):
+    cfg = load_config(project_root=str(tmp_path))
+    cfg["providers"]["openai"]["enabled"] = False
+
+    fresh = load_config(project_root=str(tmp_path))
+    assert fresh["providers"]["openai"]["enabled"] is True
+
+
 def test_load_config_production_profile_applies_defaults(tmp_path):
     aidlc = tmp_path / ".aidlc"
     aidlc.mkdir()
@@ -108,7 +116,9 @@ def test_write_default_config_uses_codex_primary_defaults(tmp_path):
         }
     ]
     loaded = load_config(project_root=str(tmp_path))
+    assert loaded["providers"]["claude"]["enabled"] is False
     assert loaded["providers"]["claude"]["max_capacity"] is False
+    assert loaded["providers"]["openai"]["enabled"] is True
     assert loaded["providers"]["openai"]["max_capacity"] is True
     assert loaded["providers"]["openai"]["max_capacity_weight"] == 20
 

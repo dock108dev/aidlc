@@ -122,13 +122,23 @@ def cmd_provider_list(config_path: Path) -> None:
     if not providers:
         print("  No provider config found.")
         return
+    try:
+        effective = load_config(project_root=str(config_path.parent.parent))
+        effective_providers = effective.get("providers", {})
+    except Exception:  # noqa: BLE001 — provider list is diagnostic; raw config is still useful
+        effective_providers = {}
 
     print(f"  {bold('Providers')}")
     print()
     for pname, cfg in providers.items():
-        enabled = cfg.get("enabled", pname == "openai")
+        effective_cfg = (
+            effective_providers.get(pname, {}) if isinstance(effective_providers, dict) else {}
+        )
+        if not isinstance(effective_cfg, dict):
+            effective_cfg = {}
+        enabled = cfg.get("enabled", effective_cfg.get("enabled", pname == "claude"))
         status = green("enabled") if enabled else dim("disabled")
-        model = cfg.get("default_model", "?")
+        model = cfg.get("default_model") or effective_cfg.get("default_model") or "?"
         bullet = "●" if enabled else "○"
         print(f"  {bullet} {bold(pname):<20}  {status}  (model: {model})")
     print()

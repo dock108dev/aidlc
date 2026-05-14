@@ -32,7 +32,7 @@ The `providers` sub-dict deep-merges: per-provider entries you don't set keep th
 | Key | Default |
 |---|---|
 | `routing_strategy` | `"balanced"` |
-| `routing_impl_budget_explore_probability` | `0.05` |
+| `routing_impl_budget_explore_probability` | `0.0` |
 | `routing_rate_limit_cooldown_seconds` | `300` |
 | `routing_rate_limit_buffer_base_seconds` | `3600` (1h) |
 
@@ -57,7 +57,8 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
         "finalization": "opus",
         "audit": "sonnet"
       },
-      "model_fallback_chain": ["sonnet", "opus", "haiku"]
+      "model_fallback_chain": ["sonnet", "opus", "haiku"],
+      "accounts": []
     },
     "openai": {
       "enabled": true,
@@ -94,7 +95,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 | `enabled` | Master switch for the provider. Disabled providers are skipped entirely. |
 | `cli_command` | Path/name of the CLI binary. |
 | `max_capacity` | Mark a backend as **high token capacity**. Init defaults this to `true` for Codex/OpenAI and `false` for Claude/Copilot. |
-| `max_capacity_weight` | On planning/research/audit, balanced mode rotates by weighted fairness: lower `calls ÷ weight` is preferred, so a weight-20 provider gets ~20× the first-choice share over time. |
+| `max_capacity_weight` | In balanced mode, routing rotates by weighted fairness: lower `calls ÷ weight` is preferred, so Codex/OpenAI's default weight of 20 keeps it primary when other providers are enabled. |
 | `default_model` | Fallback model when no `phase_models[phase]` entry resolves. **A user-set value overrides DEFAULT `phase_models` entries** — see precedence below. |
 | `phase_models` | Per-phase model selection. Keys: `discovery`, `planning`, `research`, `implementation`, `implementation_complex`, `finalization`, `audit`. |
 | `model_reasoning_effort` | Codex/OpenAI reasoning effort passed to the CLI via `-c model_reasoning_effort="..."`. Default: `high`. |
