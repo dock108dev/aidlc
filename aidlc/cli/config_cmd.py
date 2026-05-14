@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..accounts import AccountManager
 from ..config import load_config
+from ..paths import resolve_project_root
 from ..routing import ProviderRouter
 from .display import (
     bold,
@@ -25,7 +26,7 @@ from .display import (
 def cmd_config_show(args: argparse.Namespace, version: str) -> None:
     """Show effective runtime config and routing preview."""
     subcmd = getattr(args, "config_cmd", "show")
-    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    project_root = resolve_project_root(getattr(args, "project", None))
     config_path = project_root / ".aidlc" / "config.json"
 
     print_banner(version)

@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-from pathlib import Path
 
 from . import __version__
 from .cli.accounts import cmd_accounts as _cmd_accounts
@@ -29,6 +28,7 @@ from .cli_commands import (
 )
 from .cli_parser import build_parser
 from .config import load_config
+from .paths import resolve_project_root
 from .runner import run_full
 
 
@@ -76,8 +76,8 @@ def cmd_config_show(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     """Run the full AIDLC lifecycle."""
-    project_root = args.project or str(Path.cwd())
-    project_path = Path(project_root).resolve()
+    project_path = resolve_project_root(args.project)
+    project_root = str(project_path)
     config = load_config(config_path=args.config, project_root=project_root)
 
     revert_cycle = getattr(args, "revert_to_cycle", None)

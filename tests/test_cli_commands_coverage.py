@@ -7,8 +7,10 @@ validate were duplicating ``run`` or producing orthogonal artifacts). This
 file therefore covers only the surviving handlers.
 """
 
+import errno
 import json
 from argparse import Namespace
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -76,6 +78,31 @@ def test_cmd_init_scaffolds_braindump(mock_banner, mock_wdc, mock_tpl, version, 
     (template_dir / "BRAINDUMP.md").write_text("# braindump template\n")
     mock_tpl.return_value = template_dir
     cmd_init(_args(project=str(tmp_path)), version)
+    assert (tmp_path / "BRAINDUMP.md").exists()
+
+
+@patch("aidlc.cli_commands._get_template_dir")
+@patch("aidlc.cli_commands.write_default_config")
+@patch("aidlc.cli_commands._print_banner")
+def test_cmd_init_handles_permission_error_from_resolve(
+    mock_banner, mock_wdc, mock_tpl, version, tmp_path, monkeypatch
+):
+    """macOS can deny realpath() for the cwd; init should still scaffold there."""
+    template_dir = tmp_path / "tpl"
+    template_dir.mkdir()
+    (template_dir / "BRAINDUMP.md").write_text("# braindump template\n")
+    mock_tpl.return_value = template_dir
+    monkeypatch.setenv("PWD", str(tmp_path))
+
+    def raise_permission_error(self):
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(Path, "resolve", raise_permission_error)
+
+    cmd_init(_args(project=None), version)
+
+    mock_wdc.assert_called_once()
+    assert mock_wdc.call_args.args[0] == tmp_path / ".aidlc"
     assert (tmp_path / "BRAINDUMP.md").exists()
 
 

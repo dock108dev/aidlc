@@ -5,15 +5,15 @@ import json
 import logging
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
+from ..paths import resolve_project_root
 from ..state_manager import load_state
 from .display import bold, cyan, dim, print_banner, yellow
 
 
 def cmd_usage(args: argparse.Namespace, version: str) -> None:
     """Show token/cost usage table across runs."""
-    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    project_root = resolve_project_root(getattr(args, "project", None))
     runs_dir = project_root / ".aidlc" / "runs"
     by = getattr(args, "by", "provider")
     last_n = getattr(args, "last", 1)

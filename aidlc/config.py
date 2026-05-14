@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from .paths import resolve_project_root
+
 # Framework root (where aidlc package lives)
 AIDLC_PKG_ROOT = Path(__file__).parent
 CONFIGS_DIR = AIDLC_PKG_ROOT / "configs"
@@ -619,10 +621,7 @@ def load_config(config_path: str | None = None, project_root: str | None = None)
                 user_keys.update(user_config.keys())
 
     # Resolve project root
-    if project_root:
-        config["_project_root"] = str(Path(project_root).resolve())
-    else:
-        config["_project_root"] = str(Path.cwd().resolve())
+    config["_project_root"] = str(resolve_project_root(project_root))
 
     # Set up AIDLC working directory inside the project
     aidlc_dir = Path(config["_project_root"]) / ".aidlc"

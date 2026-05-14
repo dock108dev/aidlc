@@ -37,6 +37,7 @@ from .cli.display import (
 )
 from .cli.provider import cmd_provider_auth
 from .config import load_config, write_default_config
+from .paths import resolve_project_root
 from .state_manager import find_latest_run, load_state
 
 
@@ -44,7 +45,7 @@ def cmd_precheck(args: argparse.Namespace, version: str) -> None:
     """Run pre-flight readiness check."""
     from .precheck import run_precheck
 
-    project_root = Path(args.project or ".").resolve()
+    project_root = resolve_project_root(args.project)
     _print_banner(version)
     print(f"Checking {_cyan(str(project_root))}...")
     print()
@@ -57,7 +58,7 @@ def cmd_precheck(args: argparse.Namespace, version: str) -> None:
 
 def cmd_init(args: argparse.Namespace, version: str) -> None:
     """Initialize AIDLC in a project directory."""
-    project_root = Path(args.project or ".").resolve()
+    project_root = resolve_project_root(args.project)
     aidlc_dir = project_root / ".aidlc"
     braindump_path = project_root / "BRAINDUMP.md"
 
@@ -181,7 +182,7 @@ def cmd_init(args: argparse.Namespace, version: str) -> None:
 
 def cmd_status(args: argparse.Namespace, version: str) -> None:
     """Show latest run status."""
-    project_root = Path(args.project or ".").resolve()
+    project_root = resolve_project_root(args.project)
     runs_dir = project_root / ".aidlc" / "runs"
     _print_banner(version)
 
@@ -292,7 +293,7 @@ def _reset_targets(aidlc_dir: Path, *, keep_issues: bool, reset_all: bool) -> li
 
 def cmd_reset(args: argparse.Namespace, version: str) -> None:
     """Clear stale .aidlc/ state."""
-    project_root = Path(args.project or ".").resolve()
+    project_root = resolve_project_root(args.project)
     aidlc_dir = project_root / ".aidlc"
     _print_banner(version)
 

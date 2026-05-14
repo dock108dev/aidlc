@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from ..config import load_config
+from ..paths import resolve_project_root
 from ..routing.engine import ProviderRouter
 from .display import (
     bold,
@@ -42,7 +43,7 @@ def cmd_provider(args: argparse.Namespace, version: str) -> None:
     subcmd = getattr(args, "provider_cmd", "list")
     print_banner(version)
 
-    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    project_root = resolve_project_root(getattr(args, "project", None))
     config_path = project_root / ".aidlc" / "config.json"
 
     if subcmd == "list" or subcmd is None:

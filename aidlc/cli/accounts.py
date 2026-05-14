@@ -3,10 +3,10 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from aidlc.accounts import Account, AccountManager, AuthState, MembershipTier
 from aidlc.config import load_config
+from aidlc.paths import resolve_project_root
 from aidlc.routing import ProviderRouter
 
 from .display import bold, cyan, dim, green, red, yellow
@@ -127,7 +127,7 @@ def remove_account(args: argparse.Namespace, manager: AccountManager) -> None:
 def validate_account(args: argparse.Namespace, manager: AccountManager) -> None:
     """Validate accounts' health and auth status."""
     account_id = getattr(args, "id", None)
-    project_root = Path(getattr(args, "project", None) or ".").resolve()
+    project_root = resolve_project_root(getattr(args, "project", None))
     config = load_config(project_root=str(project_root))
 
     logger = logging.getLogger("aidlc.accounts.validate")
