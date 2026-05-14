@@ -1,11 +1,11 @@
 {
-  "plan_budget_hours": 2.5,
-  "checkpoint_interval_minutes": 15,
+  "plan_budget_hours": 2,
+  "checkpoint_interval_minutes": 45,
   "dry_run": false,
   "routing_strategy": "balanced",
   "providers": {
     "claude": {
-      "enabled": true,
+      "enabled": false,
       "cli_command": "claude",
       "max_capacity": true,
       "max_capacity_weight": 20,
@@ -45,7 +45,7 @@
       "accounts": []
     },
     "openai": {
-      "enabled": false,
+      "enabled": true,
       "cli_command": "codex",
       "default_model": "gpt-5.4",
       "phase_models": {

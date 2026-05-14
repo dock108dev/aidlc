@@ -24,7 +24,7 @@ DEFAULTS = {
     "routing_rate_limit_buffer_base_seconds": 3600,
     "providers": {  # provider enable/model configuration
         "claude": {
-            "enabled": True,
+            "enabled": False,
             "cli_command": "claude",
             # Primary provider target share: with budget providers enabled, weighted 8:1:1
             # by default (normalized over whichever providers are enabled).
@@ -64,7 +64,7 @@ DEFAULTS = {
             "model_fallback_chain": [],
         },
         "openai": {
-            "enabled": False,
+            "enabled": True,
             "cli_command": "codex",
             "default_model": "gpt-5.4",
             "phase_models": {
@@ -79,8 +79,8 @@ DEFAULTS = {
             "model_fallback_chain": ["gpt-5.4", "gpt-5.4-mini"],
         },
     },
-    "plan_budget_hours": 4,
-    "checkpoint_interval_minutes": 15,
+    "plan_budget_hours": 2,
+    "checkpoint_interval_minutes": 45,
     "dry_run": False,
     "claude_long_run_warn_seconds": 300,  # heartbeat-log cadence while Claude is still running
     # Stall detection (activity-based, uses stream-json line events as the
@@ -511,12 +511,12 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
         # phase-resolution precedence rule, overrode DEFAULT phase_models —
         # and silently routed implementation to sonnet instead of opus.
         default_config: dict = {
-            "plan_budget_hours": 4,
-            "checkpoint_interval_minutes": 15,
+            "plan_budget_hours": 2,
+            "checkpoint_interval_minutes": 45,
             "routing_strategy": "balanced",
             "providers": {
                 "claude": {
-                    "enabled": True,
+                    "enabled": False,
                     "cli_command": "claude",
                     "accounts": [
                         {
@@ -534,7 +534,7 @@ def write_default_config(aidlc_dir: Path, detected_overrides: dict | None = None
                     "accounts": [],
                 },
                 "openai": {
-                    "enabled": False,
+                    "enabled": True,
                     "cli_command": "codex",
                     "accounts": [],
                 },

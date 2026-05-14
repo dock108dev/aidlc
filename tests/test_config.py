@@ -49,7 +49,13 @@ class TestLoadConfig:
         assert config["plan_budget_hours"] == 8
         assert config["providers"]["claude"]["default_model"] == "opus"
         # Defaults still present
-        assert config["checkpoint_interval_minutes"] == 15
+        assert config["checkpoint_interval_minutes"] == 45
+
+    def test_default_provider_enablement_prefers_codex(self, tmp_path):
+        config = load_config(project_root=str(tmp_path))
+        assert config["providers"]["claude"]["enabled"] is False
+        assert config["providers"]["copilot"]["enabled"] is False
+        assert config["providers"]["openai"]["enabled"] is True
 
     def test_explicit_config_path(self, tmp_path):
         config_file = tmp_path / "custom.json"

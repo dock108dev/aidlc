@@ -170,3 +170,41 @@ def test_exec_command_includes_json_flag(mock_popen, tmp_path):
     adapter.execute_prompt("p", tmp_path)
     cmd = mock_popen.call_args[0][0]
     assert cmd[:4] == ["codex", "exec", "--json", "--model"]
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_exec_command_edit_mode_adds_dangerous_flag_and_warning(mock_popen, tmp_path):
+    proc = MagicMock()
+    proc.communicate.return_value = ('{"type":"turn.completed","usage":{}}\n', "")
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    logger = MagicMock()
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-4o"}}},
+        logger,
+    )
+
+    adapter.execute_prompt("p", tmp_path, allow_edits=True)
+
+    cmd = mock_popen.call_args[0][0]
+    assert "--full-auto" in cmd
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    logger.warning.assert_called_once()
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_exec_command_edit_mode_warns_once_per_adapter(mock_popen, tmp_path):
+    proc = MagicMock()
+    proc.communicate.return_value = ('{"type":"turn.completed","usage":{}}\n', "")
+    proc.returncode = 0
+    mock_popen.return_value = proc
+    logger = MagicMock()
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-4o"}}},
+        logger,
+    )
+
+    adapter.execute_prompt("p1", tmp_path, allow_edits=True)
+    adapter.execute_prompt("p2", tmp_path, allow_edits=True)
+
+    assert logger.warning.call_count == 1

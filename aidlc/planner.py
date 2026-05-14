@@ -80,7 +80,7 @@ class Planner:
 
     def run(self) -> None:
         """Run the full planning loop until budget exhausted or frontier clear."""
-        checkpoint_interval = self.config.get("checkpoint_interval_minutes", 15) * 60
+        checkpoint_interval = self.config.get("checkpoint_interval_minutes", 45) * 60
         last_checkpoint_time = time.time()
         max_consecutive_failures = self.config.get("max_consecutive_failures", 3)
         consecutive_failures = 0

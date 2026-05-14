@@ -20,8 +20,8 @@ The `providers` sub-dict deep-merges: per-provider entries you don't set keep th
 | Key | Default |
 |---|---|
 | `runtime_profile` | `"standard"` |
-| `plan_budget_hours` | `4` |
-| `checkpoint_interval_minutes` | `15` |
+| `plan_budget_hours` | `2` |
+| `checkpoint_interval_minutes` | `45` |
 | `dry_run` | `false` |
 | `max_consecutive_failures` | `3` |
 | `max_planning_cycles` | `0` (unlimited) |
@@ -44,7 +44,7 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
 {
   "providers": {
     "claude": {
-      "enabled": true,
+      "enabled": false,
       "cli_command": "claude",
       "max_capacity": true,
       "max_capacity_weight": 20,
@@ -59,6 +59,11 @@ On HTTP 429 / rate-limit responses, the router waits until the provider-reported
         "audit": "sonnet"
       },
       "model_fallback_chain": ["sonnet", "opus", "haiku"]
+    },
+    "openai": {
+      "enabled": true,
+      "cli_command": "codex",
+      "default_model": "gpt-5.4"
     }
   }
 }

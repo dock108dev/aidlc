@@ -85,6 +85,17 @@ def test_write_default_config_merges_detected_overrides(tmp_path):
     assert data["plan_budget_hours"] == 7
 
 
+def test_write_default_config_uses_codex_primary_defaults(tmp_path):
+    aidlc = tmp_path / ".aidlc"
+    p = write_default_config(aidlc, None)
+    data = json.loads(p.read_text())
+    assert data["plan_budget_hours"] == 2
+    assert data["checkpoint_interval_minutes"] == 45
+    assert data["providers"]["claude"]["enabled"] is False
+    assert data["providers"]["copilot"]["enabled"] is False
+    assert data["providers"]["openai"]["enabled"] is True
+
+
 def test_load_config_resolves_name_from_package_configs(tmp_path):
     (tmp_path / ".aidlc").mkdir()
     cfg = load_config(config_path="quick_smoke.json", project_root=str(tmp_path))

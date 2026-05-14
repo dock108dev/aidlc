@@ -222,6 +222,7 @@ class OpenAIAdapter(ProviderAdapter):
         self.cli_command = provider_cfg.get("cli_command", "codex")
         self.default_model = provider_cfg.get("default_model", _DEFAULT_OPENAI_MODEL)
         self.dry_run = config.get("dry_run", False)
+        self._dangerous_mode_warned = False
         # Non-streaming provider — wall-clock timeout is appropriate here
         # (unlike Claude CLI streaming, where we removed wall-clock kills).
         self.call_timeout = int(config.get("provider_call_timeout_seconds", 1800))
@@ -251,6 +252,14 @@ class OpenAIAdapter(ProviderAdapter):
             return self._dry_run_result(model_override or self.default_model, account_id)
 
         model = model_override or self.default_model
+        if allow_edits and not self._dangerous_mode_warned:
+            self.logger.warning(
+                "Codex edit runs use --full-auto plus "
+                "--dangerously-bypass-approvals-and-sandbox: no approval prompts "
+                "and no sandbox. EXTREMELY DANGEROUS. Use only in externally "
+                "sandboxed environments."
+            )
+            self._dangerous_mode_warned = True
 
         cmd = self._build_command(model, allow_edits, prompt, continuation_session_id)
 
@@ -356,12 +365,12 @@ class OpenAIAdapter(ProviderAdapter):
                 model,
             ]
             if allow_edits:
-                cmd.append("--full-auto")
+                cmd.extend(["--full-auto", "--dangerously-bypass-approvals-and-sandbox"])
             cmd.extend([continuation_session_id, prompt])
             return cmd
         cmd = [self.cli_command, "exec", "--json", "--model", model]
         if allow_edits:
-            cmd.append("--full-auto")
+            cmd.extend(["--full-auto", "--dangerously-bypass-approvals-and-sandbox"])
         cmd.append(prompt)
         return cmd
 

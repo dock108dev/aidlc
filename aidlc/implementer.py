@@ -217,7 +217,7 @@ class Implementer:
         Returns:
             bool: True when final verification passes, False otherwise.
         """
-        checkpoint_interval = self.config.get("checkpoint_interval_minutes", 15) * 60
+        checkpoint_interval = self.config.get("checkpoint_interval_minutes", 45) * 60
         last_checkpoint_time = time.time()
         max_consecutive_failures = self.config.get("max_consecutive_failures", 3)
         consecutive_failures = 0

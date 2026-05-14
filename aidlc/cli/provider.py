@@ -125,7 +125,7 @@ def cmd_provider_list(config_path: Path) -> None:
     print(f"  {bold('Providers')}")
     print()
     for pname, cfg in providers.items():
-        enabled = cfg.get("enabled", True)
+        enabled = cfg.get("enabled", pname == "openai")
         status = green("enabled") if enabled else dim("disabled")
         model = cfg.get("default_model", "?")
         bullet = "●" if enabled else "○"

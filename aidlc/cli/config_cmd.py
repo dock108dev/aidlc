@@ -104,7 +104,7 @@ def run_config_wizard(config_path: Path) -> None:
         config.get("routing_strategy", "balanced"),
     )
 
-    _prompt("Plan budget (hours)", "plan_budget_hours", config.get("plan_budget_hours", 4))
+    _prompt("Plan budget (hours)", "plan_budget_hours", config.get("plan_budget_hours", 2))
 
     print()
     print(f"  {bold('Providers')}")
@@ -114,7 +114,7 @@ def run_config_wizard(config_path: Path) -> None:
 
     for pname in ["claude", "copilot", "openai"]:
         pcfg = providers.get(pname, {})
-        enabled = pcfg.get("enabled", pname == "claude")
+        enabled = pcfg.get("enabled", pname == "openai")
         print()
         print(f"  {bold(pname)}")
 
@@ -212,7 +212,7 @@ def print_config_summary(config: dict) -> None:
     print()
     print(f"  {bold('Runtime profile:')}    {config.get('runtime_profile', 'standard')}")
     print(f"  {bold('Routing strategy:')}   {cyan(config.get('routing_strategy', 'balanced'))}")
-    print(f"  {bold('Plan budget:')}        {config.get('plan_budget_hours', 4)}h")
+    print(f"  {bold('Plan budget:')}        {config.get('plan_budget_hours', 2)}h")
     print(f"  {bold('Dry run:')}            {config.get('dry_run', False)}")
     print()
 

@@ -100,7 +100,7 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
         run_id=run_id,
         config_name=config.get("run_name", "default"),
         project_root=config["_project_root"],
-        plan_budget_seconds=config.get("plan_budget_hours", 4) * 3600,
+        plan_budget_seconds=config.get("plan_budget_hours", 2) * 3600,
     )
     state.started_at = datetime.now(timezone.utc).isoformat()
     save_state(state, run_dir)
