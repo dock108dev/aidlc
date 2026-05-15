@@ -98,7 +98,7 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
                 print(f"Previous run {state.run_id} is {state.status.value}. Starting new run.")
             else:
                 print(f"Resuming run {state.run_id} (phase: {state.phase.value})")
-                (run_dir / "claude_outputs").mkdir(exist_ok=True)
+                (run_dir / "provider_outputs").mkdir(exist_ok=True)
                 # Register interrupt handler so a Ctrl-C during this resume
                 # marks the run INTERRUPTED rather than leaving stale RUNNING.
                 _register_interrupt_handlers(state, run_dir)
@@ -117,7 +117,7 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
     )
     state.started_at = datetime.now(timezone.utc).isoformat()
     save_state(state, run_dir)
-    (run_dir / "claude_outputs").mkdir(exist_ok=True)
+    (run_dir / "provider_outputs").mkdir(exist_ok=True)
 
     # Save config snapshot
     with open(run_dir / "config_snapshot.json", "w") as f:

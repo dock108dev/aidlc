@@ -84,7 +84,7 @@ def test_default_does_not_auto_run_finalize_on_early_stop(mock_finalizer_cls, lo
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, _exhausted_cli(), "ctx", logger)
     ok = impl.run()
@@ -107,7 +107,7 @@ def test_opt_in_runs_finalize_on_early_stop(mock_finalizer_cls, logger, tmp_path
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
     mock_finalizer_cls.return_value.run = MagicMock()
 
     impl = Implementer(state, run_dir, config, _exhausted_cli(), "ctx", logger)
@@ -125,7 +125,7 @@ def test_stop_reason_logged_with_resume_hint(logger, tmp_path, caplog):
     state = _state_with_unresolved_issue()
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, _exhausted_cli(), "ctx", logger)
     with caplog.at_level("ERROR"):

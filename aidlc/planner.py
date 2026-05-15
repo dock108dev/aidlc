@@ -7,14 +7,13 @@ Runs time-constrained planning sessions that:
 4. Loop until time budget exhausted or planning frontier is clear
 """
 
-import json
 import time
 import uuid
 from pathlib import Path
 
+from . import planner_actions, planner_cycle, planner_debug
 from .logger import log_checkpoint
 from .models import Issue, RunPhase, RunState
-from .planner_dependency_graph import sanitize_dependencies
 from .planner_helpers import (
     build_prompt,
     load_last_cycle_notes,
@@ -31,11 +30,9 @@ from .planner_text import (
     planning_instructions_faceted,
 )
 from .reporting import generate_checkpoint_summary
-from .routing.helpers import routed_model_from_result
 from .schemas import (
     PlanningAction,
     PlanningOutput,
-    parse_planning_output,
 )
 from .state_manager import checkpoint, save_cycle_snapshot, save_state
 
@@ -268,272 +265,7 @@ class Planner:
         save_state(self.state, self.run_dir)
 
     def _planning_cycle(self) -> bool | None:
-        """Execute one planning cycle.
-
-        Returns True (success), False (failure), or None (frontier clear).
-        If Claude signals planning_complete, it's stored in
-        self._pending_completion_reason for the run() loop to evaluate.
-        """
-        self.state.planning_cycles += 1
-        cycle_num = self.state.planning_cycles
-        is_finalization = self.state.phase == RunPhase.PLAN_FINALIZATION
-
-        self.logger.info(
-            f"=== Planning Cycle {cycle_num} {'(FINALIZATION)' if is_finalization else ''} ==="
-        )
-
-        # Build the planning prompt
-        prompt = self._build_prompt(is_finalization)
-        self.logger.debug(f"Prompt size: {len(prompt)} chars")
-        preflight_routing = self._preflight_routing_snapshot()
-        if preflight_routing:
-            self.logger.info(
-                "  Planning Cycle %s selected route: %s/%s",
-                cycle_num,
-                preflight_routing.get("provider_id"),
-                preflight_routing.get("model"),
-            )
-
-        # Execute Claude with file access (can read project files + write issues/docs)
-        start_time = time.time()
-        use_threading = self.config.get("claude_planning_cli_threading", True)
-        model_pin = self.state.planning_pinned_model if use_threading else None
-        if use_threading:
-            if not self.state.planning_claude_session_id:
-                self.state.planning_claude_session_id = str(uuid.uuid4())
-            if not self.state.planning_copilot_session_id:
-                self.state.planning_copilot_session_id = str(uuid.uuid4())
-                save_state(self.state, self.run_dir)
-        session_cont = self._planning_session_continuation() if use_threading else None
-        session_resume = self._planning_session_resume() if use_threading else None
-        result = self.cli.execute_prompt(
-            prompt,
-            self.project_root,
-            allow_edits=True,
-            model_override=model_pin,
-            session_continuation=session_cont,
-            session_resume=session_resume,
-        )
-        if use_threading and result.get("success") and result.get("provider_id") == "claude":
-            delay = float(self.config.get("claude_session_release_delay_seconds", 2.0))
-            if delay > 0:
-                time.sleep(delay)
-        self._log_provider_result(cycle_num, result)
-        self.state.record_provider_result(result, self.config, phase="planning")
-        if (
-            self.config.get("claude_planning_cli_threading", True)
-            and result.get("success")
-            and not self.state.planning_pinned_model
-        ):
-            m = routed_model_from_result(result)
-            if m:
-                self.state.planning_pinned_model = m
-                save_state(self.state, self.run_dir)
-        if use_threading and result.get("success") and result.get("provider_id") == "openai":
-            ext = result.get("continuation_session_id")
-            if ext and not self.state.planning_openai_thread_id:
-                self.state.planning_openai_thread_id = ext
-                save_state(self.state, self.run_dir)
-        if use_threading and result.get("success") and result.get("provider_id") == "claude":
-            ext = result.get("continuation_session_id")
-            if ext:
-                self.state.planning_claude_session_id = ext
-            # First successful Claude cycle seeds the session — subsequent
-            # cycles must use ``--resume`` to join it; ``--session-id`` would
-            # collide. The Claude CLI's stream `init` event always emits a
-            # session_id even on the in-use fallback path, so once we have
-            # success we know there's a live session to resume.
-            if not self.state.planning_claude_session_resumable:
-                self.state.planning_claude_session_resumable = True
-            save_state(self.state, self.run_dir)
-        duration = time.time() - start_time
-        self.state.plan_elapsed_seconds += duration
-        self.state.elapsed_seconds += duration
-
-        # Save raw output
-        output_text = result.get("output", "")
-        output_dir = self.run_dir / "claude_outputs"
-        output_dir.mkdir(exist_ok=True)
-        prompt_path = output_dir / f"plan_cycle_{cycle_num:04d}.prompt.md"
-        output_path = output_dir / f"plan_cycle_{cycle_num:04d}.md"
-        prompt_path.write_text(prompt, encoding="utf-8")
-        if output_text:
-            output_path.write_text(output_text, encoding="utf-8")
-        else:
-            output_path.write_text("", encoding="utf-8")
-
-        if not result["success"]:
-            self._write_cycle_debug_bundle(
-                cycle_num=cycle_num,
-                prompt_path=prompt_path,
-                output_path=output_path,
-                result=result,
-                preflight_routing=preflight_routing,
-                parse_status="provider_failure",
-                parse_error=result.get("error"),
-            )
-            self.logger.error(f"Cycle {cycle_num} failed: {result.get('error')}")
-            return False
-
-        # Parse output
-        if self.config.get("dry_run"):
-            planning_output = PlanningOutput(
-                frontier_assessment=f"[DRY RUN] Cycle {cycle_num}",
-                actions=[],
-                cycle_notes="Dry run",
-            )
-        else:
-            try:
-                planning_output = parse_planning_output(output_text)
-            except ValueError as e:
-                self._write_cycle_debug_bundle(
-                    cycle_num=cycle_num,
-                    prompt_path=prompt_path,
-                    output_path=output_path,
-                    result=result,
-                    preflight_routing=preflight_routing,
-                    parse_status="parse_error",
-                    parse_error=str(e),
-                )
-                debug_path = output_dir / f"plan_cycle_{cycle_num:04d}.debug.json"
-                self.logger.error(f"Failed to parse cycle {cycle_num}: {e}")
-                self.logger.error(
-                    "Cycle %s returned no parseable output from %s/%s. "
-                    "See %s for full prompt/result/debug details.",
-                    cycle_num,
-                    result.get("provider_id"),
-                    result.get("model_used"),
-                    debug_path.name,
-                )
-                return False
-
-        self._write_cycle_debug_bundle(
-            cycle_num=cycle_num,
-            prompt_path=prompt_path,
-            output_path=output_path,
-            result=result,
-            preflight_routing=preflight_routing,
-            parse_status="ok",
-            planning_output=planning_output,
-        )
-
-        # Validate — pre-register new issue IDs from this batch so
-        # within-batch dependencies are allowed (issue X may depend on
-        # issue Y when both are created in the same cycle).
-        # Include existing issues from previous runs so dependencies to them are valid.
-        # existing_issues are {"path": "...", "content": "..."} dicts — extract the
-        # issue ID from the filename stem.
-        from pathlib import Path as _Path
-
-        known_ids = {d["id"] for d in self.state.issues} | {
-            _Path(e["path"]).stem
-            for e in self.existing_issues
-            if e.get("path") and _Path(e["path"]).stem.upper().startswith("ISSUE")
-        }
-        batch_new_ids = {
-            a.issue_id
-            for a in planning_output.actions
-            if a.action_type == "create_issue" and a.issue_id
-        }
-
-        # Batch-level validation uses original known_ids (catches true duplicates)
-        validation_errors = planning_output.validate(
-            is_finalization=is_finalization,
-            known_issue_ids=known_ids,
-        )
-        if validation_errors:
-            for err in validation_errors:
-                self.logger.warning(f"Validation: {err}")
-            # Don't fail the whole cycle — skip bad actions individually below
-
-        # Save cycle context for resume continuity
-        self._save_cycle_notes(
-            planning_output.frontier_assessment,
-            planning_output.cycle_notes,
-            cycle_num,
-        )
-        self._last_cycle_notes = (
-            f"Last planning cycle ({cycle_num}) assessment: "
-            f"{planning_output.frontier_assessment}\n"
-            f"Notes: {planning_output.cycle_notes}"
-        )
-
-        # Accept planning_complete when the model emits it during a verify
-        # cycle (where the prompt explicitly invites it) — the verify prompt
-        # is the only place the model is told it's allowed to declare done.
-        # On normal cycles the field is ignored; the model sometimes adds it
-        # unprompted on greenfield repos and we don't want to short-circuit.
-        if planning_output.planning_complete and self._verify_mode:
-            reason = planning_output.completion_reason or "planning completed"
-            self._pending_completion_reason = f"Planning complete — {reason}"
-            self.logger.info(
-                f"Model signaled planning_complete (accepted in verify mode): {reason}"
-            )
-        elif planning_output.planning_complete:
-            self.logger.debug(
-                "Model signaled planning_complete outside verify mode — ignored "
-                "(only honored when VERIFY MODE instructions are in the prompt)."
-            )
-
-        if not planning_output.actions:
-            self.logger.info("No actions proposed — frontier may be clear")
-            return None
-
-        self.logger.info(f"Cycle {cycle_num}: {len(planning_output.actions)} actions proposed")
-
-        # Apply actions
-        applied = 0
-        action_errors = []
-        total_actions = len(planning_output.actions)
-        for action in planning_output.actions:
-            errors = action.validate(
-                is_finalization=is_finalization,
-                known_issue_ids=known_ids,
-                batch_issue_ids=batch_new_ids,
-            )
-            if errors:
-                self.logger.warning(f"Skipping invalid action: {errors}")
-                action_errors.append(errors)
-                continue
-
-            try:
-                self._apply_action(action)
-                applied += 1
-                # Update known IDs for subsequent actions in same batch
-                if action.issue_id:
-                    known_ids.add(action.issue_id)
-            except Exception as e:
-                self.logger.error(f"Failed to apply action: {e}")
-                action_errors.append(str(e))
-
-        if action_errors and applied == 0:
-            self.logger.error(f"Cycle {cycle_num} failed: all {len(action_errors)} actions errored")
-            return False
-
-        if action_errors and total_actions:
-            failure_ratio = len(action_errors) / total_actions
-            ratio_threshold = self.config.get("planning_action_failure_ratio_threshold", 0.6)
-            if failure_ratio >= ratio_threshold:
-                self.logger.error(
-                    f"Cycle {cycle_num} failed: action failure ratio {failure_ratio:.0%} "
-                    f"exceeds threshold {ratio_threshold:.0%} "
-                    f"({len(action_errors)}/{total_actions} actions failed)"
-                )
-                return False
-            self.logger.warning(
-                f"Cycle {cycle_num} partial success: {len(action_errors)}/{total_actions} "
-                "actions failed but below failure threshold"
-            )
-
-        sanitized_changes = self._sanitize_issue_dependencies()
-        if sanitized_changes:
-            self.logger.info(
-                f"Cycle {cycle_num}: normalized dependency graph "
-                f"({sanitized_changes} change{'s' if sanitized_changes != 1 else ''})"
-            )
-
-        self.logger.info(f"Cycle {cycle_num} complete: {applied} actions applied")
-        return True
+        return planner_cycle.planning_cycle(self)
 
     def _write_planning_index(self):
         return write_planning_index(self)
@@ -633,53 +365,7 @@ class Planner:
         }
 
     def _apply_action(self, action: PlanningAction) -> None:
-        """Apply a single planning action."""
-        if action.action_type == "create_issue":
-            issue = Issue(
-                id=action.issue_id,
-                title=action.title,
-                description=action.description or "",
-                priority=action.priority or "medium",
-                labels=action.labels,
-                dependencies=action.dependencies,
-                acceptance_criteria=action.acceptance_criteria,
-            )
-            self.state.update_issue(issue)
-            self.state.issues_created += 1
-            self.state.total_issues = len(self.state.issues)
-
-            # Write issue file to .aidlc/issues/
-            issues_dir = Path(self.config["_issues_dir"])
-            issues_dir.mkdir(parents=True, exist_ok=True)
-            issue_path = issues_dir / f"{action.issue_id}.md"
-            issue_content = self._render_issue_md(issue)
-            issue_path.write_text(issue_content)
-
-            self.logger.info(f"Created issue: {action.issue_id} — {action.title}")
-
-        elif action.action_type == "update_issue":
-            existing = self.state.get_issue(action.issue_id)
-            if existing:
-                if action.description:
-                    existing.description = action.description
-                if action.priority:
-                    existing.priority = action.priority
-                if action.labels:
-                    existing.labels = action.labels
-                if action.acceptance_criteria:
-                    existing.acceptance_criteria = action.acceptance_criteria
-                if action.dependencies is not None:
-                    existing.dependencies = action.dependencies
-                self.state.update_issue(existing)
-
-                # Update issue file
-                issues_dir = Path(self.config["_issues_dir"])
-                issue_path = issues_dir / f"{action.issue_id}.md"
-                issue_path.write_text(self._render_issue_md(existing))
-
-                self.logger.info(f"Updated issue: {action.issue_id}")
-            else:
-                self.logger.warning(f"Cannot update unknown issue: {action.issue_id}")
+        planner_actions.apply_action(self, action)
 
     def _render_issue_md(self, issue: Issue) -> str:
         """Render an issue as markdown."""
@@ -696,77 +382,13 @@ class Planner:
         )
 
     def _sanitize_issue_dependencies(self) -> int:
-        """Normalize dependency graph and persist any changes.
-
-        Delegates the pure logic to ``planner_dependency_graph.sanitize_dependencies``;
-        this method handles the write-side effects (markdown sync, state update).
-        Returns total number of edge changes applied.
-        """
-        if not self.state.issues:
-            return 0
-
-        id_to_issue = {d["id"]: d for d in self.state.issues if d.get("id")}
-        touched, total_changes = sanitize_dependencies(self.state.issues, self.logger)
-
-        if touched:
-            issues_dir = Path(self.config["_issues_dir"])
-            issues_dir.mkdir(parents=True, exist_ok=True)
-            for issue_id in sorted(touched):
-                issue_data = id_to_issue.get(issue_id)
-                if not issue_data:
-                    continue
-                issue = Issue.from_dict(issue_data)
-                self.state.update_issue(issue)
-                issue_path = issues_dir / f"{issue_id}.md"
-                issue_path.write_text(self._render_issue_md(issue))
-                self.logger.info(f"Updated issue dependencies: {issue_id}")
-        return total_changes
+        return planner_actions.sanitize_issue_dependencies(self)
 
     def _preflight_routing_snapshot(self) -> dict | None:
-        """Best-effort router preview before the planning call starts."""
-        resolve_fn = getattr(type(self.cli), "resolve", None)
-        if not callable(resolve_fn):
-            return None
-        try:
-            decision = self.cli.resolve(phase="planning")
-        except Exception:
-            return None
-        provider_id = getattr(decision, "provider_id", None)
-        model = getattr(decision, "model", None)
-        if not provider_id and not model:
-            return None
-        return {
-            "provider_id": provider_id,
-            "account_id": getattr(decision, "account_id", None),
-            "model": model,
-            "reasoning": getattr(decision, "reasoning", None),
-            "strategy_used": getattr(decision, "strategy_used", None),
-            "fallback": getattr(decision, "fallback", None),
-            "tier": getattr(decision, "tier", None),
-            "quality_note": getattr(decision, "quality_note", None),
-        }
+        return planner_debug.preflight_routing_snapshot(self)
 
     def _serialize_result_metadata(self, result: dict) -> dict:
-        usage = result.get("usage")
-        return {
-            "success": bool(result.get("success")),
-            "provider_id": result.get("provider_id"),
-            "account_id": result.get("account_id"),
-            "model_used": result.get("model_used"),
-            "error": result.get("error"),
-            "failure_type": result.get("failure_type"),
-            "duration_seconds": result.get("duration_seconds"),
-            "retries": result.get("retries"),
-            "usage": usage if isinstance(usage, dict) else {},
-            "routing_decision": (
-                result.get("routing_decision")
-                if isinstance(result.get("routing_decision"), dict)
-                else None
-            ),
-            "raw_stdout_chars": len(result.get("raw_stdout") or ""),
-            "raw_stderr_chars": len(result.get("raw_stderr") or ""),
-            "output_chars": len(result.get("output") or ""),
-        }
+        return planner_debug.serialize_result_metadata(result)
 
     def _write_cycle_debug_bundle(
         self,
@@ -780,45 +402,14 @@ class Planner:
         parse_error: str | None = None,
         planning_output: PlanningOutput | None = None,
     ) -> None:
-        output_dir = self.run_dir / "claude_outputs"
-        debug_path = output_dir / f"plan_cycle_{cycle_num:04d}.debug.json"
-        parsed = {
-            "parse_status": parse_status,
-            "parse_error": parse_error,
-        }
-        if planning_output is not None:
-            parsed.update(
-                {
-                    "frontier_assessment": planning_output.frontier_assessment,
-                    "cycle_notes": planning_output.cycle_notes,
-                    "planning_complete": planning_output.planning_complete,
-                    "completion_reason": planning_output.completion_reason,
-                    "action_count": len(planning_output.actions),
-                    "actions": [
-                        {
-                            "action_type": action.action_type,
-                            "issue_id": action.issue_id,
-                            "title": action.title,
-                            "priority": action.priority,
-                            "dependencies": action.dependencies,
-                            "labels": action.labels,
-                            "acceptance_criteria_count": len(action.acceptance_criteria or []),
-                        }
-                        for action in planning_output.actions
-                    ],
-                }
-            )
-        payload = {
-            "cycle": cycle_num,
-            "phase": self.state.phase.value
-            if hasattr(self.state.phase, "value")
-            else str(self.state.phase),
-            "is_finalization": self.state.phase == RunPhase.PLAN_FINALIZATION,
-            "prompt_chars": len(prompt_path.read_text(encoding="utf-8")),
-            "prompt_path": prompt_path.name,
-            "raw_output_path": output_path.name,
-            "preflight_routing": preflight_routing,
-            "result": self._serialize_result_metadata(result),
-            "parsed": parsed,
-        }
-        debug_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        planner_debug.write_cycle_debug_bundle(
+            self,
+            cycle_num=cycle_num,
+            prompt_path=prompt_path,
+            output_path=output_path,
+            result=result,
+            preflight_routing=preflight_routing,
+            parse_status=parse_status,
+            parse_error=parse_error,
+            planning_output=planning_output,
+        )

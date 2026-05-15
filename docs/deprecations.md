@@ -79,6 +79,9 @@ spurious planning issues on mature repos.
   `claude_stall_kill_seconds` for an activity-based safety valve.
   Non-streaming provider CLIs (Copilot, OpenAI Codex) now use
   `provider_call_timeout_seconds` (default `1800`).
+- **`autosync_keep_claude_outputs`** — replaced by
+  `autosync_keep_provider_outputs` when run artifacts moved from
+  `claude_outputs/` to the provider-neutral `provider_outputs/` directory.
 
 ### Removed routing helpers
 

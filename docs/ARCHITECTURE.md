@@ -97,6 +97,7 @@ then runs `aidlc run`.
 | `aidlc/providers/base.py` | Common adapter interface + heartbeat-aware subprocess wait. |
 | `aidlc/providers/claude_adapter.py` | Wraps `aidlc/claude_cli.py`. |
 | `aidlc/providers/copilot_adapter.py`, `aidlc/providers/openai_adapter.py` | Other CLI integrations. |
+| `aidlc/providers/codex_output.py` | Codex JSONL/final-message parsing and OpenAI CLI failure classification. |
 | `aidlc/claude_cli.py` | Subprocess + retry/outage budget for the `claude` CLI. |
 | `aidlc/claude_cli_metadata.py` | Parses Claude CLI stream-json output into `(text, usage, cost, model_used, source)`. |
 
@@ -237,7 +238,7 @@ reintroduced once their prompts and acceptance criteria are nailed down. See
     ├── audit_result.json             # consumed if present; not produced by `aidlc run`
     ├── planning_index.md             # docs/issues index for the planner
     ├── issues/                       # ISSUE-<N>.md files (deleted by reset unless --keep-issues)
-    ├── runs/<run_id>/                # per-run: state.json, claude_outputs/, cycle_snapshots/
+    ├── runs/<run_id>/                # per-run: state.json, provider_outputs/, cycle_snapshots/
     └── reports/                      # per-run report markdown
 ```
 

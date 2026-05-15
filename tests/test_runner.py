@@ -65,7 +65,7 @@ class TestInitRun:
         assert state.run_id.startswith("aidlc_")
         assert run_dir.exists()
         assert (run_dir / "config_snapshot.json").exists()
-        assert (run_dir / "claude_outputs").is_dir()
+        assert (run_dir / "provider_outputs").is_dir()
 
     def test_resume_no_previous(self, config, capsys):
         state, run_dir = init_run(config, resume=True, dry_run=True)

@@ -4,13 +4,13 @@ import json
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from aidlc.providers.openai_adapter import (
-    OpenAIAdapter,
-    _classify_openai_cli_failure,
-    _codex_exit_zero_is_quota_blocker,
-    _extract_codex_failure_diagnostics,
-    _parse_codex_jsonl,
+from aidlc.providers.codex_output import (
+    classify_openai_cli_failure,
+    codex_exit_zero_is_quota_blocker,
+    extract_codex_failure_diagnostics,
+    parse_codex_jsonl,
 )
+from aidlc.providers.openai_adapter import OpenAIAdapter
 
 
 def _mock_popen_success(stdout="ok", stderr=""):
@@ -45,15 +45,15 @@ def test_logs_heartbeat_while_running(mock_popen, tmp_path):
     logger.info.assert_any_call("OpenAI CLI still running (elapsed=0s, model=gpt-5.4)")
 
 
-def test_extract_codex_failure_diagnostics_prefers_stderr_then_jsonl():
+def testextract_codex_failure_diagnostics_prefers_stderr_then_jsonl():
     j = json.dumps({"type": "error", "message": "Rate limit exceeded — try again in 60s"})
-    assert "Rate limit" in _extract_codex_failure_diagnostics("", f"{j}\n")
-    combined = _extract_codex_failure_diagnostics("outerr", j)
+    assert "Rate limit" in extract_codex_failure_diagnostics("", f"{j}\n")
+    combined = extract_codex_failure_diagnostics("outerr", j)
     assert "outerr" in combined
     assert "Rate limit" in combined
 
 
-def test_extract_codex_failure_diagnostics_codex_plaintext_tui():
+def testextract_codex_failure_diagnostics_codex_plaintext_tui():
     """Simulates `codex exec` stderr empty, stdout = formatted TUI + usage message (no JSONL)."""
     stdout = """╭──────────────────────────────────────────────╮
 │ model:     gpt-5.4 medium   /model to change │
@@ -71,20 +71,20 @@ def test_extract_codex_failure_diagnostics_codex_plaintext_tui():
 visit https://chatgpt.com/codex/settings/usage to purchase more credits or try
 again at 5:41 PM.
 """
-    d = _extract_codex_failure_diagnostics("", stdout)
+    d = extract_codex_failure_diagnostics("", stdout)
     assert "usage limit" in d.lower()
     assert "5:41 pm" in d.lower()
-    assert _classify_openai_cli_failure(d) == "rate_limited"
+    assert classify_openai_cli_failure(d) == "rate_limited"
 
 
-def test_extract_codex_failure_diagnostics_nested_openai_error():
+def testextract_codex_failure_diagnostics_nested_openai_error():
     payload = {"error": {"type": "rate_limit_error", "message": "Too many requests"}}
     text = json.dumps(payload)
-    diag = _extract_codex_failure_diagnostics("", text)
+    diag = extract_codex_failure_diagnostics("", text)
     assert "too many" in diag.lower() or "rate_limit" in diag.lower()
 
 
-def test_extract_codex_failure_diagnostics_can_skip_stdout_tail():
+def testextract_codex_failure_diagnostics_ignores_non_error_stdout():
     event = json.dumps(
         {
             "type": "item.completed",
@@ -96,11 +96,10 @@ def test_extract_codex_failure_diagnostics_can_skip_stdout_tail():
             },
         }
     )
-    assert _extract_codex_failure_diagnostics("", event, include_stdout_tail=False) == ""
-    assert "command_execution" in _extract_codex_failure_diagnostics("", event)
+    assert extract_codex_failure_diagnostics("", event) == ""
 
 
-def test_extract_codex_failure_diagnostics_ignores_agent_message_payload():
+def testextract_codex_failure_diagnostics_ignores_agent_message_payload():
     event = json.dumps(
         {
             "type": "agent_message",
@@ -108,30 +107,30 @@ def test_extract_codex_failure_diagnostics_ignores_agent_message_payload():
         }
     )
 
-    assert _extract_codex_failure_diagnostics("", event, include_stdout_tail=False) == ""
+    assert extract_codex_failure_diagnostics("", event) == ""
 
 
-def test_classify_openai_cli_failure_rate_limited():
-    assert _classify_openai_cli_failure("429 too many requests") == "rate_limited"
-    assert _classify_openai_cli_failure("something else") == "issue"
-    assert _classify_openai_cli_failure("Prompt hides when unavailable") == "issue"
-    assert _classify_openai_cli_failure("503 service unavailable") == "transient"
+def testclassify_openai_cli_failure_rate_limited():
+    assert classify_openai_cli_failure("429 too many requests") == "rate_limited"
+    assert classify_openai_cli_failure("something else") == "issue"
+    assert classify_openai_cli_failure("Prompt hides when unavailable") == "issue"
+    assert classify_openai_cli_failure("503 service unavailable") == "transient"
 
 
-def test_parse_codex_jsonl_extracts_last_turn_and_agent_message():
+def testparse_codex_jsonl_extracts_last_turn_and_agent_message():
     raw = (
         '{"type":"thread.started"}\n'
         '{"type":"item.completed","item":{"id":"1","item_type":"agent_message","text":"hi"}}\n'
         '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20}}\n'
     )
-    out, usage = _parse_codex_jsonl(raw)
+    out, usage = parse_codex_jsonl(raw)
     assert out == "hi"
     assert usage["input_tokens"] == 100
     assert usage["output_tokens"] == 20
     assert usage["cache_read_input_tokens"] == 40
 
 
-def test_parse_codex_jsonl_extracts_assistant_message_content_shape():
+def testparse_codex_jsonl_extracts_assistant_message_content_shape():
     raw = "\n".join(
         [
             json.dumps({"type": "thread.started", "thread_id": "t1"}),
@@ -164,14 +163,38 @@ def test_parse_codex_jsonl_extracts_assistant_message_content_shape():
         ]
     )
 
-    out, usage = _parse_codex_jsonl(raw)
+    out, usage = parse_codex_jsonl(raw)
 
     assert out == '{"actions": [], "planning_complete": false}'
     assert usage["input_tokens"] == 10
     assert usage["cache_read_input_tokens"] == 4
 
 
-def test_parse_codex_jsonl_extracts_top_level_agent_message():
+def testparse_codex_jsonl_raw_scans_assistant_content_when_line_is_prefixed():
+    event = json.dumps(
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "# Findings\n\nRecovered."}],
+            },
+        }
+    )
+    raw = "\n".join(
+        [
+            "prefix " + event,
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 5}}),
+        ]
+    )
+
+    out, usage = parse_codex_jsonl(raw)
+
+    assert out == "# Findings\n\nRecovered."
+    assert usage["input_tokens"] == 5
+
+
+def testparse_codex_jsonl_extracts_top_level_agent_message():
     raw = "\n".join(
         [
             json.dumps({"type": "thread.started", "thread_id": "t1"}),
@@ -180,13 +203,13 @@ def test_parse_codex_jsonl_extracts_top_level_agent_message():
         ]
     )
 
-    out, usage = _parse_codex_jsonl(raw)
+    out, usage = parse_codex_jsonl(raw)
 
     assert out == "# Findings\n\nDone."
     assert usage["input_tokens"] == 1
 
 
-def test_parse_codex_jsonl_extracts_plain_output_before_turn_completed():
+def testparse_codex_jsonl_extracts_plain_output_before_turn_completed():
     raw = "\n".join(
         [
             "Reading additional input from stdin...",
@@ -201,7 +224,7 @@ def test_parse_codex_jsonl_extracts_plain_output_before_turn_completed():
         ]
     )
 
-    out, usage = _parse_codex_jsonl(raw)
+    out, usage = parse_codex_jsonl(raw)
 
     assert out.startswith("# Findings")
     assert "Useful discovery output" in out
@@ -209,7 +232,7 @@ def test_parse_codex_jsonl_extracts_plain_output_before_turn_completed():
     assert usage["input_tokens"] == 5
 
 
-def test_parse_codex_jsonl_does_not_treat_raw_event_as_plain_output():
+def testparse_codex_jsonl_does_not_treat_raw_event_as_plain_output():
     raw = "\n".join(
         [
             '{"type":"item.completed","item":"not an assistant message"}',
@@ -217,7 +240,7 @@ def test_parse_codex_jsonl_does_not_treat_raw_event_as_plain_output():
         ]
     )
 
-    out, usage = _parse_codex_jsonl(raw)
+    out, usage = parse_codex_jsonl(raw)
 
     assert out == ""
     assert usage["input_tokens"] == 5
@@ -246,7 +269,8 @@ def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_pa
     assert result["success"] is False
     assert result["failure_type"] == "rate_limited"
     assert "rate limit" in result["error"].lower()
-    assert result["output"] is not None
+    assert result["output"] is None
+    assert "raw_stdout" in result
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
@@ -511,7 +535,7 @@ def test_nonzero_exit_completed_turn_still_honors_rate_limit(mock_popen, tmp_pat
 
 
 def test_codex_exit_zero_blocker_helper_negative():
-    ok, _ = _codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
+    ok, _ = codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
     assert ok is False
 
 

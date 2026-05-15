@@ -245,7 +245,7 @@ force-reopen all causes.
 
 When `cleanup_passes_every_cycles > 0` (default 10) and `finalize_enabled`
 is true, the implementer runs the configured `cleanup_passes_periodic`
-subset (default `["abend", "cleanup"]`) every N cycles. This runs the
+subset (default `["cleanup"]`) every N cycles. This runs the
 finalizer mid-implementation to keep code health high. See
 `aidlc/implementer_finalize.py`.
 

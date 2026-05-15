@@ -89,7 +89,7 @@ def test_reopen_only_transient_by_default(logger, tmp_path):
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, cli=None, project_context="ctx", logger=logger)
     reopened = impl._maybe_reopen_transient_failures(force_all=False)
@@ -112,7 +112,7 @@ def test_reopen_all_with_force(logger, tmp_path):
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, cli=None, project_context="ctx", logger=logger)
     reopened = impl._maybe_reopen_transient_failures(force_all=True)
@@ -130,7 +130,7 @@ def test_reopen_preserves_attempt_count(logger, tmp_path):
     state = _state_with_failed(issue)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, cli=None, project_context="ctx", logger=logger)
     impl._maybe_reopen_transient_failures(force_all=False)
@@ -144,7 +144,7 @@ def test_reopen_no_failed_issues_returns_zero(logger, tmp_path):
     state.total_issues = 0
     run_dir = tmp_path / "run"
     run_dir.mkdir()
-    (run_dir / "claude_outputs").mkdir()
+    (run_dir / "provider_outputs").mkdir()
 
     impl = Implementer(state, run_dir, config, cli=None, project_context="ctx", logger=logger)
     assert impl._maybe_reopen_transient_failures(force_all=False) == 0

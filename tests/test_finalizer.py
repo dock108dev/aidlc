@@ -52,25 +52,19 @@ def cli():
 
 class TestFinalizer:
     def test_runs_all_passes_by_default(self, state, config, cli, logger, tmp_path):
-        """End-of-run finalization defaults to the canonical 5-pass sweep."""
+        """End-of-run finalization defaults to the canonical supported passes."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run()
 
-        assert state.finalize_passes_completed == [
-            "ssot",
-            "security",
-            "abend",
-            "cleanup",
-            "docs",
-        ]
+        assert state.finalize_passes_completed == ["cleanup", "docs"]
 
     def test_runs_selected_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["cleanup", "docs"])
 
@@ -80,22 +74,21 @@ class TestFinalizer:
     def test_skips_invalid_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["nonexistent", "docs"])
 
         assert state.finalize_passes_completed == ["docs"]
 
     def test_periodic_subset_runs(self, state, config, cli, logger, tmp_path):
-        """Periodic cleanup runs only the subset opted into; default is
-        abend + cleanup."""
+        """Periodic cleanup runs only the supported subset opted into."""
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
-        finalizer.run(passes=["abend", "cleanup"])
+        finalizer.run(passes=["cleanup"])
 
-        assert state.finalize_passes_completed == ["abend", "cleanup"]
+        assert state.finalize_passes_completed == ["cleanup"]
 
     def test_handles_failed_pass(self, state, config, logger, tmp_path):
         cli = MagicMock()
@@ -110,7 +103,7 @@ class TestFinalizer:
         cli.timeout = 600
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "context", logger)
         finalizer.run(passes=["docs"])
 
@@ -120,7 +113,7 @@ class TestFinalizer:
     def test_creates_audit_dir(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["docs"])
 
@@ -130,17 +123,17 @@ class TestFinalizer:
     def test_saves_raw_output(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["cleanup"])
 
-        output_file = run_dir / "claude_outputs" / "finalize_cleanup.md"
+        output_file = run_dir / "provider_outputs" / "finalize_cleanup.md"
         assert output_file.exists()
 
     def test_tracks_requested_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["docs", "cleanup"])
 
@@ -149,7 +142,7 @@ class TestFinalizer:
     def test_sets_finalizing_phase(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["docs"])
 
@@ -158,7 +151,7 @@ class TestFinalizer:
     def test_second_run_replaces_completed_passes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         finalizer = Finalizer(state, run_dir, config, cli, "project context", logger)
         finalizer.run(passes=["docs"])
         assert state.finalize_passes_completed == ["docs"]
@@ -178,16 +171,17 @@ class TestPassPrompts:
     """Each pass prompt declares the actionability contract and is
     registered in the finalizer."""
 
-    def test_all_five_passes_registered(self):
+    def test_only_supported_passes_registered(self):
         from aidlc.finalize_prompts import PASS_DESCRIPTIONS, PASS_ORDER
         from aidlc.finalizer import PASS_PROMPTS
 
-        expected = {"ssot", "security", "abend", "cleanup", "docs"}
+        expected = {"cleanup", "docs"}
         assert set(PASS_PROMPTS.keys()) == expected
         assert set(PASS_DESCRIPTIONS.keys()) == expected
         assert set(PASS_ORDER) == expected
         # PASS_ORDER places cleanup before docs (so docs sees a clean tree)
         assert PASS_ORDER.index("cleanup") < PASS_ORDER.index("docs")
+        assert {"ssot", "security", "abend"}.isdisjoint(PASS_PROMPTS)
 
     def test_every_prompt_carries_actionability_contract(self):
         from aidlc.finalizer import PASS_PROMPTS
@@ -202,9 +196,7 @@ class TestPassPrompts:
             assert "docs/audits/" in prompt
 
     def test_diff_aware_passes_have_diff_placeholder(self):
-        """ssot/security/abend/cleanup all reason about branch changes; their
-        prompts must accept a {diff_summary} substitution. docs is current-state
-        only and intentionally omits it."""
+        """Cleanup reasons about branch changes; docs is current-state only."""
         from aidlc.finalizer import DIFF_AWARE_PASSES, PASS_PROMPTS
 
         for name in DIFF_AWARE_PASSES:
@@ -233,7 +225,7 @@ class TestPeriodicCleanupHook:
     def test_fires_on_multiples_of_cadence(self):
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(10, ["abend", "cleanup"], cycles=10)
+        impl = self._make_implementer(10, ["cleanup"], cycles=10)
         assert Implementer._should_run_periodic_cleanup(impl) is True
 
         impl.state.implementation_cycles = 20
@@ -245,7 +237,7 @@ class TestPeriodicCleanupHook:
     def test_does_not_fire_off_cadence(self):
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(10, ["abend", "cleanup"], cycles=5)
+        impl = self._make_implementer(10, ["cleanup"], cycles=5)
         assert Implementer._should_run_periodic_cleanup(impl) is False
         impl.state.implementation_cycles = 12
         assert Implementer._should_run_periodic_cleanup(impl) is False
@@ -253,7 +245,7 @@ class TestPeriodicCleanupHook:
     def test_zero_cadence_disables_hook(self):
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(0, ["abend"], cycles=10)
+        impl = self._make_implementer(0, ["cleanup"], cycles=10)
         assert Implementer._should_run_periodic_cleanup(impl) is False
 
     def test_empty_periodic_list_disables_hook(self):
@@ -265,14 +257,14 @@ class TestPeriodicCleanupHook:
     def test_dry_run_disables_hook(self):
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(10, ["abend"], cycles=10)
+        impl = self._make_implementer(10, ["cleanup"], cycles=10)
         impl.config["dry_run"] = True
         assert Implementer._should_run_periodic_cleanup(impl) is False
 
     def test_finalize_disabled_disables_hook(self):
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(10, ["abend"], cycles=10)
+        impl = self._make_implementer(10, ["cleanup"], cycles=10)
         impl.config["finalize_enabled"] = False
         assert Implementer._should_run_periodic_cleanup(impl) is False
 
@@ -281,7 +273,7 @@ class TestPeriodicCleanupHook:
         firing before any work has happened."""
         from aidlc.implementer import Implementer
 
-        impl = self._make_implementer(10, ["abend"], cycles=0)
+        impl = self._make_implementer(10, ["cleanup"], cycles=0)
         assert Implementer._should_run_periodic_cleanup(impl) is False
 
 
@@ -290,6 +282,6 @@ class TestConfigDefaults:
         from aidlc.config import DEFAULTS
 
         assert DEFAULTS["cleanup_passes_every_cycles"] == 10
-        assert DEFAULTS["cleanup_passes_periodic"] == ["abend", "cleanup"]
+        assert DEFAULTS["cleanup_passes_periodic"] == ["cleanup"]
         # End-of-run still defaults to "all" passes
         assert DEFAULTS["finalize_passes"] is None

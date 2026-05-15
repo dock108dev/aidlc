@@ -320,7 +320,7 @@ def prune_aidlc_data(
     state,
     logger,
     runs_to_keep: int,
-    keep_claude_outputs: int,
+    keep_provider_outputs: int,
 ) -> None:
     """Prune stale .aidlc run artifacts while keeping current and most recent history."""
     aidlc_dir = project_root / ".aidlc"
@@ -360,11 +360,11 @@ def prune_aidlc_data(
             except OSError as e:
                 logger.warning(f"Failed to prune report cache {report_path.name}: {e}")
 
-    outputs_dir = run_dir / "claude_outputs"
+    outputs_dir = run_dir / "provider_outputs"
     if outputs_dir.exists() and outputs_dir.is_dir():
         outputs = [p for p in outputs_dir.iterdir() if p.is_file()]
         outputs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        for old in outputs[keep_claude_outputs:]:
+        for old in outputs[keep_provider_outputs:]:
             try:
                 old.unlink()
             except OSError:

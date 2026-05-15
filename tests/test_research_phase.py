@@ -58,7 +58,7 @@ def test_execute_research_topic_writes_file(tmp_path, logger):
     out = tmp_path / ".aidlc" / "research" / "tutorial-graph.md"
     assert out.exists()
     assert "Findings" in out.read_text()
-    assert (run_dir / "claude_outputs" / "research_tutorial-graph.md").exists()
+    assert (run_dir / "provider_outputs" / "research_tutorial-graph.md").exists()
 
 
 def test_research_artifacts_land_under_aidlc_not_target_repo_docs(tmp_path, logger):

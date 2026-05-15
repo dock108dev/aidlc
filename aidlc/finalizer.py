@@ -4,13 +4,13 @@ Runs configurable cleanup passes after implementation. Each pass calls the
 provider with edit permissions and a focused prompt: **code passes are
 expected to change the product** (deletions, hardening, cleanup) with
 ``docs/audits/*.md`` as a written record of those edits; the docs pass rewrites
-markdown only. Raw provider output is stored under ``run_dir/claude_outputs``.
+markdown only. Raw provider output is stored under ``run_dir/provider_outputs``.
 
 Two cadences:
 
 - **Periodic** (every ``cleanup_passes_every_cycles`` impl cycles, default 10)
-  runs the safe subset ``cleanup_passes_periodic`` (default ``["abend",
-  "cleanup"]``). Driven from the implementer loop.
+  runs the safe subset ``cleanup_passes_periodic`` (default ``["cleanup"]``).
+  Driven from the implementer loop.
 - **End-of-run** runs ``finalize_passes`` (``None`` = all passes in
   ``PASS_ORDER``). Driven from the runner.
 
@@ -24,30 +24,19 @@ import subprocess
 import time
 from pathlib import Path
 
-from .finalize_prompts import (
-    ABEND_PROMPT,
-    CLEANUP_PROMPT,
-    DOCS_PROMPT,
-    PASS_DESCRIPTIONS,
-    PASS_ORDER,
-    SECURITY_PROMPT,
-    SSOT_PROMPT,
-)
+from .finalize_prompts import CLEANUP_PROMPT, DOCS_PROMPT, PASS_DESCRIPTIONS, PASS_ORDER
 from .models import RunPhase, RunState
 from .state_manager import save_state
 from .timing import add_console_time
 
 PASS_PROMPTS = {
-    "ssot": SSOT_PROMPT,
-    "security": SECURITY_PROMPT,
-    "abend": ABEND_PROMPT,
     "cleanup": CLEANUP_PROMPT,
     "docs": DOCS_PROMPT,
 }
 
 # Passes whose prompts include a {diff_summary} placeholder (need git diff
 # injection). Docs is intentionally diff-blind — it audits current state.
-DIFF_AWARE_PASSES = {"ssot", "security", "abend", "cleanup"}
+DIFF_AWARE_PASSES = {"cleanup"}
 
 
 class Finalizer:
@@ -123,9 +112,8 @@ class Finalizer:
         description = PASS_DESCRIPTIONS.get(pass_name, pass_name)
         self.logger.info(f"=== Finalize: {pass_name} — {description} ===")
 
-        # Build the prompt with project context. Diff-aware passes (ssot,
-        # security, abend, cleanup) get the branch diff; docs is current-state
-        # only.
+        # Build the prompt with project context. Diff-aware passes get the
+        # branch diff; docs is current-state only.
         prompt_template = PASS_PROMPTS[pass_name]
         if pass_name in DIFF_AWARE_PASSES:
             diff_summary = self._get_diff_summary() or (
@@ -155,7 +143,7 @@ class Finalizer:
         # Save raw output
         output_text = result.get("output", "")
         if output_text:
-            output_dir = self.run_dir / "claude_outputs"
+            output_dir = self.run_dir / "provider_outputs"
             output_dir.mkdir(exist_ok=True)
             (output_dir / f"finalize_{pass_name}.md").write_text(output_text)
 

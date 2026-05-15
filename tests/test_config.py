@@ -142,7 +142,7 @@ class TestLoadConfig:
             "autosync_issue_status_sync",
             "autosync_prune_enabled",
             "autosync_runs_to_keep",
-            "autosync_keep_claude_outputs",
+            "autosync_keep_provider_outputs",
             "stop_on_all_models_token_exhausted",
             "audit_runtime_enabled",
             "audit_runtime_timeout_seconds",
@@ -172,6 +172,7 @@ class TestLoadConfig:
             "audit_issue_estimate_defaults",
             "audit_include_deferred_backlog",
             "session_dir_max_keep",
+            "autosync_keep_claude_outputs",
         }
         for key in removed:
             assert key not in DEFAULTS, f"Legacy key should remain removed: {key}"

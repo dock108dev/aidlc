@@ -80,18 +80,18 @@ class TestPlanningCycleWithRealOutput:
         config["max_planning_cycles"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert state.issues_created == 2
         assert len(state.issues) == 2
         assert state.issues[0]["id"] == "ISSUE-001"
         debug_payload = json.loads(
-            (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text()
+            (run_dir / "provider_outputs" / "plan_cycle_0001.debug.json").read_text()
         )
         assert debug_payload["parsed"]["parse_status"] == "ok"
         assert debug_payload["parsed"]["action_count"] == 2
-        assert (run_dir / "claude_outputs" / "plan_cycle_0001.prompt.md").exists()
+        assert (run_dir / "provider_outputs" / "plan_cycle_0001.prompt.md").exists()
 
     def test_empty_actions_trigger_verify_then_stop(self, config, logger, tmp_path):
         """First empty cycle switches the planner into verify mode for the
@@ -118,7 +118,7 @@ class TestPlanningCycleWithRealOutput:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         from aidlc.models import Issue
 
         issue = Issue(id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"])
@@ -195,7 +195,7 @@ class TestPlanningCycleWithRealOutput:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         from aidlc.models import Issue
 
         seed = Issue(id="ISSUE-001", title="X", description="X", acceptance_criteria=["AC"])
@@ -222,12 +222,12 @@ class TestPlanningCycleWithRealOutput:
         config["max_planning_cycles"] = 10
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
         debug_payload = json.loads(
-            (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").read_text()
+            (run_dir / "provider_outputs" / "plan_cycle_0001.debug.json").read_text()
         )
         assert debug_payload["parsed"]["parse_status"] == "parse_error"
 
@@ -260,7 +260,7 @@ class TestPlanningCycleWithRealOutput:
         config["max_consecutive_failures"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
@@ -291,7 +291,7 @@ class TestPlanningCycleWithRealOutput:
         config["max_consecutive_failures"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner._apply_action = MagicMock(side_effect=RuntimeError("disk full"))
         planner.run()
@@ -508,7 +508,7 @@ class TestCheckpointDuringPlanning:
         reports_dir.mkdir(parents=True)
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         # Should have checkpointed

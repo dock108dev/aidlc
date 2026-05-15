@@ -127,10 +127,10 @@ back to the core flow.
 
 ### Changed
 - **ISSUE-009** — **Breaking default change**: implementation no longer
-  auto-runs `ssot`/`abend`/`cleanup` finalization passes when stopping early
-  with work remaining. Set `implementation_finalize_on_early_stop: true` to
-  restore the old behavior. Stop reason and resume instructions now logged on
-  a single visually-distinct line.
+  auto-runs finalization passes when stopping early with work remaining. Set
+  `implementation_finalize_on_early_stop: true` to opt into the remaining
+  `cleanup` pass. Stop reason and resume instructions now logged on a single
+  visually-distinct line.
 - **ISSUE-010** — Run lifecycle now distinguishes `interrupted` (caught
   signal) and `abandoned` (stale `running`/`interrupted` older than 1 hour)
   from `running`. Resume surfaces abandoned runs.

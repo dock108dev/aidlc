@@ -55,18 +55,18 @@ class TestPlanner:
     def test_dry_run_completes(self, state, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert state.phase in (RunPhase.PLANNING, RunPhase.PLAN_FINALIZATION)
         assert state.planning_cycles <= 2
-        assert (run_dir / "claude_outputs" / "plan_cycle_0001.debug.json").exists()
+        assert (run_dir / "provider_outputs" / "plan_cycle_0001.debug.json").exists()
 
     def test_cycle_cap_respected(self, state, config, cli, logger, tmp_path):
         config["max_planning_cycles"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert state.planning_cycles <= 1
@@ -85,7 +85,7 @@ class TestPlanner:
         config["max_planning_cycles"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert state.phase == RunPhase.PLAN_FINALIZATION
@@ -99,7 +99,7 @@ class TestPlanner:
         config["planning_finalization_grace_cycles"] = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
 
         phases_seen = []
@@ -301,7 +301,7 @@ class TestPlanner:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
@@ -349,7 +349,7 @@ class TestPlanner:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
@@ -378,7 +378,7 @@ class TestPlanner:
         config["dry_run"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         planner = Planner(state, run_dir, config, cli, "context", logger)
         planner.run()
         assert "failures" in (state.stop_reason or "").lower()
@@ -409,7 +409,7 @@ class TestPlanner:
         config["dry_run"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         # Pre-seed an issue so issues_created > 0
         from aidlc.models import Issue
 
@@ -529,7 +529,7 @@ class TestPlanner:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         issues_dir = Path(config["_issues_dir"])
         issues_dir.mkdir(parents=True, exist_ok=True)
 
@@ -590,7 +590,7 @@ class TestPlanner:
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         issues_dir = Path(config["_issues_dir"])
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")
@@ -670,7 +670,7 @@ class TestPlanner:
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         issues_dir = Path(config["_issues_dir"])
         issues_dir.mkdir(parents=True, exist_ok=True)
         (issues_dir / "ISSUE-001.md").write_text("# ISSUE-001")

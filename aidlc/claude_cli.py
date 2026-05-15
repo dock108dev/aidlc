@@ -3,9 +3,7 @@
 Shells out to `claude` CLI. The CLI must be installed and authenticated.
 """
 
-import json
 import logging
-import re
 import signal
 import subprocess
 import sys
@@ -13,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 
+from . import claude_command, claude_failures, claude_stream
 from .claude_cli_metadata import (
     extract_cli_metadata as _extract_cli_metadata_impl,
 )
@@ -20,143 +19,12 @@ from .claude_cli_metadata import (
     extract_text_from_message as _extract_text_from_message_impl,
 )
 
-_TRANSIENT_PATTERNS = re.compile(
-    r"rate.?limit|connection|timeout|API error|overloaded|503|502|429|ECONNRESET",
-    re.IGNORECASE,
-)
-_SERVICE_OUTAGE_PATTERNS = re.compile(
-    (
-        r"\b500\b|internal server error|service unavailable|temporarily unavailable|"
-        r"bad gateway|gateway timeout|upstream|network is unreachable|dns|eai_again|"
-        r"could not resolve|name or service not known"
-    ),
-    re.IGNORECASE,
-)
-# Claude Code returns this when another process still holds --session-id (or the
-# CLI has not finished releasing the lock between back-to-back invocations).
-_SESSION_ID_IN_USE = re.compile(
-    r"session\s+id\s+\S+\s+is\s+already\s+in\s+use",
-    re.IGNORECASE,
-)
-
-
-def _extract_session_id_from_stream_json(stdout: str) -> str | None:
-    """Return ``session_id`` from the first ``system/init`` stream-json line, if any."""
-    for raw_line in (stdout or "").splitlines():
-        line = raw_line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            event = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
-            continue
-        if not isinstance(event, dict):
-            continue
-        if event.get("type") == "system" and event.get("subtype") == "init":
-            sid = event.get("session_id")
-            if isinstance(sid, str) and sid.strip():
-                return sid.strip()
-    return None
-
-
-def _compact_text(value: str | None, max_len: int = 240) -> str:
-    """Compact multiline text for concise log output."""
-    if not value:
-        return ""
-    compact = " ".join(value.split())
-    if len(compact) <= max_len:
-        return compact
-    return f"{compact[: max_len - 3]}..."
-
-
-def _summarize_stream_event(line: str) -> str:
-    """One-line description of a stream-json event for heartbeat logs.
-
-    Returns an empty string for unparseable or empty lines so the heartbeat
-    reporter can pick a non-empty summary by walking backward.
-    """
-    raw = (line or "").strip()
-    if not raw or not raw.startswith("{"):
-        return ""
-    try:
-        event = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
-        return ""
-    if not isinstance(event, dict):
-        return ""
-    kind = event.get("type")
-    if kind == "system":
-        sub = event.get("subtype", "")
-        return f"system {sub}".strip()
-    if kind == "result":
-        sub = event.get("subtype", "")
-        if event.get("is_error"):
-            return f"result error ({sub})".strip()
-        return f"result {sub}".strip()
-    if kind in ("assistant", "user"):
-        msg = event.get("message") if isinstance(event.get("message"), dict) else {}
-        content = msg.get("content") if isinstance(msg.get("content"), list) else []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            btype = block.get("type")
-            if btype == "tool_use":
-                name = block.get("name") or "?"
-                inp = block.get("input") or {}
-                # Most Claude tools put a short descriptive field like path/
-                # file_path/command up front; surface the first one that looks
-                # short and non-secret.
-                hint = ""
-                for key in ("file_path", "path", "command", "url", "query", "pattern"):
-                    val = inp.get(key) if isinstance(inp, dict) else None
-                    if isinstance(val, str) and val:
-                        hint = val if len(val) <= 60 else val[:57] + "..."
-                        break
-                return f"tool_use {name}({hint})" if hint else f"tool_use {name}"
-            if btype == "tool_result":
-                return f"tool_result ({kind})"
-            if btype == "text":
-                text = block.get("text") or ""
-                return f"assistant_text {len(text)} chars"
-            if btype == "thinking":
-                text = block.get("thinking") or ""
-                return f"thinking {len(text)} chars"
-        return kind
-    return str(kind or "event")
-
-
-def _pick_last_nonempty_summary(lines: list[str]) -> str:
-    """Walk backward through collected stream lines for a meaningful summary."""
-    for line in reversed(lines):
-        summary = _summarize_stream_event(line)
-        if summary:
-            return summary
-    return "no events yet"
-
-
-def _stream_reader(stream, sink: list[str], last_activity_at: list[float]) -> None:
-    """Background thread: read lines from stream, append to sink, stamp activity.
-
-    Treats anything that is not a non-empty string as EOF. This is defensive
-    against tests that mock `stream.readline` with a MagicMock (which would
-    otherwise never compare equal to "") and against any real stream that
-    gets closed mid-read.
-    """
-    try:
-        while True:
-            try:
-                raw = stream.readline()
-            except (ValueError, OSError):
-                break
-            if not isinstance(raw, str) or raw == "":
-                break
-            sink.append(raw)
-            last_activity_at[0] = time.time()
-    finally:
-        try:
-            stream.close()
-        except (OSError, ValueError, AttributeError):
-            pass
+_SESSION_ID_IN_USE = claude_failures.SESSION_ID_IN_USE
+_extract_session_id_from_stream_json = claude_stream.extract_session_id_from_stream_json
+_compact_text = claude_stream.compact_text
+_summarize_stream_event = claude_stream.summarize_stream_event
+_pick_last_nonempty_summary = claude_stream.pick_last_nonempty_summary
+_stream_reader = claude_stream.stream_reader
 
 
 class ClaudeCLIError(Exception):
@@ -165,21 +33,8 @@ class ClaudeCLIError(Exception):
 
 class ClaudeCLI:
     def __init__(self, config: dict, logger: logging.Logger):
-        self.config = config
         self.logger = logger
-        providers_cfg = config.get("providers", {})
-        if not isinstance(providers_cfg, dict):
-            providers_cfg = {}
-        claude_cfg = providers_cfg.get("claude", {})
-        if not isinstance(claude_cfg, dict):
-            claude_cfg = {}
-        self.cli_command = str(claude_cfg.get("cli_command", "claude"))
-        self.model = str(claude_cfg.get("default_model", "opus"))
-        self.max_retries = config.get("retry_max_attempts", 2)
-        self.retry_base_delay = config.get("retry_base_delay_seconds", 30)
-        self.retry_max_delay = config.get("retry_max_delay_seconds", 300)
-        self.retry_backoff_factor = config.get("retry_backoff_factor", 2.0)
-        self.dry_run = config.get("dry_run", False)
+        claude_command.apply_config(self, config)
 
     def execute_prompt(
         self,
@@ -216,18 +71,7 @@ class ClaudeCLI:
         """
         if self.dry_run:
             self.logger.info(f"[DRY RUN] Prompt ({len(prompt)} chars) in {working_dir}")
-            return {
-                "success": True,
-                "output": "[DRY RUN] No execution",
-                "error": None,
-                "failure_type": None,
-                "duration_seconds": 0.0,
-                "retries": 0,
-                "usage": {},
-                "total_cost_usd": None,
-                "model_used": model_override or self.model,
-                "usage_source": "dry_run",
-            }
+            return claude_command.dry_run_result(model_override or self.model)
 
         model = model_override or self.model
         # Two distinct continuation modes:
@@ -289,23 +133,13 @@ class ClaudeCLI:
                 else:
                     self.logger.debug(f"Claude CLI attempt {attempt}/{self.max_retries + 1}")
 
-                cmd = [self.cli_command]
-                if effective_resume_id:
-                    cmd.extend(["--resume", effective_resume_id])
-                elif effective_session_id:
-                    cmd.extend(["--session-id", effective_session_id])
-                cmd.extend(
-                    [
-                        "--print",
-                        "--model",
-                        model,
-                        "--output-format",
-                        "stream-json",
-                        "--verbose",
-                    ]
+                cmd = claude_command.build_command(
+                    self.cli_command,
+                    model,
+                    effective_resume_id=effective_resume_id,
+                    effective_session_id=effective_session_id,
+                    allow_edits=allow_edits,
                 )
-                if allow_edits:
-                    cmd.append("--dangerously-skip-permissions")
 
                 # No wall-clock timeout — Claude CLI in stream-json mode
                 # emits steady tool-use events even on multi-hour work.
@@ -644,57 +478,18 @@ class ClaudeCLI:
 
     @staticmethod
     def _request_graceful_stop(proc: subprocess.Popen) -> None:
-        """Ask Claude process to stop cleanly before forcing termination."""
-        try:
-            proc.send_signal(signal.SIGINT)
-        except (AttributeError, ValueError, ProcessLookupError):
-            proc.terminate()
+        claude_failures.request_graceful_stop(proc)
 
     def _retry_delay(self, attempt: int) -> float:
-        """Calculate retry delay with exponential backoff and jitter."""
-        import random
-
-        delay = self.retry_base_delay * (self.retry_backoff_factor**attempt)
-        delay = min(delay, self.retry_max_delay)
-        # Add up to 25% jitter to avoid thundering herd
-        jitter = delay * 0.25 * random.random()
-        return delay + jitter
+        return claude_failures.retry_delay(self, attempt)
 
     @staticmethod
     def _classify_failure(returncode: int, stderr: str) -> str:
-        if returncode > 128 or returncode < 0:
-            return "transient"
-        if _TRANSIENT_PATTERNS.search(stderr):
-            return "transient"
-        return "issue"
+        return claude_failures.classify_failure(returncode, stderr)
 
     @staticmethod
     def _is_service_outage(returncode: int, stderr: str, stdout: str) -> bool:
-        if returncode in (500, 502, 503, 504):
-            return True
-        combined = f"{stderr}\n{stdout}"
-        if _SERVICE_OUTAGE_PATTERNS.search(combined):
-            return True
-        # Init-only fingerprint: CLI started a session (emitted system init)
-        # but never produced a result event and exited non-zero. Observed
-        # during real Claude API outages on retry calls where the upstream
-        # error message no longer reaches stdout.
-        if returncode != 0 and stdout:
-            head = stdout[:4096]
-            if '"subtype":"init"' in head and '"type":"result"' not in stdout:
-                return True
-        return False
+        return claude_failures.is_service_outage(returncode, stderr, stdout)
 
     def check_available(self) -> bool:
-        if self.dry_run:
-            return True
-        try:
-            result = subprocess.run(
-                [self.cli_command, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+        return claude_failures.check_available(self)

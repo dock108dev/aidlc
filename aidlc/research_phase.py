@@ -270,7 +270,7 @@ def execute_research_topic(
         }
     )
 
-    outputs_dir = run_dir / "claude_outputs"
+    outputs_dir = run_dir / "provider_outputs"
     outputs_dir.mkdir(exist_ok=True)
     (outputs_dir / f"research_{sanitized}.md").write_text(output, encoding="utf-8")
 

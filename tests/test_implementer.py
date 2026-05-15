@@ -115,7 +115,7 @@ class TestImplementer:
     def test_dry_run_completes(self, state_with_issues, config, cli, logger, tmp_path):
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state_with_issues, run_dir, config, cli, "context", logger)
         impl.run()
         assert state_with_issues.issues_implemented >= 1
@@ -143,7 +143,7 @@ class TestImplementer:
             )
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state_with_issues, run_dir, config, cli, "context", logger)
         impl.run()
         assert state_with_issues.implementation_cycles <= 1
@@ -211,7 +211,7 @@ class TestImplementUnstructuredOutput:
         }
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         return Implementer(issue_state, run_dir, config, cli, "context", logger)
 
     def test_first_json_object_parses_when_followed_by_extra_data(
@@ -338,7 +338,7 @@ class TestResumeInterruptedAttempt:
         }
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         return Implementer(state, run_dir, config, cli, "context", logger)
 
     def test_resume_does_not_double_increment_attempt_count(

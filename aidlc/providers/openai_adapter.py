@@ -4,373 +4,22 @@ Shells out to the `codex` CLI or `openai` CLI binary.
 Supports GPT-4o and other OpenAI models as first-class citizens.
 """
 
-import json
 import logging
 import subprocess
 import tempfile
 from pathlib import Path
 
 from .base import HealthResult, HealthStatus, ProviderAdapter
+from .codex_output import (
+    classify_openai_cli_failure,
+    codex_exit_zero_is_quota_blocker,
+    codex_nonzero_output_is_usable,
+    extract_codex_failure_diagnostics,
+    extract_codex_thread_id,
+    parse_codex_jsonl,
+)
 
 _DEFAULT_OPENAI_MODEL = "gpt-5.5"
-
-
-def extract_codex_thread_id(stdout: str) -> str | None:
-    """Return Codex ``thread_id`` from JSONL ``thread.started`` events, if any."""
-    for raw in (stdout or "").splitlines():
-        line = raw.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(obj, dict):
-            continue
-        if obj.get("type") != "thread.started":
-            continue
-        tid = obj.get("thread_id")
-        if isinstance(tid, str) and tid.strip():
-            return tid.strip()
-    return None
-
-
-def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
-    """Parse `codex exec --json` JSONL: assistant text + normalized usage from last turn.completed."""
-    output_text = ""
-    last_usage: dict = {}
-    for obj in _iter_codex_json_objects(stdout or ""):
-        if not isinstance(obj, dict):
-            continue
-        if obj.get("type") == "turn.completed" and isinstance(obj.get("usage"), dict):
-            last_usage = obj["usage"]
-        text = _extract_codex_event_text(obj)
-        if isinstance(text, str) and text.strip():
-            output_text = text
-
-    if not output_text:
-        output_text = _extract_codex_agent_message_text(stdout or "")
-    if not output_text:
-        output_text = _extract_codex_plain_final_text(stdout or "")
-
-    usage: dict = {}
-    if last_usage:
-        inp = int(last_usage.get("input_tokens", 0) or 0)
-        cached = int(last_usage.get("cached_input_tokens", 0) or 0)
-        out = int(last_usage.get("output_tokens", 0) or 0)
-        usage = {
-            "input_tokens": inp,
-            "output_tokens": out,
-            "cache_read_input_tokens": cached,
-            "cache_creation_input_tokens": 0,
-        }
-    return output_text, usage
-
-
-def _extract_codex_plain_final_text(stdout: str) -> str:
-    """Extract raw assistant text when Codex mixes plain output with JSON events."""
-    text = (stdout or "").strip()
-    if not text:
-        return ""
-
-    turn_positions = [
-        pos
-        for marker in ('\n{"type":"turn.completed"', '\n{"type": "turn.completed"')
-        if (pos := text.find(marker)) != -1
-    ]
-    if not turn_positions:
-        return ""
-
-    text = text[: min(turn_positions)].strip()
-
-    lines = text.splitlines()
-    while lines and lines[0].strip() in {
-        "Reading additional input from stdin...",
-    }:
-        lines.pop(0)
-    text = "\n".join(lines).strip()
-    if not text:
-        return ""
-    if text.lstrip().startswith('{"type"'):
-        return ""
-
-    # Plain final messages should look like model output, not just a stream
-    # of Codex events. The first two cases cover discovery/planning artifacts;
-    # the last handles short final answers from implementation helpers.
-    if "```json" in text or text.lstrip().startswith(("#", "{", "[")):
-        return text
-    return ""
-
-
-def _iter_codex_json_objects(stdout: str) -> list[dict]:
-    """Decode JSON objects from Codex stdout.
-
-    Codex normally emits one JSON object per line, but CLI wrapper text can
-    appear before JSONL. This mirrors Claude's stream tolerance: consume valid
-    events wherever they appear instead of treating console framing as fatal.
-    """
-    objects: list[dict] = []
-    for raw in (stdout or "").splitlines():
-        line = raw.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            objects.append(obj)
-    if objects:
-        return objects
-
-    decoder = json.JSONDecoder()
-    start = 0
-    while start < len(stdout):
-        brace = stdout.find("{", start)
-        if brace == -1:
-            break
-        try:
-            obj, end = decoder.raw_decode(stdout[brace:])
-        except json.JSONDecodeError:
-            start = brace + 1
-            continue
-        if isinstance(obj, dict):
-            objects.append(obj)
-        start = brace + max(end, 1)
-    return objects
-
-
-def _extract_codex_event_text(obj: dict) -> str:
-    """Return assistant text from a top-level Codex event object."""
-    typ = obj.get("type")
-    item = obj.get("item")
-    if typ == "item.completed" and isinstance(item, dict):
-        return _extract_codex_item_text(item)
-
-    if typ in ("agent_message", "assistant_message"):
-        text = obj.get("text") or obj.get("message")
-        return text if isinstance(text, str) else ""
-
-    if typ == "message" and obj.get("role") == "assistant":
-        return _extract_codex_content_text(obj.get("content"))
-
-    return ""
-
-
-def _extract_codex_item_text(item: dict) -> str:
-    """Return assistant text from known Codex JSONL item shapes."""
-    itype = item.get("item_type") or item.get("type")
-    if itype in ("assistant_message", "agent_message"):
-        text = item.get("text")
-        return text if isinstance(text, str) else ""
-
-    # Newer Codex JSONL emits assistant messages as:
-    # {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "..."}]}
-    if itype != "message" or item.get("role") != "assistant":
-        return ""
-
-    return _extract_codex_content_text(item.get("content"))
-
-
-def _extract_codex_content_text(content: object) -> str:
-    """Extract assistant text from Codex message ``content`` payloads."""
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-
-    parts: list[str] = []
-    for entry in content:
-        if isinstance(entry, str):
-            if entry.strip():
-                parts.append(entry)
-            continue
-        if not isinstance(entry, dict):
-            continue
-        text = entry.get("text")
-        if not isinstance(text, str) or not text.strip():
-            continue
-        entry_type = str(entry.get("type") or "")
-        if entry_type in ("", "text", "output_text", "assistant_text"):
-            parts.append(text)
-    return "".join(parts)
-
-
-def _extract_codex_agent_message_text(stdout: str) -> str:
-    """Extract the last agent/assistant message text from raw Codex JSON-ish stdout.
-
-    Codex occasionally exits non-zero after emitting a completed turn. In the
-    observed failure, the useful answer was present in a very large
-    ``item.completed`` JSONL event, but normal line-level parsing did not yield
-    it and the adapter fell back to logging a truncated raw stdout tail as an
-    error. This scanner is deliberately narrow: only events that identify an
-    ``agent_message`` or ``assistant_message`` are considered, and the value is
-    decoded with Python's JSON decoder rather than ad hoc unescaping.
-    """
-    if not stdout:
-        return ""
-
-    markers = (
-        '"type":"agent_message"',
-        '"type": "agent_message"',
-        '"item_type":"agent_message"',
-        '"item_type": "agent_message"',
-        '"type":"assistant_message"',
-        '"type": "assistant_message"',
-        '"item_type":"assistant_message"',
-        '"item_type": "assistant_message"',
-    )
-    decoder = json.JSONDecoder()
-    text_values: list[str] = []
-
-    for marker in markers:
-        start = 0
-        while True:
-            marker_pos = stdout.find(marker, start)
-            if marker_pos == -1:
-                break
-            text_key_pos = stdout.find('"text"', marker_pos)
-            if text_key_pos == -1:
-                start = marker_pos + len(marker)
-                continue
-            colon_pos = stdout.find(":", text_key_pos + len('"text"'))
-            if colon_pos == -1:
-                start = marker_pos + len(marker)
-                continue
-            value_start = colon_pos + 1
-            while value_start < len(stdout) and stdout[value_start].isspace():
-                value_start += 1
-            try:
-                value, _end = decoder.raw_decode(stdout[value_start:])
-            except json.JSONDecodeError:
-                start = marker_pos + len(marker)
-                continue
-            if isinstance(value, str) and value.strip():
-                text_values.append(value)
-            start = marker_pos + len(marker)
-
-    return text_values[-1] if text_values else ""
-
-
-def _codex_stdout_has_completed_turn(stdout: str) -> bool:
-    """Return True when Codex stdout contains a completed turn event."""
-    if not stdout:
-        return False
-    if '"type":"turn.completed"' in stdout or '"type": "turn.completed"' in stdout:
-        return True
-    for raw in stdout.splitlines():
-        line = raw.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj.get("type") == "turn.completed":
-            return True
-    return False
-
-
-def _codex_nonzero_output_is_usable(
-    *,
-    stdout: str,
-    stderr: str,
-    output_text: str,
-    diagnostic: str,
-) -> bool:
-    """True when Codex produced a completed answer despite a non-zero exit.
-
-    We still honor concrete provider failures (quota/rate limits, transient
-    outages). A generic non-zero exit with a completed turn and usable answer is
-    treated as success because downstream phases can parse and use the answer.
-    """
-    if not (output_text or "").strip():
-        return False
-
-    failure_type = _classify_openai_cli_failure(diagnostic or stderr or "")
-    if failure_type in {"rate_limited", "token_exhausted", "transient"}:
-        return False
-
-    if _codex_stdout_has_completed_turn(stdout):
-        return True
-
-    return False
-
-
-def _extract_codex_failure_diagnostics(
-    stderr: str, stdout: str, *, include_stdout_tail: bool = True
-) -> str:
-    """Best-effort: stderr first; then JSONL error payloads from codex --json stdout."""
-    parts: list[str] = []
-    err = (stderr or "").strip()
-    if err:
-        parts.append(err)
-
-    for line in (stdout or "").splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(obj, dict):
-            continue
-
-        typ = str(obj.get("type") or "").lower()
-        if "error" in typ:
-            for key in ("message", "text", "detail"):
-                val = obj.get(key)
-                if isinstance(val, str) and val.strip():
-                    parts.append(val.strip())
-
-        nested = obj.get("error")
-        if isinstance(nested, dict):
-            for key in ("message", "type", "code", "param"):
-                val = nested.get(key)
-                if val is not None and str(val).strip():
-                    parts.append(str(val).strip())
-        elif isinstance(nested, str) and nested.strip():
-            parts.append(nested.strip())
-
-        msg = obj.get("message")
-        if isinstance(msg, str) and msg.strip() and ("error" in typ or "failed" in typ):
-            parts.append(msg.strip())
-
-        item = obj.get("item")
-        if isinstance(item, dict):
-            itype = str(item.get("item_type") or item.get("type") or "").lower()
-            if "error" in itype or "failed" in itype:
-                for key in ("text", "message", "error"):
-                    val = item.get(key)
-                    if isinstance(val, str) and val.strip():
-                        parts.append(val.strip())
-
-    # Codex TUI: usage limits are often plain text (bullets / box chars), not JSONL.
-    _plain_hints = (
-        "usage limit",
-        "rate limit",
-        "try again at",
-        "try again in",
-        "again at",  # line-wrap: "… or try" / "again at 5:41 PM"
-        "too many requests",
-        "purchase more credit",
-        "hit your usage",
-    )
-    for raw_line in (stdout or "").splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        low = line.lower()
-        if any(h in low for h in _plain_hints):
-            parts.append(line)
-
-    combined = "\n".join(dict.fromkeys(parts))
-    if include_stdout_tail and not combined.strip():
-        tail = (stdout or "").strip()
-        if tail:
-            combined = tail[-12000:] if len(tail) > 12000 else tail
-    return combined.strip()
 
 
 def _read_text_if_present(path: Path | None) -> str:
@@ -380,62 +29,6 @@ def _read_text_if_present(path: Path | None) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
-
-
-def _codex_exit_zero_is_quota_blocker(
-    stdout: str, stderr: str, parsed_out: str
-) -> tuple[bool, str]:
-    """Codex may exit 0 while printing usage limits / interactive TUI (no real completion)."""
-    from ..routing import result_signals as rs
-
-    diagnostic = _extract_codex_failure_diagnostics(stderr or "", stdout or "")
-    merged = "\n".join(
-        [
-            diagnostic,
-            parsed_out.strip(),
-            (stdout or "").strip(),
-        ]
-    )
-    probe = {"error": diagnostic or merged, "output": merged}
-    if not merged.strip():
-        return False, ""
-    if rs.is_rate_limited_result(probe) or rs.is_token_exhaustion_result(probe):
-        return True, (diagnostic or merged).strip()[:20000]
-    return False, ""
-
-
-def _classify_openai_cli_failure(diagnostic: str) -> str:
-    """Map combined stderr/stdout diagnostic to a normalized failure_type."""
-    from ..routing import result_signals as rs
-
-    if not diagnostic.strip():
-        return "issue"
-    probe = {"error": diagnostic, "output": ""}
-    if rs.is_rate_limited_result(probe):
-        return "rate_limited"
-    if rs.is_token_exhaustion_result(probe):
-        return "token_exhausted"
-    low = diagnostic.lower()
-    if any(
-        kw in low
-        for kw in (
-            "503",
-            "502",
-            "504",
-            "timeout",
-            "timed out",
-            "connection reset",
-            "econnreset",
-            "service unavailable",
-            "server unavailable",
-            "upstream unavailable",
-            "provider unavailable",
-            "api unavailable",
-            "bad gateway",
-        )
-    ):
-        return "transient"
-    return "issue"
 
 
 class OpenAIAdapter(ProviderAdapter):
@@ -527,23 +120,22 @@ class OpenAIAdapter(ProviderAdapter):
                     failure_type="timeout",
                 )
             if proc.returncode == 0:
-                parsed_out, usage = _parse_codex_jsonl(stdout or "")
+                parsed_out, usage = parse_codex_jsonl(stdout or "")
                 out_text = last_message
                 if not out_text:
                     out_text = parsed_out if parsed_out.strip() else (stdout or "")
-                blocked, diag = _codex_exit_zero_is_quota_blocker(
+                blocked, diag = codex_exit_zero_is_quota_blocker(
                     stdout or "", stderr or "", parsed_out
                 )
                 if blocked:
-                    failure_type = _classify_openai_cli_failure(diag)
-                    out_tail = (stdout or "")[-16000:] if stdout else None
+                    failure_type = classify_openai_cli_failure(diag)
                     failure = self._failure_result(
                         model,
                         account_id,
                         duration,
                         error=diag,
                         failure_type=failure_type,
-                        output=out_tail,
+                        output=last_message or parsed_out or None,
                     )
                     failure["raw_stdout"] = stdout or ""
                     failure["raw_stderr"] = stderr or ""
@@ -573,12 +165,10 @@ class OpenAIAdapter(ProviderAdapter):
                 payload["raw_stderr"] = stderr or ""
                 return payload
             else:
-                parsed_out, usage = _parse_codex_jsonl(stdout or "")
-                explicit_diagnostic = _extract_codex_failure_diagnostics(
-                    stderr or "", stdout or "", include_stdout_tail=False
-                )
+                parsed_out, usage = parse_codex_jsonl(stdout or "")
+                explicit_diagnostic = extract_codex_failure_diagnostics(stderr or "", stdout or "")
                 usable_output = last_message or parsed_out
-                if (last_message and not explicit_diagnostic) or _codex_nonzero_output_is_usable(
+                if (last_message and not explicit_diagnostic) or codex_nonzero_output_is_usable(
                     stdout=stdout or "",
                     stderr=stderr or "",
                     output_text=usable_output,
@@ -608,17 +198,14 @@ class OpenAIAdapter(ProviderAdapter):
                 diagnostic = explicit_diagnostic
                 if not diagnostic:
                     diagnostic = "OpenAI CLI returned non-zero exit code"
-                failure_type = _classify_openai_cli_failure(diagnostic)
-                out_tail = (
-                    last_message or parsed_out or ((stdout or "")[-16000:] if stdout else None)
-                )
+                failure_type = classify_openai_cli_failure(diagnostic)
                 failure = self._failure_result(
                     model,
                     account_id,
                     duration,
                     error=diagnostic,
                     failure_type=failure_type,
-                    output=out_tail,
+                    output=last_message or parsed_out or None,
                 )
                 failure["raw_stdout"] = stdout or ""
                 failure["raw_stderr"] = stderr or ""

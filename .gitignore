@@ -9,5 +9,8 @@ build/
 venv/
 .aidlc/runs/
 .aidlc/reports/
+.aidlc/config.json
 .coverage
+coverage.json
+htmlcov/
 *.DS_Store*

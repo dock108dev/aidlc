@@ -187,21 +187,21 @@ def test_prune_aidlc_data_removes_old_runs(git_repo: Path):
     (aidlc / "keep-me" / "f").write_text("a")
     (aidlc / "old-run" / "f").write_text("b")
     run_dir = aidlc / "keep-me"
-    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=1, keep_claude_outputs=5)
+    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=1, keep_provider_outputs=5)
     assert (aidlc / "keep-me").exists()
     assert not (aidlc / "old-run").exists()
 
 
-def test_prune_claude_outputs_trims_old_files(git_repo: Path):
+def test_prune_provider_outputs_trims_old_files(git_repo: Path):
     state = RunState(run_id="r1", config_name="default")
     logger = MagicMock()
-    out = git_repo / "run" / "claude_outputs"
+    out = git_repo / "run" / "provider_outputs"
     out.mkdir(parents=True)
     for i in range(4):
         p = out / f"o{i}.txt"
         p.write_text(str(i))
     run_dir = git_repo / "run"
-    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=5, keep_claude_outputs=2)
+    prune_aidlc_data(git_repo, run_dir, state, logger, runs_to_keep=5, keep_provider_outputs=2)
     remaining = list(out.iterdir())
     assert len(remaining) <= 2
 
@@ -221,7 +221,7 @@ def test_prune_aidlc_data_orphan_report(git_repo: Path):
         state,
         logger,
         runs_to_keep=5,
-        keep_claude_outputs=5,
+        keep_provider_outputs=5,
     )
     assert not orphan.exists()
 

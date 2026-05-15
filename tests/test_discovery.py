@@ -201,9 +201,9 @@ def test_run_discovery_writes_findings_and_topics(tmp_path, logger):
     assert state.research_topics_total == 1
     cli.set_phase.assert_called_with("discovery")
     # Raw output is also persisted under the run dir for inspection.
-    assert (run_dir / "claude_outputs" / "discovery.md").exists()
-    assert (run_dir / "claude_outputs" / "discovery.prompt.md").exists()
-    debug_payload = json.loads((run_dir / "claude_outputs" / "discovery.debug.json").read_text())
+    assert (run_dir / "provider_outputs" / "discovery.md").exists()
+    assert (run_dir / "provider_outputs" / "discovery.prompt.md").exists()
+    debug_payload = json.loads((run_dir / "provider_outputs" / "discovery.debug.json").read_text())
     assert debug_payload["parsed"]["topic_count"] == 1
     assert debug_payload["result"]["success"] is True
 
@@ -289,9 +289,9 @@ def test_run_discovery_retries_implausibly_shallow_zero_topic_output(tmp_path, l
     assert "Reviewed ui/main.gd" in findings_path.read_text()
     topics = json.loads(topics_path.read_text())
     assert topics[0]["topic"] == "shop-flow"
-    assert (run_dir / "claude_outputs" / "discovery_retry.md").exists()
+    assert (run_dir / "provider_outputs" / "discovery_retry.md").exists()
     retry_debug = json.loads(
-        (run_dir / "claude_outputs" / "discovery_retry.debug.json").read_text()
+        (run_dir / "provider_outputs" / "discovery_retry.debug.json").read_text()
     )
     assert retry_debug["parsed"]["topic_count"] == 1
     assert retry_debug["preflight_routing"]["provider_id"] == "openai"

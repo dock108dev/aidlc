@@ -6,8 +6,7 @@ issue loop. Three concerns live here:
   * ``should_run_periodic_cleanup`` — does the current cycle count match
     the configured cadence?
   * ``run_periodic_cleanup`` — drive the Finalizer with the opted-in
-    cleanup subset (default: abend + cleanup), then restore the
-    implementer phase.
+    cleanup subset (default: cleanup), then restore the implementer phase.
   * ``run_finalize_before_push_if_enabled`` — run the full finalize_passes
     set before an autosync commit/push.
 
@@ -58,7 +57,7 @@ def run_periodic_cleanup(impl) -> None:
     """Run the periodic-cleanup subset of finalization passes mid-run.
 
     Independent of autosync. Drives the same Finalizer entry point but
-    with the opted-in subset (default: abend + cleanup).
+    with the opted-in subset (default: cleanup).
     """
     cycle = impl.state.implementation_cycles
     passes = list(impl.cleanup_passes_periodic)

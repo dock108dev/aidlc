@@ -85,7 +85,7 @@ class TestInitRunResume:
         runs_dir = Path(config["_runs_dir"])
         run_dir = runs_dir / "paused_run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         state = RunState(run_id="paused_run", config_name="default")
         state.status = RunStatus.PAUSED
         state.phase = RunPhase.IMPLEMENTING
@@ -190,7 +190,7 @@ class TestRunFullAutoArchive:
         runs_dir = aidlc_dir / "runs"
         run_dir = runs_dir / "paused_run"
         run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "claude_outputs").mkdir(exist_ok=True)
+        (run_dir / "provider_outputs").mkdir(exist_ok=True)
         prior_state = RunState(run_id="paused_run", config_name="default")
         prior_state.status = RunStatus.PAUSED
         prior_state.phase = RunPhase.IMPLEMENTING
@@ -262,7 +262,7 @@ class TestResumeSkipsPlanning:
         runs_dir = Path(config["_runs_dir"])
         run_dir = runs_dir / "paused_run"
         run_dir.mkdir(parents=True)
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         state = RunState(run_id="paused_run", config_name="default")
         state.status = RunStatus.PAUSED
         state.phase = RunPhase.IMPLEMENTING

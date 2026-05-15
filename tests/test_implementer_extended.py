@@ -125,7 +125,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -154,7 +154,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue(acceptance_criteria=["AC1", "AC2", "AC3"])
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -178,7 +178,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue(attempt_count=1)
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -201,7 +201,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -230,7 +230,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -254,7 +254,7 @@ class TestImplementIssueSuccess:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -267,7 +267,7 @@ class TestImplementIssueFail:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -296,7 +296,7 @@ class TestRunWithTests:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -333,7 +333,7 @@ class TestRunWithTests:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli_mock, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -481,7 +481,7 @@ class TestConsecutiveFailures:
 
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
         # Should have run multiple cycles before giving up
@@ -522,7 +522,7 @@ class TestBlockedIssues:
         state.total_issues = 1
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
         assert "blocked by unmet dependencies" in (state.stop_reason or "")
@@ -594,7 +594,7 @@ class TestImplementationResilience:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
 
         ok = impl.run()
@@ -608,7 +608,7 @@ class TestImplementationResilience:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         cli = make_cli_success(
             {
@@ -643,7 +643,7 @@ class TestImplementationResilience:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
 
         ok = impl.run()
@@ -735,7 +735,7 @@ class TestImplementerMoreBranches:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, make_cli_success(), "ctx", logger)
         assert impl.run() is False
         assert "Dependency cycle" in (state.stop_reason or "")
@@ -832,7 +832,7 @@ class TestImplementerMoreBranches:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = "pytest"
         issue = Issue.from_dict(state.issues[0])
@@ -862,7 +862,7 @@ class TestImplementerMoreBranches:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = None
         issue = Issue.from_dict(state.issues[0])
@@ -891,7 +891,7 @@ class TestImplementerMoreBranches:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = None
         issue = Issue.from_dict(state.issues[0])
@@ -927,7 +927,7 @@ class TestImplementerMoreBranches:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.test_command = None
         issue = Issue.from_dict(state.issues[0])
@@ -1021,7 +1021,7 @@ class TestAutosyncProgress:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
         mock_finalizer_cls.assert_called()
@@ -1061,7 +1061,7 @@ class TestAutosyncProgress:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
         mock_emit_summary.assert_called()
@@ -1097,7 +1097,7 @@ class TestAutosyncProgress:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         impl.run()
         mock_finalizer_cls.assert_not_called()
@@ -1112,7 +1112,7 @@ class TestImplementIssueOutageRollback:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         result = impl._implement_issue(issue)
@@ -1131,7 +1131,7 @@ class TestImplementIssueOutageRollback:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         impl._implement_issue(issue)
@@ -1161,7 +1161,7 @@ class TestImplementIssueOutageRollback:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         impl = Implementer(state, run_dir, config, cli, "ctx", logger)
         issue = Issue.from_dict(state.issues[0])
         impl._implement_issue(issue)
@@ -1214,7 +1214,7 @@ class TestRunLoopOutagePause:
         state = make_state_with_issue()
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         config["implementation_outage_pause_seconds"] = 7
         # Cap the run so an unexpected loop doesn't hang the test.
         config["max_implementation_cycles"] = 5

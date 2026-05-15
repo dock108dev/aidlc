@@ -138,7 +138,7 @@ class TestFacetLoopSequencing:
         config["max_planning_cycles"] = 20
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         state = _seed_state()
         planner = Planner(state, run_dir, config, cli, "context", logger)
@@ -161,7 +161,7 @@ class TestFacetLoopSequencing:
         config["max_planning_cycles"] = 20
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         state = _seed_state()
         planner = Planner(state, run_dir, config, cli, "context", logger)
@@ -209,7 +209,7 @@ class TestFacetLoopSequencing:
         config["max_planning_cycles"] = 20
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
         issues_dir = tmp_path / ".aidlc" / "issues"
         issues_dir.mkdir(parents=True, exist_ok=True)
 
@@ -235,7 +235,7 @@ class TestFacetDisableFlag:
         config["planning_facets_enabled"] = False
         run_dir = tmp_path / "run"
         run_dir.mkdir()
-        (run_dir / "claude_outputs").mkdir()
+        (run_dir / "provider_outputs").mkdir()
 
         state = _seed_state()
         planner = Planner(state, run_dir, config, cli, "context", logger)

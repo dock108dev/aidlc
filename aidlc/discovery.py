@@ -160,6 +160,16 @@ def _write_discovery_debug_bundle(
     raw_output_path = outputs_dir / f"{attempt_slug}.md"
     prompt_path.write_text(prompt, encoding="utf-8")
     raw_output_path.write_text(result.get("output") or "", encoding="utf-8")
+    raw_stdout = result.get("raw_stdout")
+    raw_stderr = result.get("raw_stderr")
+    raw_stdout_path = None
+    raw_stderr_path = None
+    if isinstance(raw_stdout, str) and raw_stdout:
+        raw_stdout_path = outputs_dir / f"{attempt_slug}.raw_stdout.txt"
+        raw_stdout_path.write_text(raw_stdout, encoding="utf-8")
+    if isinstance(raw_stderr, str) and raw_stderr:
+        raw_stderr_path = outputs_dir / f"{attempt_slug}.raw_stderr.txt"
+        raw_stderr_path.write_text(raw_stderr, encoding="utf-8")
     debug_payload = {
         "attempt": attempt_slug,
         "preflight_routing": preflight_routing,
@@ -168,6 +178,8 @@ def _write_discovery_debug_bundle(
         "braindump_chars": len((braindump or "").strip()),
         "prompt_path": prompt_path.name,
         "raw_output_path": raw_output_path.name,
+        "raw_stdout_path": raw_stdout_path.name if raw_stdout_path else None,
+        "raw_stderr_path": raw_stderr_path.name if raw_stderr_path else None,
         "result": _serialize_result_metadata(result),
         "parsed": {
             "findings_chars": len((findings or "").strip()),
@@ -251,7 +263,7 @@ def run_discovery(
     _log_model_result(logger, "Discovery", result)
     state.record_provider_result(result, config, phase="discovery")
 
-    outputs_dir = run_dir / "claude_outputs"
+    outputs_dir = run_dir / "provider_outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
     if not result.get("success"):

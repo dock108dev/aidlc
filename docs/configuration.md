@@ -312,7 +312,7 @@ When `autosync_enabled` is `true`, AIDLC commits (and optionally pushes) on ever
 | `autosync_issue_status_sync` | `true` |
 | `autosync_prune_enabled` | `true` |
 | `autosync_runs_to_keep` | `5` |
-| `autosync_keep_claude_outputs` | `200` |
+| `autosync_keep_provider_outputs` | `200` |
 
 When `autosync_finalize_before_push` is `true` and `finalize_enabled` is `true`, the same **finalize** passes as end-of-run (`finalize_passes`, or all default passes when `null`) run **before** the autosync commit/push so each pushed checkpoint is cleaned up the same way as the final pipeline. Set to `false` to commit/push without that pass (faster, less polish per interval).
 
@@ -325,7 +325,7 @@ When `autosync_finalize_before_push` is `true` and `finalize_enabled` is `true`,
 | `finalize_timeout_seconds` | `900` |
 | `finalize_project_context_max_chars` | `22000` |
 | `cleanup_passes_every_cycles` | `10` (run a periodic cleanup subset every N implementation cycles; `0` disables) |
-| `cleanup_passes_periodic` | `["abend", "cleanup"]` (passes invoked by the periodic-cleanup hook) |
+| `cleanup_passes_periodic` | `["cleanup"]` (passes invoked by the periodic-cleanup hook) |
 
 **Periodic cleanup** runs the `cleanup_passes_periodic` subset of finalize
 passes every `cleanup_passes_every_cycles` implementation cycles. It is
