@@ -100,6 +100,17 @@ def test_extract_codex_failure_diagnostics_can_skip_stdout_tail():
     assert "command_execution" in _extract_codex_failure_diagnostics("", event)
 
 
+def test_extract_codex_failure_diagnostics_ignores_agent_message_payload():
+    event = json.dumps(
+        {
+            "type": "agent_message",
+            "message": '{"actions": [], "planning_complete": false}',
+        }
+    )
+
+    assert _extract_codex_failure_diagnostics("", event, include_stdout_tail=False) == ""
+
+
 def test_classify_openai_cli_failure_rate_limited():
     assert _classify_openai_cli_failure("429 too many requests") == "rate_limited"
     assert _classify_openai_cli_failure("something else") == "issue"
@@ -158,6 +169,21 @@ def test_parse_codex_jsonl_extracts_assistant_message_content_shape():
     assert out == '{"actions": [], "planning_complete": false}'
     assert usage["input_tokens"] == 10
     assert usage["cache_read_input_tokens"] == 4
+
+
+def test_parse_codex_jsonl_extracts_top_level_agent_message():
+    raw = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps({"type": "agent_message", "message": "# Findings\n\nDone."}),
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1}}),
+        ]
+    )
+
+    out, usage = _parse_codex_jsonl(raw)
+
+    assert out == "# Findings\n\nDone."
+    assert usage["input_tokens"] == 1
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
@@ -344,6 +370,47 @@ def test_nonzero_exit_with_completed_turn_and_message_content_is_success(mock_po
     assert "Prompt hides when unavailable" in result["output"]
     assert result["failure_type"] is None
     assert result["usage_source"] == "codex_jsonl"
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_with_top_level_agent_message_is_success(mock_popen, tmp_path):
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps(
+                {
+                    "type": "agent_message",
+                    "message": (
+                        '{"frontier_assessment":"ok","actions":[],"planning_complete":false}'
+                    ),
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "turn.completed",
+                    "usage": {
+                        "input_tokens": 12,
+                        "cached_input_tokens": 3,
+                        "output_tokens": 4,
+                    },
+                }
+            ),
+        ]
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert '"frontier_assessment":"ok"' in result["output"]
+    assert result["failure_type"] is None
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")

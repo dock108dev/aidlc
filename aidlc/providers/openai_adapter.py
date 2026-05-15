@@ -39,24 +39,12 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
     """Parse `codex exec --json` JSONL: assistant text + normalized usage from last turn.completed."""
     output_text = ""
     last_usage: dict = {}
-    for line in (stdout or "").splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for obj in _iter_codex_json_objects(stdout or ""):
         if not isinstance(obj, dict):
             continue
         if obj.get("type") == "turn.completed" and isinstance(obj.get("usage"), dict):
             last_usage = obj["usage"]
-        if obj.get("type") != "item.completed":
-            continue
-        item = obj.get("item")
-        if not isinstance(item, dict):
-            continue
-        text = _extract_codex_item_text(item)
+        text = _extract_codex_event_text(obj)
         if isinstance(text, str) and text.strip():
             output_text = text
 
@@ -77,6 +65,61 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
     return output_text, usage
 
 
+def _iter_codex_json_objects(stdout: str) -> list[dict]:
+    """Decode JSON objects from Codex stdout.
+
+    Codex normally emits one JSON object per line, but CLI wrapper text can
+    appear before JSONL. This mirrors Claude's stream tolerance: consume valid
+    events wherever they appear instead of treating console framing as fatal.
+    """
+    objects: list[dict] = []
+    for raw in (stdout or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            objects.append(obj)
+    if objects:
+        return objects
+
+    decoder = json.JSONDecoder()
+    start = 0
+    while start < len(stdout):
+        brace = stdout.find("{", start)
+        if brace == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(stdout[brace:])
+        except json.JSONDecodeError:
+            start = brace + 1
+            continue
+        if isinstance(obj, dict):
+            objects.append(obj)
+        start = brace + max(end, 1)
+    return objects
+
+
+def _extract_codex_event_text(obj: dict) -> str:
+    """Return assistant text from a top-level Codex event object."""
+    typ = obj.get("type")
+    item = obj.get("item")
+    if typ == "item.completed" and isinstance(item, dict):
+        return _extract_codex_item_text(item)
+
+    if typ in ("agent_message", "assistant_message"):
+        text = obj.get("text") or obj.get("message")
+        return text if isinstance(text, str) else ""
+
+    if typ == "message" and obj.get("role") == "assistant":
+        return _extract_codex_content_text(obj.get("content"))
+
+    return ""
+
+
 def _extract_codex_item_text(item: dict) -> str:
     """Return assistant text from known Codex JSONL item shapes."""
     itype = item.get("item_type") or item.get("type")
@@ -89,7 +132,11 @@ def _extract_codex_item_text(item: dict) -> str:
     if itype != "message" or item.get("role") != "assistant":
         return ""
 
-    content = item.get("content")
+    return _extract_codex_content_text(item.get("content"))
+
+
+def _extract_codex_content_text(content: object) -> str:
+    """Extract assistant text from Codex message ``content`` payloads."""
     if isinstance(content, str):
         return content
     if not isinstance(content, list):
@@ -250,16 +297,7 @@ def _extract_codex_failure_diagnostics(
             parts.append(nested.strip())
 
         msg = obj.get("message")
-        if (
-            isinstance(msg, str)
-            and msg.strip()
-            and typ
-            not in (
-                "turn.completed",
-                "item.completed",
-                "thread.started",
-            )
-        ):
+        if isinstance(msg, str) and msg.strip() and ("error" in typ or "failed" in typ):
             parts.append(msg.strip())
 
         item = obj.get("item")
