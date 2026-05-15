@@ -11,7 +11,11 @@ from .models import Issue
 
 def impl_continuation_path(run_dir: Path, issue: Issue) -> Path:
     """Return the provider continuation map path for an issue attempt."""
-    return run_dir / "claude_sessions" / f"impl_{issue.id}_a{issue.attempt_count:02d}.continuation.json"
+    return (
+        run_dir
+        / "claude_sessions"
+        / f"impl_{issue.id}_a{issue.attempt_count:02d}.continuation.json"
+    )
 
 
 def legacy_impl_uuid_path(run_dir: Path, issue: Issue) -> Path:

@@ -170,7 +170,9 @@ def _capture_planning_session(planner, result: dict, use_threading: bool) -> Non
         save_state(planner.state, planner.run_dir)
 
 
-def _parse_planning_output(planner, cycle_num: int, output_text: str, output_dir: Path, result: dict):
+def _parse_planning_output(
+    planner, cycle_num: int, output_text: str, output_dir: Path, result: dict
+):
     if planner.config.get("dry_run"):
         return PlanningOutput(
             frontier_assessment=f"[DRY RUN] Cycle {cycle_num}",
@@ -211,9 +213,7 @@ def _capture_completion_signal(planner, planning_output: PlanningOutput) -> None
     if planning_output.planning_complete and planner._verify_mode:
         reason = planning_output.completion_reason or "planning completed"
         planner._pending_completion_reason = f"Planning complete — {reason}"
-        planner.logger.info(
-            f"Model signaled planning_complete (accepted in verify mode): {reason}"
-        )
+        planner.logger.info(f"Model signaled planning_complete (accepted in verify mode): {reason}")
     elif planning_output.planning_complete:
         planner.logger.debug(
             "Model signaled planning_complete outside verify mode — ignored "

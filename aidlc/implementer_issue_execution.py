@@ -230,7 +230,9 @@ def _handle_provider_failure(impl, issue: Issue, result: dict, resuming_interrup
         impl.state.stop_reason = message
         impl.logger.error(message)
     issue.status = IssueStatus.FAILED
-    issue.implementation_notes += f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_error}"
+    issue.implementation_notes += (
+        f"\nAttempt {issue.attempt_count} failed (sample):\n{sampled_error}"
+    )
     impl.state.update_issue(issue)
     impl._sync_issue_markdown(issue)
     return False
