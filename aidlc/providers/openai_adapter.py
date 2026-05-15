@@ -50,6 +50,8 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
 
     if not output_text:
         output_text = _extract_codex_agent_message_text(stdout or "")
+    if not output_text:
+        output_text = _extract_codex_plain_final_text(stdout or "")
 
     usage: dict = {}
     if last_usage:
@@ -63,6 +65,41 @@ def _parse_codex_jsonl(stdout: str) -> tuple[str, dict]:
             "cache_creation_input_tokens": 0,
         }
     return output_text, usage
+
+
+def _extract_codex_plain_final_text(stdout: str) -> str:
+    """Extract raw assistant text when Codex mixes plain output with JSON events."""
+    text = (stdout or "").strip()
+    if not text:
+        return ""
+
+    turn_positions = [
+        pos
+        for marker in ('\n{"type":"turn.completed"', '\n{"type": "turn.completed"')
+        if (pos := text.find(marker)) != -1
+    ]
+    if not turn_positions:
+        return ""
+
+    text = text[: min(turn_positions)].strip()
+
+    lines = text.splitlines()
+    while lines and lines[0].strip() in {
+        "Reading additional input from stdin...",
+    }:
+        lines.pop(0)
+    text = "\n".join(lines).strip()
+    if not text:
+        return ""
+    if text.lstrip().startswith('{"type"'):
+        return ""
+
+    # Plain final messages should look like model output, not just a stream
+    # of Codex events. The first two cases cover discovery/planning artifacts;
+    # the last handles short final answers from implementation helpers.
+    if "```json" in text or text.lstrip().startswith(("#", "{", "[")):
+        return text
+    return ""
 
 
 def _iter_codex_json_objects(stdout: str) -> list[dict]:
@@ -500,7 +537,7 @@ class OpenAIAdapter(ProviderAdapter):
                 if blocked:
                     failure_type = _classify_openai_cli_failure(diag)
                     out_tail = (stdout or "")[-16000:] if stdout else None
-                    return self._failure_result(
+                    failure = self._failure_result(
                         model,
                         account_id,
                         duration,
@@ -508,6 +545,9 @@ class OpenAIAdapter(ProviderAdapter):
                         failure_type=failure_type,
                         output=out_tail,
                     )
+                    failure["raw_stdout"] = stdout or ""
+                    failure["raw_stderr"] = stderr or ""
+                    return failure
                 if last_message:
                     usage_source = "codex_last_message"
                 else:
@@ -529,6 +569,8 @@ class OpenAIAdapter(ProviderAdapter):
                 }
                 if tid:
                     payload["continuation_session_id"] = tid
+                payload["raw_stdout"] = stdout or ""
+                payload["raw_stderr"] = stderr or ""
                 return payload
             else:
                 parsed_out, usage = _parse_codex_jsonl(stdout or "")
@@ -559,6 +601,8 @@ class OpenAIAdapter(ProviderAdapter):
                     }
                     if tid:
                         payload["continuation_session_id"] = tid
+                    payload["raw_stdout"] = stdout or ""
+                    payload["raw_stderr"] = stderr or ""
                     return payload
 
                 diagnostic = explicit_diagnostic
@@ -568,7 +612,7 @@ class OpenAIAdapter(ProviderAdapter):
                 out_tail = (
                     last_message or parsed_out or ((stdout or "")[-16000:] if stdout else None)
                 )
-                return self._failure_result(
+                failure = self._failure_result(
                     model,
                     account_id,
                     duration,
@@ -576,6 +620,9 @@ class OpenAIAdapter(ProviderAdapter):
                     failure_type=failure_type,
                     output=out_tail,
                 )
+                failure["raw_stdout"] = stdout or ""
+                failure["raw_stderr"] = stderr or ""
+                return failure
 
         except FileNotFoundError:
             return self._failure_result(

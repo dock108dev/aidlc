@@ -186,6 +186,43 @@ def test_parse_codex_jsonl_extracts_top_level_agent_message():
     assert usage["input_tokens"] == 1
 
 
+def test_parse_codex_jsonl_extracts_plain_output_before_turn_completed():
+    raw = "\n".join(
+        [
+            "Reading additional input from stdin...",
+            "# Findings",
+            "",
+            "Useful discovery output.",
+            "",
+            "```json",
+            "[]",
+            "```",
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 5}}),
+        ]
+    )
+
+    out, usage = _parse_codex_jsonl(raw)
+
+    assert out.startswith("# Findings")
+    assert "Useful discovery output" in out
+    assert '{"type": "turn.completed"' not in out
+    assert usage["input_tokens"] == 5
+
+
+def test_parse_codex_jsonl_does_not_treat_raw_event_as_plain_output():
+    raw = "\n".join(
+        [
+            '{"type":"item.completed","item":"not an assistant message"}',
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 5}}),
+        ]
+    )
+
+    out, usage = _parse_codex_jsonl(raw)
+
+    assert out == ""
+    assert usage["input_tokens"] == 5
+
+
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
 def test_nonzero_exit_classifies_rate_limit_from_stdout_jsonl(mock_popen, tmp_path):
     err_line = json.dumps(
@@ -410,6 +447,38 @@ def test_nonzero_exit_with_top_level_agent_message_is_success(mock_popen, tmp_pa
 
     assert result["success"] is True
     assert '"frontier_assessment":"ok"' in result["output"]
+    assert result["failure_type"] is None
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_nonzero_exit_with_plain_output_and_completed_turn_is_success(mock_popen, tmp_path):
+    stdout = "\n".join(
+        [
+            "Reading additional input from stdin...",
+            "# Findings",
+            "",
+            "Useful discovery output.",
+            "",
+            "```json",
+            "[]",
+            "```",
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 5}}),
+        ]
+    )
+    proc = MagicMock()
+    proc.communicate.return_value = (stdout, "")
+    proc.returncode = 1
+    mock_popen.return_value = proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True
+    assert result["output"].startswith("# Findings")
+    assert result["raw_stdout"] == stdout
     assert result["failure_type"] is None
 
 
