@@ -83,7 +83,14 @@ def extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
                     if isinstance(val, str) and val.strip():
                         parts.append(val.strip())
 
-    # Codex TUI quota messages are often plain text, not JSONL.
+    # Codex TUI quota messages are plain text, not JSONL — they appear when
+    # Codex falls back to its terminal UI (e.g. on quota refusal) and look
+    # like ``■ You've hit your usage limit`` or ``try again at 5:41 PM``.
+    # JSONL ``item.completed`` lines carrying ``agent_message`` text routinely
+    # *discuss* iTunes/GitHub API rate-limit handling, retry policies, or
+    # exponential backoff — that's model content, not a provider signal. Skip
+    # any line that parses as a JSON object so the heuristic can't false-
+    # positive on the model's own output.
     plain_hints = (
         "usage limit",
         "rate limit",
@@ -96,23 +103,42 @@ def extract_codex_failure_diagnostics(stderr: str, stdout: str) -> str:
     )
     for raw_line in (stdout or "").splitlines():
         line = raw_line.strip()
-        if line and any(h in line.lower() for h in plain_hints):
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                obj = None
+            if isinstance(obj, dict):
+                continue
+        if any(h in line.lower() for h in plain_hints):
             parts.append(line)
 
     return "\n".join(dict.fromkeys(parts)).strip()
 
 
 def codex_exit_zero_is_quota_blocker(stdout: str, stderr: str, parsed_out: str) -> tuple[bool, str]:
-    """True when Codex exits 0 with quota/TUI text instead of a completion."""
+    """True when Codex exits 0 with quota/TUI text instead of a completion.
+
+    Only the explicit diagnostic (stderr + JSONL error-type events + plain-text
+    quota hints) is scanned for rate-limit / token-exhaustion patterns. The
+    model's assistant text and the raw JSONL stdout are **never** probed —
+    they routinely embed user repo content (config keys like
+    ``routing_rate_limit_cooldown_seconds``, prose mentioning "rate-limit",
+    tool outputs from ``cat .aidlc/config.json``) that substring-match the
+    heuristics and produce false positives. When codex exits 0 with no
+    explicit quota diagnostic, it's a real completion regardless of what the
+    model wrote about.
+    """
     from ..routing import result_signals as rs
 
-    diagnostic = extract_codex_failure_diagnostics(stderr or "", stdout or "")
-    merged = "\n".join([diagnostic, parsed_out.strip(), (stdout or "").strip()])
-    probe = {"error": diagnostic or merged, "output": merged}
-    if not merged.strip():
+    diagnostic = extract_codex_failure_diagnostics(stderr or "", stdout or "").strip()
+    if not diagnostic:
         return False, ""
+    probe = {"error": diagnostic, "output": ""}
     if rs.is_rate_limited_result(probe) or rs.is_token_exhaustion_result(probe):
-        return True, (diagnostic or merged).strip()[:20000]
+        return True, diagnostic[:20000]
     return False, ""
 
 

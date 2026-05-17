@@ -298,6 +298,73 @@ again at 5:41 PM.
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_exit_zero_with_rate_limit_substring_in_tool_output_is_success(mock_popen, tmp_path):
+    """End-to-end regression: codex exits 0, runs ``cat .aidlc/config.json`` as
+    a tool call, that config legitimately contains keys like
+    ``routing_rate_limit_cooldown_seconds``. The substring ``rate_limit`` must
+    not trigger the quota-blocker — discovery should land as a normal success
+    with the findings doc from ``--output-last-message``.
+
+    Reproduces the bug where discovery against a fresh repo logged
+    ``Discovery model call failed: # Findings ...`` because the assistant text
+    + JSONL stdout (containing the config dump) was being scanned for
+    rate-limit patterns and substring-matching ``routing_rate_limit_*`` keys.
+    """
+
+    def make_proc(cmd, **_kwargs):
+        output_path = cmd[cmd.index("--output-last-message") + 1]
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("# Findings\n\nRepo state summary.\n\n```json\n[]\n```")
+        proc = MagicMock()
+        proc.communicate.return_value = (
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "command_execution",
+                                "command": "cat .aidlc/config.json",
+                                "aggregated_output": (
+                                    '{"routing_rate_limit_cooldown_seconds": 300, '
+                                    '"routing_rate_limit_buffer_base_seconds": 3600}'
+                                ),
+                                "exit_code": 0,
+                            },
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "type": "agent_message",
+                                "text": "# Findings\n\nRepo state summary.\n\n```json\n[]\n```",
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {}}),
+                ]
+            ),
+            "",
+        )
+        proc.returncode = 0
+        return proc
+
+    mock_popen.side_effect = make_proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("hello", tmp_path)
+
+    assert result["success"] is True, f"unexpected failure: {result.get('error')!r}"
+    assert result["failure_type"] is None
+    assert result["error"] is None
+    assert "# Findings" in (result.get("output") or "")
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
 def test_nonzero_exit_with_last_message_and_only_tool_json_is_success(mock_popen, tmp_path):
     def make_proc(cmd, **_kwargs):
         output_path = cmd[cmd.index("--output-last-message") + 1]
@@ -537,6 +604,160 @@ def test_nonzero_exit_completed_turn_still_honors_rate_limit(mock_popen, tmp_pat
 def test_codex_exit_zero_blocker_helper_negative():
     ok, _ = codex_exit_zero_is_quota_blocker('{"type":"turn.completed","usage":{}}\n', "", "")
     assert ok is False
+
+
+def test_codex_exit_zero_blocker_ignores_rate_limit_substring_in_tool_output():
+    """Tool output that embeds the user's own repo content — e.g. a config key
+    like ``routing_rate_limit_cooldown_seconds`` printed by ``cat .aidlc/config.json`` —
+    must not be classified as a quota blocker. The substring pattern
+    ``rate_limit`` would otherwise false-positive on every config dump, killing
+    real discovery responses with success=False / error=<full output>."""
+    stdout = "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "command_execution",
+                        "command": "cat .aidlc/config.json",
+                        "aggregated_output": (
+                            '{"routing_rate_limit_cooldown_seconds": 300, '
+                            '"routing_rate_limit_buffer_base_seconds": 3600}'
+                        ),
+                        "exit_code": 0,
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "type": "agent_message",
+                        "text": "# Findings\n\nDiscussion of rate-limit handling for the GitHub API.",
+                    },
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {}}),
+        ]
+    )
+    parsed_out = "# Findings\n\nDiscussion of rate-limit handling for the GitHub API."
+    blocked, diag = codex_exit_zero_is_quota_blocker(stdout, "", parsed_out)
+    assert blocked is False
+    assert diag == ""
+
+
+def test_codex_exit_zero_blocker_still_fires_on_real_quota_text():
+    """A genuine TUI quota message (plain-text 'usage limit' / 'try again at'
+    line in stdout) must still trigger — that's what the helper exists for."""
+    stdout = "■ You've hit your usage limit. Upgrade to Pro to keep going.\nTry again at 5:41 PM.\n"
+    blocked, diag = codex_exit_zero_is_quota_blocker(stdout, "", "")
+    assert blocked is True
+    assert "usage limit" in diag.lower()
+
+
+def test_codex_exit_zero_blocker_fires_on_stderr_rate_limit():
+    """Real provider rate-limit diagnostic in stderr must still be honored."""
+    blocked, diag = codex_exit_zero_is_quota_blocker(
+        '{"type":"turn.completed","usage":{}}\n',
+        "Rate limit reached for gpt-5.5",
+        "",
+    )
+    assert blocked is True
+    assert "rate limit" in diag.lower()
+
+
+def test_extract_diagnostics_ignores_rate_limit_substring_in_jsonl_agent_message():
+    """A research/discovery JSONL line whose agent_message ``text`` discusses
+    API rate limits must not be classified as a Codex TUI quota message.
+
+    Reproduces the bug where a single ``item.completed`` event containing
+    ``"text":"...iTunes Search API rate limit handling..."`` got matched by
+    the ``"rate limit"`` plain-hint pass, populated the diagnostic, and made
+    the routing engine cooldown a healthy provider for an hour.
+    """
+    agent_msg = (
+        "# Local Storage And Cache Shape\n\n"
+        "## API integration notes\n\n"
+        "The iTunes Search API enforces a rate limit (try again after a "
+        "short backoff). For GitHub, monitor X-RateLimit-Remaining and "
+        "honor try again at responses on 429."
+    )
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "thread.started", "thread_id": "t1"}),
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {
+                        "id": "item_0",
+                        "type": "agent_message",
+                        "text": agent_msg,
+                    },
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1}}),
+        ]
+    )
+    assert extract_codex_failure_diagnostics("", stdout) == ""
+    blocked, _ = codex_exit_zero_is_quota_blocker(stdout, "", agent_msg)
+    assert blocked is False
+
+
+@patch("aidlc.providers.openai_adapter.subprocess.Popen")
+def test_research_jsonl_discussing_rate_limits_lands_as_success(mock_popen, tmp_path):
+    """End-to-end regression: a research call whose JSONL output contains a
+    long agent_message about API rate-limit handling must return success.
+    Previously this got the provider cooldown-quarantined for an hour with
+    ``failure_type='rate_limited'``."""
+    research_text = (
+        "# Local Storage And Cache Shape For Repeatable Runs\n\n"
+        "## Scope\n\nThis design answers the storage question implied by "
+        "BRAINDUMP.md.\n\n## API guidance\n\n"
+        "When calling the iTunes Search API, respect the rate limit and "
+        "honor try again at headers. The GitHub API similarly enforces a "
+        "rate limit per token; back off and try again in a few minutes "
+        "rather than hammering the endpoint."
+    )
+
+    def make_proc(cmd, **_kwargs):
+        output_path = cmd[cmd.index("--output-last-message") + 1]
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(research_text)
+        proc = MagicMock()
+        proc.communicate.return_value = (
+            "\n".join(
+                [
+                    json.dumps({"type": "thread.started", "thread_id": "t1"}),
+                    json.dumps(
+                        {
+                            "type": "item.completed",
+                            "item": {
+                                "id": "item_0",
+                                "type": "agent_message",
+                                "text": research_text,
+                            },
+                        }
+                    ),
+                    json.dumps({"type": "turn.completed", "usage": {"input_tokens": 50}}),
+                ]
+            ),
+            "",
+        )
+        proc.returncode = 0
+        return proc
+
+    mock_popen.side_effect = make_proc
+    adapter = OpenAIAdapter(
+        {"providers": {"openai": {"cli_command": "codex", "default_model": "gpt-5.5"}}},
+        MagicMock(),
+    )
+
+    result = adapter.execute_prompt("research please", tmp_path)
+
+    assert result["success"] is True, f"unexpected failure: {result.get('error')!r}"
+    assert result["failure_type"] is None
+    assert result["error"] is None
+    assert "Local Storage And Cache Shape" in (result.get("output") or "")
 
 
 @patch("aidlc.providers.openai_adapter.subprocess.Popen")
