@@ -193,8 +193,10 @@ class TestValidator:
 
         validator = Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
         result = validator.run()
-        assert result is True  # No tests = skip = stable
+        assert result is True
         assert state.phase == RunPhase.VALIDATING
+        assert state.validation_status == "skipped"
+        assert "No test commands" in state.validation_message
 
     def test_no_tests_fails_when_strict(self, tmp_path):
         state = RunState(run_id="test", config_name="default")
@@ -213,6 +215,7 @@ class TestValidator:
         validator = Validator(state, run_dir, config, cli, "project type: unknown", MagicMock())
         result = validator.run()
         assert result is False
+        assert state.validation_status == "failed"
 
     def test_failed_tier_without_parseable_output_creates_synthetic_failure(self, tmp_path):
         state = RunState(run_id="test", config_name="default")
@@ -383,6 +386,7 @@ class TestValidatorRunLoop:
 
         v._run_test_tiers = fake_tiers
         assert v.run() is True
+        assert state.validation_status == "passed"
 
     @patch("aidlc.validator.save_state")
     @patch("aidlc.implementer.Implementer")
@@ -415,6 +419,7 @@ class TestValidatorRunLoop:
 
         v._run_test_tiers = always_fail
         assert v.run() is False
+        assert state.validation_status == "incomplete"
 
     @patch("aidlc.validator.save_state")
     def test_run_stops_when_no_fix_issues_generated(self, mock_save, tmp_path):

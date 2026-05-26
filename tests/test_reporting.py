@@ -30,8 +30,27 @@ class TestGenerateRunReport:
         content = path.read_text()
         assert "test_report" in content
         assert "complete" in content
+        assert "## Verdict" in content
         assert "AI Provider Telemetry" in content
         assert "Model Breakdown" in content
+
+    def test_verdict_surfaces_validation_skip_and_unknown_cost(self, tmp_path):
+        state = RunState(run_id="test_report", config_name="default")
+        state.status = RunStatus.COMPLETE_VALIDATION_SKIPPED
+        state.total_issues = 2
+        state.issues_implemented = 2
+        state.validation_status = "skipped"
+        state.validation_message = "No test commands configured."
+        state.claude_total_tokens = 123
+        state.claude_calls_total = 1
+        state.claude_calls_succeeded = 1
+
+        path = generate_run_report(state, tmp_path)
+        content = path.read_text()
+        assert "Outcome: complete_validation_skipped" in content
+        assert "Validation: skipped" in content
+        assert "Next action: Configure `run_tests_command`" in content
+        assert "| Cost exact (USD) | unknown |" in content
 
     def test_includes_issue_table(self, tmp_path):
         state = RunState(run_id="test_report", config_name="default")

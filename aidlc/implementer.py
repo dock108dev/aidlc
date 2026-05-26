@@ -278,21 +278,21 @@ class Implementer:
                 self._emit_run_checkpoint_summary()
                 last_checkpoint_time = time.time()
 
-        if self.state.stop_reason and not self.state.all_issues_resolved():
+        remaining_unresolved = sum(
+            1
+            for d in self.state.issues
+            if d.get("status") in ("pending", "in_progress", "blocked", "failed")
+        )
+        if self.state.stop_reason and remaining_unresolved > 0:
             # Don't auto-run finalization on early stop unless the user
             # opts in. The default-off prevents burning more budget at
             # exactly the moment we want to stop cleanly (e.g. token
             # exhaustion). Always log a single visually-distinct stop-reason
             # line and resume hint so the user can see what happened without
             # parsing the rest of the log.
-            remaining = sum(
-                1
-                for d in self.state.issues
-                if d.get("status") in ("pending", "in_progress", "blocked", "failed")
-            )
             self.logger.error("=" * 60)
             self.logger.error(f"STOP REASON: {self.state.stop_reason}")
-            self.logger.error(f"Issues remaining: {remaining}")
+            self.logger.error(f"Issues remaining: {remaining_unresolved}")
             self.logger.error("RESUME WITH: aidlc run --resume")
             self.logger.error("=" * 60)
 

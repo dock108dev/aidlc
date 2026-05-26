@@ -12,6 +12,11 @@ class RunStatus(Enum):
     RUNNING = "running"
     PAUSED = "paused"
     COMPLETE = "complete"
+    COMPLETE_CLEAN = "complete_clean"
+    COMPLETE_WITH_RECOVERED_FAILURES = "complete_with_recovered_failures"
+    COMPLETE_VALIDATION_SKIPPED = "complete_validation_skipped"
+    COMPLETE_VALIDATION_FAILED_ALLOWED = "complete_validation_failed_allowed"
+    COMPLETE_WITH_BLOCKED_ISSUES = "complete_with_blocked_issues"
     FAILED = "failed"
     # A run flipped to INTERRUPTED by atexit/SIGINT/SIGTERM handlers in
     # runner.py when the process exits non-cleanly while status was RUNNING.
@@ -128,6 +133,8 @@ class RunState:
     validation_cycles: int = 0
     validation_issues_created: int = 0
     validation_test_results: list = field(default_factory=list)
+    validation_status: str = "not_run"
+    validation_message: str = ""
 
     # Finalization
     finalize_passes_completed: list = field(default_factory=list)
@@ -255,6 +262,8 @@ class RunState:
             "validation_cycles": self.validation_cycles,
             "validation_issues_created": self.validation_issues_created,
             "validation_test_results": self.validation_test_results,
+            "validation_status": self.validation_status,
+            "validation_message": self.validation_message,
             "finalize_passes_completed": self.finalize_passes_completed,
             "finalize_passes_requested": self.finalize_passes_requested,
             "checkpoint_count": self.checkpoint_count,
@@ -329,6 +338,8 @@ class RunState:
         state.validation_cycles = data.get("validation_cycles", 0)
         state.validation_issues_created = data.get("validation_issues_created", 0)
         state.validation_test_results = data.get("validation_test_results", [])
+        state.validation_status = data.get("validation_status", "not_run")
+        state.validation_message = data.get("validation_message", "")
         state.finalize_passes_completed = data.get("finalize_passes_completed", [])
         state.finalize_passes_requested = data.get("finalize_passes_requested", [])
         state.checkpoint_count = data.get("checkpoint_count", 0)

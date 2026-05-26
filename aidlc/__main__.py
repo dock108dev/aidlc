@@ -26,6 +26,9 @@ from .cli_commands import (
 from .cli_commands import (
     cmd_status as _cmd_status,
 )
+from .cli_commands import (
+    cmd_summarize_runs as _cmd_summarize_runs,
+)
 from .cli_parser import build_parser
 from .config import load_config
 from .paths import resolve_project_root
@@ -52,6 +55,10 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_status(args: argparse.Namespace) -> None:
     _cmd_status(args, __version__)
+
+
+def cmd_summarize_runs(args: argparse.Namespace) -> None:
+    _cmd_summarize_runs(args, __version__)
 
 
 def cmd_reset(args: argparse.Namespace) -> None:
@@ -191,6 +198,8 @@ def main() -> None:
         cmd_run(args)
     elif args.command == "status":
         cmd_status(args)
+    elif args.command == "summarize-runs":
+        cmd_summarize_runs(args)
     elif args.command == "reset":
         cmd_reset(args)
     elif args.command == "accounts":

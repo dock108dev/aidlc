@@ -54,6 +54,51 @@ _POST_PLANNING_PHASES = frozenset(
     }
 )
 
+_COMPLETE_STATUSES = {
+    RunStatus.COMPLETE,
+    RunStatus.COMPLETE_CLEAN,
+    RunStatus.COMPLETE_WITH_RECOVERED_FAILURES,
+    RunStatus.COMPLETE_VALIDATION_SKIPPED,
+    RunStatus.COMPLETE_VALIDATION_FAILED_ALLOWED,
+    RunStatus.COMPLETE_WITH_BLOCKED_ISSUES,
+}
+
+
+def _unresolved_issue_count(state: RunState) -> int:
+    return sum(
+        1
+        for d in state.issues
+        if d.get("status") in {"pending", "in_progress", "blocked", "failed"}
+    )
+
+
+def _issue_retry_count(state: RunState) -> int:
+    return sum(max(0, int(d.get("attempt_count", 0) or 0) - 1) for d in state.issues)
+
+
+def _completion_status(state: RunState) -> RunStatus:
+    if _unresolved_issue_count(state) > 0:
+        return RunStatus.COMPLETE_WITH_BLOCKED_ISSUES
+
+    validation_status = (state.validation_status or "not_run").lower()
+    if validation_status == "skipped":
+        return RunStatus.COMPLETE_VALIDATION_SKIPPED
+    if validation_status in {"failed", "incomplete"}:
+        return RunStatus.COMPLETE_VALIDATION_FAILED_ALLOWED
+
+    had_recovered_failures = (
+        state.claude_calls_failed > 0
+        or _issue_retry_count(state) > 0
+        or state.validation_issues_created > 0
+        or any(
+            isinstance(result, dict) and not result.get("passed", False)
+            for result in state.validation_test_results[:-1]
+        )
+    )
+    if had_recovered_failures:
+        return RunStatus.COMPLETE_WITH_RECOVERED_FAILURES
+    return RunStatus.COMPLETE_CLEAN
+
 
 def _has_failed_discovery_placeholder(config: dict) -> bool:
     """True when prior discovery wrote the known failure placeholder."""
@@ -91,7 +136,7 @@ def init_run(config: dict, resume: bool, dry_run: bool) -> tuple[RunState, Path]
                     f"delete .aidlc/runs/{run_dir.name}/ to remove it."
                 )
             elif state.status in (
-                RunStatus.COMPLETE,
+                *_COMPLETE_STATUSES,
                 RunStatus.FAILED,
                 RunStatus.ABANDONED,
             ):
@@ -500,7 +545,9 @@ def run_full(
             validator = Validator(state, run_dir, config, cli, project_context, logger)
             is_stable = validator.run()
             save_state(state, run_dir)
-            if is_stable:
+            if state.validation_status == "skipped":
+                logger.info(f"Validation skipped — {state.validation_message}")
+            elif is_stable:
                 logger.info("Validation passed — project is stable")
             else:
                 logger.warning(
@@ -513,6 +560,18 @@ def run_full(
                     logger.error(state.stop_reason)
                     save_state(state, run_dir)
                     return
+        elif (
+            not plan_only
+            and state.issues
+            and (skip_validation or not config.get("validation_enabled", True))
+        ):
+            state.validation_status = "skipped"
+            state.validation_message = (
+                "Validation skipped by CLI flag."
+                if skip_validation
+                else "Validation disabled by configuration."
+            )
+            save_state(state, run_dir)
 
         # FINALIZE (optional) — audit, cleanup, docs consolidation
         if (
@@ -531,14 +590,24 @@ def run_full(
 
         # REPORT
         state.phase = RunPhase.REPORTING
+        state.status = _completion_status(state)
+        if not state.stop_reason:
+            if state.status == RunStatus.COMPLETE_VALIDATION_SKIPPED:
+                state.stop_reason = state.validation_message or "Validation skipped"
+            elif state.status == RunStatus.COMPLETE_VALIDATION_FAILED_ALLOWED:
+                state.stop_reason = state.validation_message or "Validation failed but allowed"
+            elif state.status == RunStatus.COMPLETE_WITH_BLOCKED_ISSUES:
+                state.stop_reason = (
+                    f"{_unresolved_issue_count(state)} issues unresolved at completion"
+                )
+            else:
+                state.stop_reason = "All work completed"
         report_dir = get_reports_dir(config, state.run_id)
         report_path = generate_run_report(state, report_dir)
         logger.info(f"Report: {report_path}")
 
         state.phase = RunPhase.DONE
-        state.status = RunStatus.COMPLETE
-        if not state.stop_reason:
-            state.stop_reason = "All work completed"
+        state.status = _completion_status(state)
 
     except KeyboardInterrupt:
         logger.info("Interrupted. Saving state for resume.")

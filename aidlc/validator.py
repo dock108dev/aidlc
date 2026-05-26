@@ -63,10 +63,18 @@ class Validator:
             if self.config.get("strict_validation") and not self.config.get(
                 "validation_allow_no_tests", True
             ):
+                self.state.validation_status = "failed"
+                self.state.validation_message = (
+                    "No test commands detected and strict validation forbids skipping."
+                )
+                save_state(self.state, self.run_dir)
                 self.logger.error(
                     "No test commands detected and strict validation forbids skipping."
                 )
                 return False
+            self.state.validation_status = "skipped"
+            self.state.validation_message = "No test commands configured."
+            save_state(self.state, self.run_dir)
             self.logger.info("No test commands detected — skipping validation")
             return True
 
@@ -91,6 +99,9 @@ class Validator:
             save_state(self.state, self.run_dir)
 
             if all_passed:
+                self.state.validation_status = "passed"
+                self.state.validation_message = "All configured validation commands passed."
+                save_state(self.state, self.run_dir)
                 self.logger.info("All tests passed — project is stable!")
                 return True
 
@@ -141,9 +152,17 @@ class Validator:
         # Final check
         all_passed, _, _ = self._run_test_tiers()
         if all_passed:
+            self.state.validation_status = "passed"
+            self.state.validation_message = "All configured validation commands passed."
+            save_state(self.state, self.run_dir)
             self.logger.info("Validation complete: all tests passing")
             return True
 
+        self.state.validation_status = "incomplete"
+        self.state.validation_message = (
+            f"Validation incomplete after {self.state.validation_cycles} cycle(s)."
+        )
+        save_state(self.state, self.run_dir)
         self.logger.warning(
             f"Validation incomplete after {self.state.validation_cycles} cycles. "
             f"Some tests still failing."

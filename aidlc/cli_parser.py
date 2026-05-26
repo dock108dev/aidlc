@@ -154,6 +154,19 @@ def build_parser(version: str) -> argparse.ArgumentParser:
     )
     status_parser.add_argument("--project", "-p", help="Project root directory (default: cwd)")
 
+    summarize_parser = subparsers.add_parser(
+        "summarize-runs",
+        help="Summarize active and archived AIDLC runs",
+        description=(
+            "Summarize every state.json found under one or more roots, including archived runs."
+        ),
+    )
+    summarize_parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Run roots, .aidlc directories, log directories, or state.json files (default: cwd)",
+    )
+
     reset_parser = subparsers.add_parser(
         "reset",
         help="Clear stale .aidlc/ state",
