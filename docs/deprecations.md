@@ -1,115 +1,77 @@
 # Deprecations
 
-This document tracks behavior intentionally removed from active support.
+This document lists behavior intentionally removed from the active CLI and
+runtime. AIDLC favors one current path over retaining compatibility shims.
 
-## Core-focus audit
+## Removed CLI Commands
 
-The CLI surface and lifecycle were trimmed to the core flow
-(`BRAINDUMP.md` → `aidlc run` → built code).
+| Removed command | Current path |
+|---|---|
+| `aidlc improve` | Put the concern in `BRAINDUMP.md` and run `aidlc run`. |
+| `aidlc plan` | Use `aidlc init` to scaffold `BRAINDUMP.md`; planning is a phase of `aidlc run`. |
+| `aidlc audit` | No CLI surface. `aidlc/auditor.py` remains as a Python API. |
+| `aidlc finalize` | Finalization runs inside `aidlc run`; use `--skip-finalize` to skip. |
+| `aidlc validate` | Validation runs inside `aidlc run`; use `--skip-validation` to skip. |
 
-### Removed CLI subcommands
+## Removed Planner Actions
 
-- **`aidlc improve`** — duplicated `aidlc run`. To focus a run, write the
-  concern into `BRAINDUMP.md`.
-- **`aidlc plan`** — interactive multi-doc generator. Replaced by
-  `aidlc init` (scaffolds `BRAINDUMP.md` + `.aidlc/`); other docs are
-  user-authored.
-- **`aidlc finalize`** — runs as part of `aidlc run` (use `--skip-finalize`
-  to skip).
-- **`aidlc validate`** — runs as part of `aidlc run` (use `--skip-validation`
-  to skip).
-- **`aidlc audit`** — removed without an `aidlc run` integration. The
-  underlying engine (`aidlc/auditor.py`, `aidlc/audit/`) is still in the
-  codebase as a Python API and is invoked from tests, but no CLI flag
-  triggers it. The scanner consumes `.aidlc/audit_result.json` if present
-  (e.g. produced externally), so the contract is still useful for
-  integrators.
+Planning now emits only:
 
-### Auditor BRAINDUMP/ARCHITECTURE generation
+- `create_issue`
+- `update_issue`
 
-The auditor used to overwrite the customer's `BRAINDUMP.md` and
-`ARCHITECTURE.md` from heuristics; that inverted the design where
-`BRAINDUMP.md` is the customer's voice. The auditor is now read-only for
-user-owned docs. Config knobs `audit_braindump_enabled`,
-`audit_braindump_path`, `audit_planning_workload_stop_ratio`,
-`audit_research_estimate_default_hours`, `audit_issue_estimate_defaults`,
-`audit_include_deferred_backlog` are gone, along with
-`AuditResult.braindump_summary`.
+Removed action types:
 
-### Removed finalization passes
+- `create_doc`
+- `update_doc`
+- `research`
 
-`ssot`, `security`, `abend` — vague semantics with no clear definition of
-done. Only `docs` and `cleanup` remain. New passes will be reintroduced once
-their prompts are nailed down.
+Discovery and research are standalone pre-planning phases, not planner actions.
 
-### Removed planner action types
+## Removed Finalization Passes
 
-`create_doc`, `update_doc`, `research` — discovery and research are now
-standalone phases that run before planning, not planning actions. The
-canonical action types are defined in
-`aidlc/schemas.py:PLANNING_ACTION_TYPES` and consist of `create_issue` and
-`update_issue` only.
+Available finalization passes are `cleanup` and `docs`.
 
-### Doc-gap detection on by default
+Removed passes:
 
-Now opt-in (`doc_gap_detection_enabled: false` in DEFAULTS). It produced
-spurious planning issues on mature repos.
+- `ssot`
+- `security`
+- `abend`
 
-### Removed config keys
+Those pass names had unclear acceptance criteria and are not accepted by the
+current finalizer.
 
-- **`session_dir_max_keep`** — only existed for the retired `aidlc plan`
-  wizard.
-- **`diminishing_returns_threshold`**,
-  **`diminishing_returns_window`**,
-  **`planning_diminishing_returns_min_threshold`**,
-  **`planning_diminishing_returns_max_threshold`** — the entire
-  multi-empty-cycle "diminishing returns" wait was replaced with a
-  single explicit verify cycle (see ``VERIFY_INSTRUCTIONS`` in
-  ``aidlc/planner_text.py`` and the "Verify-mode planning exit" section
-  in ``docs/configuration.md``). Legacy configs containing any of these
-  keys are silently ignored.
-- **`audit_braindump_*`, `audit_planning_workload_*`, `audit_*_estimate_*`**
-  — see *Auditor BRAINDUMP/ARCHITECTURE generation* above.
-- **`claude_hard_timeout_seconds`** — wall-clock kill on the Claude CLI
-  process. Removed because Claude CLI in stream-json mode emits steady
-  tool-use events while doing real work — sometimes for an hour or
-  more — and the wall-clock kill interrupted productive sessions,
-  leaving partial JSON that downstream parsers couldn't handle. Legacy
-  config files containing the key are silently ignored. Use
-  `claude_stall_kill_seconds` for an activity-based safety valve.
-  Non-streaming provider CLIs (Copilot, OpenAI Codex) now use
-  `provider_call_timeout_seconds` (default `1800`).
-- **`autosync_keep_claude_outputs`** — replaced by
-  `autosync_keep_provider_outputs` when run artifacts moved from
-  `claude_outputs/` to the provider-neutral `provider_outputs/` directory.
+## Removed Config Keys
 
-### Removed routing helpers
+| Removed key or family | Replacement or current behavior |
+|---|---|
+| `session_dir_max_keep` | No replacement; session-dir pruning belonged to the removed plan wizard. |
+| `diminishing_returns_threshold` | No replacement; planning uses verify mode after no-new-issue cycles. |
+| `diminishing_returns_window` | No replacement. |
+| `planning_diminishing_returns_min_threshold` | No replacement. |
+| `planning_diminishing_returns_max_threshold` | No replacement. |
+| `audit_braindump_*` | No replacement; auditor no longer writes user-owned braindump docs. |
+| `audit_planning_workload_*` | No replacement. |
+| `audit_*_estimate_*` | No replacement. |
+| `claude_hard_timeout_seconds` | Use activity-based `claude_stall_kill_seconds` if needed. |
+| `autosync_keep_claude_outputs` | Use `autosync_keep_provider_outputs`. |
 
-`is_premium_phase()` / `get_premium_phases()` and the `legacy_premium`
-Claude-first routing branches — provider tier preference is now driven
-entirely by `providers.<id>.max_capacity` / `max_capacity_weight`.
+Unknown keys are loaded into config but only matter if current code reads them.
 
-### Removed `RunPhase.AUDITING`
+## Removed Phase and Usage Compatibility
 
-The deprecated phase value is gone. Old paused state files containing
-`phase: "auditing"` will fail to deserialize; use `aidlc reset` and start
-fresh, or hand-edit the JSON.
+- `RunPhase.AUDITING` is not a current phase.
+- Legacy usage synthesis from old claude-only run state was removed; usage
+  reporting now relies on provider/account telemetry in run state.
 
-### Removed legacy usage accumulator
+## Validation Compatibility
 
-`aidlc/cli/usage_cmd.py:_accumulate_legacy_usage` — runs predating
-per-provider/account usage telemetry no longer synthesize claude-only
-fallback rows. Such runs report "No usage data" instead.
+`test_profile_mode` must be `progressive`. Non-progressive validation modes are
+not supported.
 
-## Validation Flow
+## Auditor Document Generation
 
-- Non-progressive validation modes are deprecated and removed.
-- `test_profile_mode` must be `"progressive"`. Other values raise at
-  construction time (see `aidlc/validator.py`).
-
-## Compatibility Policy
-
-- AIDLC prioritizes SSOT behavior over backward compatibility.
-- Deprecated branches are removed rather than retained behind legacy toggles.
-- Where feasible, removals are paired with negative tests asserting the
-  symbol stays absent.
+The auditor no longer writes `BRAINDUMP.md` or `ARCHITECTURE.md`. `BRAINDUMP.md`
+is user-owned input. The audit package may still write generated audit outputs
+when used as a Python API, and `scanner.py` can consume `.aidlc/audit_result.json`
+if an external process produced it.

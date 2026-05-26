@@ -4,58 +4,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import Issue, RunState
-
-
-def _unresolved_issue_count(state: RunState) -> int:
-    return sum(
-        1
-        for d in state.issues
-        if d.get("status") in {"pending", "in_progress", "blocked", "failed"}
-    )
-
-
-def _issue_retry_count(state: RunState) -> int:
-    return sum(max(0, int(d.get("attempt_count", 0) or 0) - 1) for d in state.issues)
-
-
-def _provider_mix(state: RunState) -> str:
-    providers = sorted(state.provider_account_usage) if state.provider_account_usage else []
-    models = (
-        sorted(
-            str(model)
-            for model, metrics in state.claude_model_usage.items()
-            if isinstance(metrics, dict)
-        )
-        if state.claude_model_usage
-        else []
-    )
-    provider_label = "+".join(providers) if providers else "unknown"
-    model_label = "+".join(models) if models else "unknown"
-    return f"{provider_label}/{model_label}"
-
-
-def _validation_label(state: RunState) -> str:
-    status = (state.validation_status or "not_run").replace("_", " ")
-    if state.validation_message:
-        return f"{status} — {state.validation_message}"
-    return status
-
-
-def _next_action(state: RunState) -> str:
-    status = state.status.value
-    if status == "complete_with_blocked_issues":
-        return "Resolve blocked or failed issues, then run `aidlc run --resume`."
-    if status == "complete_validation_skipped":
-        return "Configure `run_tests_command` or `build_validation_command` before treating this as green."
-    if status == "complete_validation_failed_allowed":
-        return "Inspect validation failures and rerun with strict validation when ready."
-    if status == "complete_with_recovered_failures":
-        return "Review recovered failures, then rerun validation if this gates a release."
-    if status == "complete_clean":
-        return "No follow-up required from AIDLC."
-    if state.status.value in {"paused", "interrupted", "abandoned"}:
-        return "Run `aidlc run --resume` when ready."
-    return "Review the report details."
+from .run_outcome import (
+    issue_retry_count,
+    next_action,
+    provider_mix,
+    unresolved_issue_count,
+    validation_label,
+)
 
 
 def _cost_cell(value: float, calls: int, total_tokens: int) -> str:
@@ -88,12 +43,12 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         "",
         f"Outcome: {state.status.value}",
         f"Issues: {state.issues_implemented}/{state.total_issues} implemented",
-        f"Unresolved issues: {_unresolved_issue_count(state)}",
-        f"Validation: {_validation_label(state)}",
-        f"Provider: {_provider_mix(state)}",
+        f"Unresolved issues: {unresolved_issue_count(state)}",
+        f"Validation: {validation_label(state)}",
+        f"Provider: {provider_mix(state)}",
         f"Provider failures: {state.claude_calls_failed}",
-        f"Issue retry attempts: {_issue_retry_count(state)}",
-        f"Next action: {_next_action(state)}",
+        f"Issue retry attempts: {issue_retry_count(state)}",
+        f"Next action: {next_action(state)}",
         "",
     ]
 
@@ -146,7 +101,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
             f"| Calls succeeded | {state.claude_calls_succeeded} |",
             f"| Calls failed | {state.claude_calls_failed} |",
             f"| Provider transport retries | {state.claude_retries_total} |",
-            f"| Issue retry attempts | {_issue_retry_count(state)} |",
+            f"| Issue retry attempts | {issue_retry_count(state)} |",
             f"| Input tokens | {state.claude_input_tokens} |",
             f"| Output tokens | {state.claude_output_tokens} |",
             f"| Cache write tokens | {state.claude_cache_creation_input_tokens} |",
@@ -264,7 +219,7 @@ def generate_run_report(state: RunState, report_dir: Path) -> Path:
         lines.append("## Validation Summary\n")
         lines.append("| Metric | Value |")
         lines.append("|---|---|")
-        lines.append(f"| Status | {_validation_label(state)} |")
+        lines.append(f"| Status | {validation_label(state)} |")
         lines.append(f"| Validation cycles | {state.validation_cycles} |")
         lines.append(f"| Fix issues created | {state.validation_issues_created} |")
         for result in state.validation_test_results:

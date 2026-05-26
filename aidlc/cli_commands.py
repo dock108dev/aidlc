@@ -38,16 +38,13 @@ from .cli.display import (
 from .cli.provider import cmd_provider_auth
 from .config import load_config, write_default_config
 from .paths import resolve_project_root
+from .run_outcome import (
+    COMPLETE_STATUS_VALUES,
+    run_project_label,
+    summary_next_action,
+    summary_validation_label,
+)
 from .state_manager import find_latest_run, load_state
-
-_COMPLETE_STATUS_VALUES = {
-    "complete",
-    "complete_clean",
-    "complete_with_recovered_failures",
-    "complete_validation_skipped",
-    "complete_validation_failed_allowed",
-    "complete_with_blocked_issues",
-}
 
 
 def cmd_precheck(args: argparse.Namespace, version: str) -> None:
@@ -216,7 +213,7 @@ def cmd_status(args: argparse.Namespace, version: str) -> None:
     console_h = state.console_seconds / 3600
 
     status_str = state.status.value
-    if state.status.value in _COMPLETE_STATUS_VALUES:
+    if state.status.value in COMPLETE_STATUS_VALUES:
         status_str = _green(status_str)
     elif state.status.value == "failed":
         status_str = _red(status_str)
@@ -283,40 +280,6 @@ def _iter_state_files(paths: list[str]) -> list[Path]:
     return sorted(set(state_files), key=_state_sort_key)
 
 
-def _run_project_label(state) -> str:
-    root = Path(state.project_root) if state.project_root else Path("?")
-    return root.name
-
-
-def _summary_validation_label(state) -> str:
-    status = state.validation_status or "not_run"
-    if status == "not_run" and state.validation_test_results:
-        last = state.validation_test_results[-1]
-        if isinstance(last, dict):
-            return "passed" if last.get("passed") else "failed"
-    if status == "not_run" and state.validation_cycles > 0:
-        return "recorded"
-    return status
-
-
-def _summary_next_action(state) -> str:
-    unresolved = sum(
-        1
-        for d in state.issues
-        if d.get("status") in {"pending", "in_progress", "blocked", "failed"}
-    )
-    validation = _summary_validation_label(state)
-    if unresolved:
-        return f"resolve {unresolved} issue(s)"
-    if validation in {"failed", "incomplete"}:
-        return "fix validation"
-    if validation == "skipped":
-        return "configure validation"
-    if state.claude_calls_failed:
-        return "review recovered failures"
-    return "-"
-
-
 def cmd_summarize_runs(args: argparse.Namespace, version: str) -> None:
     """Summarize active and archived AIDLC runs under one or more roots."""
     paths = getattr(args, "paths", None) or ["."]
@@ -333,19 +296,19 @@ def cmd_summarize_runs(args: argparse.Namespace, version: str) -> None:
         except Exception as exc:
             rows.append((state_path.parent.name, "?", "unreadable", "-", "-", "-", "-", str(exc)))
             continue
-        validation = _summary_validation_label(state)
+        validation = summary_validation_label(state)
         issues = f"{state.issues_implemented}/{state.total_issues}"
         elapsed_h = state.elapsed_seconds / 3600
         rows.append(
             (
                 state.run_id,
-                _run_project_label(state),
+                run_project_label(state),
                 state.status.value,
                 issues,
                 validation,
                 str(state.claude_calls_failed),
                 f"{elapsed_h:.1f}h",
-                _summary_next_action(state),
+                summary_next_action(state),
             )
         )
 

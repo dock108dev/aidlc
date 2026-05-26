@@ -1,42 +1,76 @@
-# Deployment & distribution
+# Deployment and Distribution
 
-AIDLC is a normal Python package (setuptools). There is no separate server process: you install the CLI and run it against a **project directory** that contains or will receive `.aidlc/`.
+AIDLC is distributed as a Python CLI. There is no server to deploy and no
+background process to keep alive. A production host needs Python, the AIDLC
+package, git access to the target repository, and authenticated provider CLIs
+for any non-dry-run work.
 
-## Install from a checkout
+## Install from a Checkout
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -e .
-# optional dev deps (pytest, ruff, etc.)
+```
+
+For development tools:
+
+```bash
 pip install -e ".[dev]"
 ```
 
-Entry point: `aidlc` → `aidlc.__main__:main`.
-
-## Install with pipx (isolated CLI)
-
-From a local clone (editable, with dev tools in the pipx venv):
+## Install with pipx
 
 ```bash
 pipx install --editable '/absolute/path/to/aidlc[dev]'
 ```
 
-Use an absolute path. Avoid running `pipx uninstall aidlc` from a directory whose name is `aidlc`, or pipx may treat the name as a path—run the uninstall from `$HOME` or another directory.
+Use an absolute path. If multiple `aidlc` commands exist on `PATH`, verify the
+one being used:
 
-After install, ensure `~/.local/bin` (or your pipx apps path) precedes other `aidlc` shims on `PATH` if multiple copies exist.
+```bash
+type -a aidlc
+aidlc --version
+```
 
-## Install from a wheel
+## Install from a Wheel
 
 ```bash
 python -m build
 pip install dist/aidlc-*.whl
 ```
 
-## CI / automation
+The build job in CI validates distributions with `twine check --strict` and
+smoke-installs the wheel.
 
-- Use a virtualenv or `pip install --user` as appropriate for your runner.
-- Run `aidlc run --project <repo>` from the repo root (or pass `--project`).
-- Non-interactive hosts should set provider auth in the environment your CLI expects (e.g. Codex login, Copilot token docs) or use `--dry-run` for smoke tests.
+## Running in Automation
 
-## Configuration
+From a runner or CI host:
 
-Runtime config is read from **the target project’s** `.aidlc/config.json`, not from the AIDLC install location. See [configuration.md](configuration.md).
+```bash
+aidlc run --project /path/to/target-repo
+```
+
+Operational requirements:
+
+- The target repo must have or receive `BRAINDUMP.md`.
+- The target repo must allow writes to `.aidlc/`.
+- Provider CLIs must already be installed and authenticated for non-dry-run
+  runs.
+- Runtime config is read from the target repo's `.aidlc/config.json` unless
+  `--config` is passed.
+
+Use `--dry-run` for smoke tests that should not call providers.
+
+## What Is Not Deployed
+
+AIDLC does not ship:
+
+- web routes
+- database migrations
+- cron jobs
+- workers
+- hosted APIs
+
+Autosync is a git commit/push helper that can run during implementation; it is
+not a deployment pipeline.

@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from aidlc.models import RunPhase, RunState, RunStatus
-from aidlc.runner import _completion_status, init_run, run_full, scan_project
+from aidlc.run_outcome import completion_status
+from aidlc.runner import init_run, run_full, scan_project
 from aidlc.state_manager import save_state
 
 
@@ -152,7 +153,7 @@ class TestCompletionStatus:
         state = RunState(run_id="r", config_name="c")
         state.issues = [_issue_stub("ISSUE-001", "failed")]
         state.total_issues = 1
-        assert _completion_status(state) == RunStatus.COMPLETE_WITH_BLOCKED_ISSUES
+        assert completion_status(state) == RunStatus.COMPLETE_WITH_BLOCKED_ISSUES
 
     def test_validation_skipped(self):
         state = RunState(run_id="r", config_name="c")
@@ -160,7 +161,7 @@ class TestCompletionStatus:
         state.total_issues = 1
         state.issues_implemented = 1
         state.validation_status = "skipped"
-        assert _completion_status(state) == RunStatus.COMPLETE_VALIDATION_SKIPPED
+        assert completion_status(state) == RunStatus.COMPLETE_VALIDATION_SKIPPED
 
     def test_recovered_failures(self):
         state = RunState(run_id="r", config_name="c")
@@ -169,7 +170,7 @@ class TestCompletionStatus:
         state.total_issues = 1
         state.issues_implemented = 1
         state.validation_status = "passed"
-        assert _completion_status(state) == RunStatus.COMPLETE_WITH_RECOVERED_FAILURES
+        assert completion_status(state) == RunStatus.COMPLETE_WITH_RECOVERED_FAILURES
 
     def test_clean(self):
         state = RunState(run_id="r", config_name="c")
@@ -177,7 +178,7 @@ class TestCompletionStatus:
         state.total_issues = 1
         state.issues_implemented = 1
         state.validation_status = "passed"
-        assert _completion_status(state) == RunStatus.COMPLETE_CLEAN
+        assert completion_status(state) == RunStatus.COMPLETE_CLEAN
 
 
 class TestRunFullAutoArchive:

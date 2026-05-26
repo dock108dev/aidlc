@@ -1,11 +1,13 @@
 # Local Development
 
-## Prerequisites
+## Requirements
 
 - Python 3.11+
-- At least one configured **provider CLI** (e.g. Claude, Codex, Copilot)
-  installed and authenticated for non–dry-run workflows, unless you only use
-  `dry_run` / `--dry-run`
+- A virtual environment for local development
+- Provider CLIs only when running non-dry-run lifecycles
+
+Dev dependencies are defined in `pyproject.toml` under
+`project.optional-dependencies.dev`.
 
 ## Setup
 
@@ -15,98 +17,89 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Optional dev test dependencies are defined in `pyproject.toml` under
-`project.optional-dependencies.dev` (`pytest`, `pytest-cov`, `ruff`).
+If your system Python enforces PEP 668, use the virtualenv workflow above
+instead of installing into the system environment.
 
-If your system Python enforces PEP 668 (externally managed environment),
-use the virtualenv workflow above.
-
-## Test Commands
+## Common Commands
 
 ```bash
 python -m pytest
+python -m pytest --cov=aidlc --cov-report=term-missing -q
+make lint
+make format
+make security
 ```
 
-Pytest configuration comes from `pyproject.toml`:
+`make lint` runs:
+
+- `ruff check aidlc tests`
+- `ruff format --check aidlc tests`
+- `python -m compileall -q aidlc`
+
+`make security` creates an ephemeral virtualenv, installs `.[dev]`, then runs
+`pip-audit` and `bandit` with the settings from `pyproject.toml`.
+
+## Test and Coverage Configuration
+
+Pytest configuration lives in `pyproject.toml`:
 
 - `testpaths = ["tests"]`
 - `addopts = "--tb=short"`
 
-## Running AIDLC Locally
+Coverage configuration also lives in `pyproject.toml`:
 
-Against this repository:
+- source package: `aidlc`
+- omit: `aidlc/configs/*`
+- fail-under: `91`
+
+CI runs coverage on Python 3.12 and regular tests on Python 3.11, 3.12, and
+3.13.
+
+## Running the CLI Locally
+
+Against the AIDLC checkout:
 
 ```bash
 aidlc precheck --project .
-aidlc run --project .
-```
-
-Common targeted commands:
-
-```bash
-aidlc run --project . --plan-only
-aidlc run --project . --implement-only
-aidlc run --project . --resume
-aidlc run --project . --skip-validation --skip-finalize
 aidlc run --project . --dry-run
 aidlc status --project .
 ```
 
-(Standalone `aidlc audit`, `aidlc finalize`, `aidlc validate`, `aidlc improve`
-and `aidlc plan` commands were removed in the core-focus audit.
-`finalize` and `validate` engines run inside `aidlc run`. The `audit`
-engine remains as a Python module (`aidlc/auditor.py`) but has no current
-CLI surface.)
+Against another repository:
+
+```bash
+aidlc init --project /path/to/target-repo
+aidlc run --project /path/to/target-repo
+```
+
+The target repository receives `.aidlc/` state and `BRAINDUMP.md`; the AIDLC
+checkout does not own that target state.
 
 ## Packaging
 
-`aidlc` is a Python package with a console entry point:
-
-- script: `aidlc`
-- module target: `aidlc.__main__:main`
-
-Build metadata is defined in `pyproject.toml` (`setuptools.build_meta`
-backend).
-
-## Repo Layout Notes
-
-- runtime state and generated artifacts are written under `.aidlc/` in the
-  **target** repository (the project you're running aidlc against), not in
-  the aidlc install location
-- bundled planning templates ship as package data from
-  `aidlc/project_template/**`
-
-## Lint and format (Ruff)
-
-With dev dependencies installed (`pip install -e ".[dev]"`):
+The package is built with setuptools:
 
 ```bash
-make lint    # check-only; matches CI and should never modify files
-make format  # local fixer; writes formatting changes
+python -m build
+twine check --strict dist/*
 ```
 
-CI runs `make lint` only (check mode). If CI fails on formatting, run
-`make format`, commit those edits, and rerun.
+The console entry point is `aidlc = aidlc.__main__:main`.
 
-Settings live in `pyproject.toml` under `[tool.ruff]`. There is no
-required pre-commit hook in this repository.
+Package data includes:
 
-## Coverage
+- `aidlc/configs/*.json`
+- `aidlc/project_template/**/*.md`
 
-CI enforces a line-coverage floor on the `aidlc` package
-(`tool.coverage.report.fail_under` in `pyproject.toml`). Run locally:
+## CI
 
-```bash
-python -m pytest --cov=aidlc --cov-report=term-missing -q
-```
+GitHub Actions workflow `.github/workflows/ci.yml` runs:
 
-## pipx (optional)
+- lint and bytecode compile
+- dependency audit and Bandit
+- dependency review on pull requests
+- tests on Python 3.11, 3.12, and 3.13
+- coverage upload from Python 3.12
+- wheel/sdist build, `twine check`, and smoke install
 
-To install the CLI in an isolated environment while hacking on this repo:
-
-```bash
-pipx install --editable '/absolute/path/to/this/repo[dev]'
-```
-
-See [deployment.md](deployment.md) for caveats (PATH, multiple `aidlc`
-binaries).
+There is no required pre-commit hook in this repository.

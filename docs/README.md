@@ -1,25 +1,21 @@
-# Documentation index
+# Documentation Index
 
-Project documentation for the **AIDLC** CLI (this repository). Planning
-templates copied into **consumer** repositories ship under
-[`aidlc/project_template/`](../aidlc/project_template/).
+This directory contains the current operational documentation for the AIDLC CLI.
+The repository root intentionally keeps only the short `README.md`.
 
-## Project overview
+## Current Guides
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | High-level design: what the system is, how the pieces fit, module map |
-| [DESIGN.md](DESIGN.md) | Per-issue design rationale (Problem → Approach → Touchpoints → Tests). Historical record. |
-| [CHANGELOG.md](CHANGELOG.md) | Per-fix change log, grouped by tier |
+| Document | Purpose |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | What AIDLC does today, lifecycle phases, package structure, and data flow. |
+| [cli-lifecycle.md](cli-lifecycle.md) | CLI commands, run modes, state transitions, validation, finalization, and generated artifacts. |
+| [configuration.md](configuration.md) | Runtime config loading, provider routing, validation, autosync, finalization, and environment variables. |
+| [local-development.md](local-development.md) | Local setup, tests, linting, security checks, coverage, and packaging commands. |
+| [deployment.md](deployment.md) | Installing and running the CLI from a checkout, pipx, wheel, or CI host. |
+| [known-limitations.md](known-limitations.md) | Intentional non-goals and operational constraints. |
+| [deprecations.md](deprecations.md) | Removed commands, config keys, and compatibility policy. |
 
-## Guides
+## Packaged Templates
 
-| Document | Description |
-|----------|-------------|
-| [cli-lifecycle.md](cli-lifecycle.md) | Subcommands, run phases, run modes, stop conditions |
-| [configuration.md](configuration.md) | Config file, defaults, production profile, env |
-| [local-development.md](local-development.md) | Setup, tests, Ruff, pipx |
-| [deployment.md](deployment.md) | Install wheel / venv / CI usage |
-| [limitations.md](limitations.md) | Non-goals and tradeoffs |
-| [deprecations.md](deprecations.md) | Removed or discouraged behavior |
-| [MIGRATION-existing-projects.md](MIGRATION-existing-projects.md) | Upgrading existing aidlc'd repos |
+`aidlc/project_template/BRAINDUMP.md` is copied into target repositories by
+`aidlc init` when `BRAINDUMP.md` is missing.

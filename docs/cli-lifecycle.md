@@ -1,288 +1,193 @@
 # CLI Lifecycle
 
-## Surface
+This document describes the current CLI behavior implemented by
+`aidlc/cli_parser.py`, `aidlc/__main__.py`, and `aidlc/runner.py`.
 
-The CLI is intentionally narrow:
+## Commands
 
 | Command | Purpose |
 |---|---|
-| `aidlc init` | Scaffold `.aidlc/` and `BRAINDUMP.md` (the customer's voice) |
-| `aidlc precheck` | Verify `BRAINDUMP.md` and `.aidlc/` are in place |
-| `aidlc run` | Run the full lifecycle |
-| `aidlc status` | Show last run summary |
-| `aidlc reset` | Clear stale `.aidlc/` working state |
-| `aidlc accounts` / `provider` / `usage` / `config` | Admin |
+| `aidlc init` | Create `.aidlc/config.json` and scaffold `BRAINDUMP.md` if missing. |
+| `aidlc precheck` | Verify `BRAINDUMP.md` and `.aidlc/config.json`; auto-create config when missing. |
+| `aidlc run` | Run the lifecycle. |
+| `aidlc status` | Show the latest run status and issue breakdown. |
+| `aidlc summarize-runs` | Summarize every `state.json` found under one or more paths. |
+| `aidlc reset` | Delete generated `.aidlc/` working state. |
+| `aidlc accounts` | Add, list, remove, and validate provider accounts. |
+| `aidlc provider` | List, enable, disable, authenticate, or reconnect providers. |
+| `aidlc usage` | Summarize provider usage by provider, phase, model, or account. |
+| `aidlc config` | Show, edit, or interactively update `.aidlc/config.json`. |
 
-`audit`, `finalize`, `improve`, `plan`, and `validate` were removed in the
-core-focus audit:
-- `finalize` runs inside `aidlc run` (use `--skip-finalize` to skip cleanup
-  passes; pick a subset with `--passes`).
-- `validate` runs inside `aidlc run` (use `--skip-validation` to skip).
-- `improve` duplicated `run`; the way to focus a run on a concern is to
-  write it into `BRAINDUMP.md`.
-- `plan` was an orthogonal multi-doc generator; users now write
-  `BRAINDUMP.md` and the planner phase consumes it.
-- `audit` had no equivalent integration into `aidlc run`. The auditor module
-  (`aidlc/auditor.py`) remains as an internal Python API but has no current
-  CLI surface — see [deprecations.md](deprecations.md).
+Removed commands are listed in [deprecations.md](deprecations.md).
 
-## `aidlc run` Phase Order
+## Precheck and Init
 
-`aidlc run` orchestrates a stateful run. Phase values persisted in state match
-`RunPhase` in `aidlc.models` (enum values are lowercase with underscores,
-e.g. `plan_finalization`).
+`BRAINDUMP.md` at the target repository root is the only required user doc.
+`aidlc precheck` and `aidlc run` treat a missing braindump as not ready.
 
-Typical progression:
+`aidlc init` creates:
 
-1. **`init`** — initial phase before any substantive work in a fresh run
-2. **`scanning`** — repo + documentation scan via `ProjectScanner`
-3. **`discovery`** — single pre-planning model pass; reads `BRAINDUMP.md`
-   and the repo, writes `.aidlc/discovery/findings.md` + `.aidlc/discovery/topics.json`.
-   **Idempotent**: skipped on resume if both artifacts already exist.
-4. **`research`** — one model call per discovery-nominated topic; writes
-   `.aidlc/research/<slug>.md` per entry. **Skip-if-exists per topic**.
-5. **`planning`** — iterative `create_issue` / `update_issue` action cycles
-6. **`plan_finalization`** — planning wind-down near budget end
-7. **`implementing`** — issue-by-issue implementation
-8. **`verifying`** — verification pass over implemented issues
-9. **`validating`** (optional) — test/fix loop
-10. **`finalizing`** (optional) — `docs` and `cleanup` passes
-11. **`reporting`** → **`done`**
+- `.aidlc/config.json`
+- `.aidlc/issues/`
+- `.aidlc/runs/`
+- `.aidlc/reports/`
+- `BRAINDUMP.md` from `aidlc/project_template/BRAINDUMP.md`, only if the file
+  does not already exist
 
-## Run Modes
+Init also appends ignore entries for `.aidlc/runs/`, `.aidlc/reports/`, and
+`.aidlc/_archive/` when the target repository has no broad `.aidlc/` ignore.
 
-- **Default:** `aidlc run`
-- **Plan-only:** `aidlc run --plan-only`
-- **Implement-only:** `aidlc run --implement-only`
-- **Resume latest:** `aidlc run --resume`
-  - When the saved run is already past planning (`implementing` and later
-    phases), resume **does not start a new planning cycle**. The scan step
-    still runs to refresh context, then the prior phase is restored.
-  - A short **resume reconcile** pass *can* mark issues as implemented
-    when their id appears in committed source. **Off by default** —
-    foundation docs and stale Claude comments referencing planned issue
-    IDs both look identical to evidence-of-completion to the heuristic,
-    and a false flip silently skips real work the next pass should have
-    done. False *negatives* are cheap (re-run the issue); false
-    *positives* are expensive. Opt in with `resume_reconcile_enabled:
-    true` if your project doesn't reference issue IDs outside completed
-    implementation commits. See `docs/configuration.md` for the full
-    guard-rail list.
-  - If the latest run shows `status=running` or `interrupted` and
-    `last_updated` is older than 1 hour, it is surfaced as `abandoned` and
-    you are prompted to resume or start fresh.
-- **Retry transient failures:** `aidlc run --retry-failed` reopens issues
-  whose `failure_cause` is `failed_token_exhausted` or `failed_unknown`
-  before resuming. Issues with cause `failed_dependency` or
-  `failed_test_regression` are left for manual review.
-- **Dry run (no provider execution):** `aidlc run --dry-run`
-- **Skip optional stages:** `--skip-validation`, `--skip-finalize` (not
-  allowed in production profile)
-- **Pick finalization passes:** `--passes docs` or `--passes docs,cleanup`
-- **Revert planning snapshot:** `--revert-to-cycle <n>`
+## Fresh Runs, Resume, and Archive
 
-## `aidlc reset`
+A plain `aidlc run` starts from a clean AIDLC working state. Before the new run
+is initialized, prior `.aidlc/issues/`, `.aidlc/runs/`, `.aidlc/reports/`,
+`.aidlc/discovery/`, `.aidlc/research/`, and related run artifacts are moved
+under `.aidlc/_archive/<timestamp>/`.
 
-Clears stale run state without nuking your config.
+Archive is skipped when a flag needs prior state:
 
-- Default: deletes `.aidlc/runs/`, `reports/`, `issues/`, `session/`,
-  `discovery/`, `research/`, `audit_result.json`, `planning_index.md`,
-  `CONFLICTS.md`, `run.lock`. **Preserves** `.aidlc/config.json`.
-- `--all`: also deletes `config.json` (requires re-init and re-auth).
-- `--keep-issues`: preserves `.aidlc/issues/` for cases where you want to
-  reset run state but keep the planned backlog.
-- `--dry-run`: prints what would be deleted; deletes nothing.
-- `--yes` / `-y`: skips the confirmation prompt.
+- `--resume`
+- `--implement-only`
+- `--retry-failed`
+- `--reset-failed-attempts`
 
-Use this instead of `rm -rf .aidlc/`.
+`aidlc run --resume` resumes the latest non-terminal run. If the latest run is
+already terminal (`complete*`, `failed`, or `abandoned`), AIDLC starts a new run.
+If a saved `running` or `interrupted` run is older than the abandonment
+threshold, it is surfaced as `abandoned`.
 
-## Precheck Behavior
+## Run Modes and Flags
 
-- Precheck runs automatically before `run` except in `--resume` and
-  `--implement-only`.
-- `BRAINDUMP.md` at the project root is **required**. Without it, the run
-  exits early — see `aidlc/precheck.py`.
-- `.aidlc/` and `.aidlc/config.json` are auto-created when missing.
-- `--skip-precheck` is intentionally unsupported.
+| Flag | Behavior |
+|---|---|
+| `--plan-only` | Stop after planning. |
+| `--implement-only` | Skip planning and implement existing `.aidlc/issues/`. |
+| `--resume` | Resume latest active run. |
+| `--dry-run` | Avoid provider calls; cycle caps keep the smoke path bounded. |
+| `--plan-budget <duration>` | Override planning budget, e.g. `30m` or `2h`. |
+| `--max-plan-cycles N` | Override planning cycle cap; `0` means unlimited. |
+| `--max-impl-cycles N` | Override implementation cycle cap; `0` means unlimited. |
+| `--skip-validation` | Skip post-implementation validation; rejected in production profile. |
+| `--skip-finalize` | Skip finalization; rejected in production profile. |
+| `--passes docs,cleanup` | Select finalization passes. Valid pass names are `docs` and `cleanup`. |
+| `--revert-to-cycle N` | Restore a planning cycle snapshot and exit. |
+| `--retry-failed` | Reopen failed issues before implementation. |
+| `--reset-failed-attempts` | Reset outage-marked failed attempts for retry. |
+
+## Phase Order
+
+`aidlc run` persists these phases in `state.json`:
+
+1. `init`
+2. `scanning`
+3. `discovery`
+4. `research`
+5. `planning`
+6. `plan_finalization`
+7. `implementing`
+8. `verifying`
+9. `validating`
+10. `finalizing`
+11. `reporting`
+12. `done`
+
+On resume after planning, the scan step still runs to refresh context, then the
+saved post-planning phase is restored instead of starting a new planning pass.
 
 ## Discovery and Research
 
-Discovery and research are pre-planning model passes that write
-**tool-generated artifacts** under `.aidlc/` (not under the target
-repo's `docs/` tree — they are AIDLC working state, not user-authored
-documentation):
+Discovery runs one provider call and writes:
 
-- **Discovery** (`aidlc/discovery.py`): one model call. Reads `BRAINDUMP.md`
-  + a repo summary. Writes:
-  - `.aidlc/discovery/findings.md` — markdown findings
-  - `.aidlc/discovery/topics.json` — JSON list of `{topic, question, scope}`
-    entries the research phase should investigate
-- **Research** (`aidlc/research_phase.py`): one model call per topic in
-  `topics.json`. Writes `.aidlc/research/<slug>.md`. Per-topic failures log a
-  warning but do not fail the run; the next topic continues.
+- `.aidlc/discovery/findings.md`
+- `.aidlc/discovery/topics.json`
 
-Both phases are **idempotent**: existing artifacts are not regenerated unless
-deleted. This is what makes resume cheap.
+Research reads `topics.json` and writes one `.aidlc/research/<slug>.md` file
+per topic. Existing discovery/research artifacts are reused unless they are
+missing or known failure placeholders.
 
-The planner reads the discovery findings and lists `.aidlc/research/*.md`
-filenames in its prompt so it can reference researched answers without
-re-deriving them.
+## Planning
 
-## Planning Semantics
-
-The planner emits two action types (defined in `PLANNING_ACTION_TYPES`):
+Planning emits only the action types defined in `aidlc/schemas.py`:
 
 - `create_issue`
 - `update_issue`
 
-Planner completion is controlled by cycle outcomes and guards:
+The planner reads `BRAINDUMP.md`, discovery findings, research artifacts,
+existing issues, and selected project docs. Dependency cleanup runs after each
+planning cycle and removes invalid or cyclic issue edges.
 
-- budget/cycle caps
-- a no-new-issue cycle (no actions, or only `update_issue` actions)
-  schedules **verify mode** for the next cycle. Verify swaps the normal
-  prompt for an explicit coverage-check prompt that walks through
-  BRAINDUMP, discovery findings, research files, and the existing issue
-  set. If verify also returns no new issues, planning completes. If
-  verify surfaces missing work, the planner files those issues and
-  returns to normal mode — the **next** no-new-issue cycle schedules
-  verify again, until a verify pass returns no new work (or budget /
-  cycle caps stop the loop)
-- explicit `planning_complete` accepted only when completion is offered and
-  core planning docs are sufficient
-- consecutive-cycle failure ceiling (`max_consecutive_failures`)
-- action-failure ratio threshold (`planning_action_failure_ratio_threshold`)
-- **CLI threading** (default on via `claude_planning_cli_threading`): the router passes the active provider’s continuation hint — Claude `--session-id` then `--resume`, Copilot `--resume=`, or Codex `exec resume <thread_id>` once a `thread.started` id has been captured from JSONL — and pins `model_override` from the first successful routed call for later planning cycles in the same run.
-
-The planner's prompt also includes:
-
-- **Discovery findings + research file index** when present (always retained
-  under prompt-budget pressure).
-- **Prior Run — Already Done (do not redo)**: a section listing prior
-  `.aidlc/issues/` with status (verified / implemented / failed / pending)
-  and a one-line implementation-notes excerpt.
-- **Foundation Docs (committed — incremental changes only)**: the first
-  ~2 KB of each of `ROADMAP.md`, `ARCHITECTURE.md`, `DESIGN.md` if present
-  at the **target repo root**. Other optional context refs the planner reads
-  if present: `README.md`, `STATUS.md`, `CLAUDE.md`.
-
-The "prior issues" and "foundation docs" sections are dropped first under
-prompt-budget pressure (so the schema/instructions remain intact).
-
-### Dependency-graph normalization
-
-Each planning cycle ends with `_sanitize_issue_dependencies()`, which:
-
-- drops non-string / empty / self / unknown / duplicate dependency edges
-- detects cycles
-- breaks each cycle by removing one edge (heuristic: pick the
-  lower-priority / heavier-dependency source)
-
-A `logger.warning` is emitted for every change. Issue markdown is rewritten
-to reflect the cleaned graph. See `aidlc/planner_dependency_graph.py`.
-
-### Doc-gap detection (opt-in)
-
-Set `doc_gap_detection_enabled: true` in `.aidlc/config.json` to let the
-scanner surface TBD/placeholder markers as planning input. **Off by
-default** because it created spurious issues on mature repos.
+Planning completion uses verify mode: after a cycle creates no new issues, the
+next cycle prompts for coverage verification. If verify mode also finds no new
+work, planning ends. If it creates issues, normal planning continues.
 
 ## Implementation and Verification
 
-- issues are sorted by dependency and priority via
-  `aidlc/implementer_issue_order.py:sort_issues_for_implementation`, which
-  topologically orders and **automatically breaks any remaining cycles**
-  (one edge per cycle, with a `logger.warning`).
-- implementation success normally comes from the model's structured JSON
-  output, which includes the optional `existing_callers_checked: [<file:line>, …]`
-  field. **Fallback:** when the model wrote files via tools but the JSON
-  envelope is missing or garbled (mid-output timeout, trailing prose,
-  duplicated JSON blocks), the implementer trusts the git diff and
-  proceeds — `files_changed` is populated from `git diff` and the test
-  step decides success. Throwing the work away and retrying the entire
-  issue would cost ~$5 per attempt for no functional benefit; the test
-  step is the real gate.
-- tests are run when configured or auto-detected.
-- **CLI threading** (default on via `claude_implementation_cli_threading`): each issue **attempt** uses `claude_sessions/impl_*_aNN.continuation.json` (Claude + Copilot UUIDs, Codex thread id after the first Codex call); the main implementation prompt and any test-fix prompt reuse that map, with the model pinned after the first successful routed call in that attempt. A new issue or retry attempt starts a new continuation file.
-- final verification marks implemented issues as verified and can fail/pause
-  on test failures (`fail_on_final_test_failure`).
-- optional strict git change verification can fail implementations
-  (`strict_change_detection`).
+Implementation works issues in dependency order. Transient failed issues can be
+reopened automatically, and `--retry-failed` can force reopening. Provider
+continuation metadata is stored under the run directory so a retry or test-fix
+prompt can continue the same provider thread for an issue attempt.
 
-### Early stop and resume
+Verification runs after implementation and promotes implemented issues to
+verified when the final checks pass.
 
-When implementation stops with work remaining (token exhaustion that survived
-the router's fallback chain, dependency cycle, consecutive failures), the
-implementer logs a single visually-distinct stop-reason line and a
-`RESUME WITH:` instruction, then exits.
+## Validation
 
-### Interrupted-attempt recovery
+Validation is optional and enabled by default. It detects a progressive test
+profile from the project type and config:
 
-If a run is killed mid-attempt (Ctrl-C, SIGTERM, OOM, hard timeout), the
-issue's state is persisted with `status=in_progress` and `attempt_count`
-already incremented (the increment happens at the START of an attempt).
-On resume, the implementer detects this and **restarts the same attempt**
-rather than incrementing the counter again — one killed attempt should
-not consume two of `max_attempts`.
+- build
+- unit
+- integration
+- e2e
 
-The resume warning includes a note that the working tree may contain
-partial changes from the killed attempt; the model receives whatever the
-tree currently shows and decides whether to extend or revert. AIDLC does
-not snapshot/restore the working tree itself — that stays under your git
-control.
-
-By default, finalization **does not** auto-run on early stop — the prior
-behavior burned more budget at exactly the moment we wanted to stop cleanly.
-To opt back in, set `implementation_finalize_on_early_stop: true` in
-`.aidlc/config.json`; that runs the `cleanup` pass.
-
-Failed issues record a `failure_cause`: `failed_token_exhausted`,
-`failed_dependency`, `failed_test_regression`, or `failed_unknown`. On the
-next implementation cycle, transient causes (`failed_token_exhausted`,
-`failed_unknown`) are auto-reopened to `pending`. Use `--retry-failed` to
-force-reopen all causes.
-
-### Periodic cleanup
-
-When `cleanup_passes_every_cycles > 0` (default 10) and `finalize_enabled`
-is true, the implementer runs the configured `cleanup_passes_periodic`
-subset (default `["cleanup"]`) every N cycles. This runs the
-finalizer mid-implementation to keep code health high. See
-`aidlc/implementer_finalize.py`.
-
-## Validation Loop
-
-When enabled, validator runs test tiers (`build`, `unit`, `integration`,
-`e2e`) and:
-
-- parses failures
-- creates fix issues
-- re-implements fixes
-- re-tests up to `validation_max_cycles`
-
-Validation mode is SSOT-only:
-
-- `test_profile_mode` must be `"progressive"`
-- non-progressive modes raise at construction time
-
-In strict settings, unstable validation pauses the run.
+Progressive mode stops on the first failing tier. Validation records
+`validation_status` as `passed`, `skipped`, `failed`, or `incomplete`. In
+strict settings, missing tests or incomplete validation can pause the run.
 
 ## Finalization
 
-`finalize_passes` defaults to `null` (run all available passes). Available
-passes: `docs`, `cleanup`. The legacy `ssot`, `security`, `abend` passes
-were removed in the core-focus audit because their semantics had drifted;
-new passes will be reintroduced once their prompts and acceptance criteria
-are nailed down.
+Finalization is optional and enabled by default. Available passes are:
 
-During finalization, AIDLC also refreshes config detections into `.aidlc/config.json`.
+- `cleanup` - code cleanup prompt with diff context
+- `docs` - markdown documentation prompt
 
-## Concurrency and State
+Periodic cleanup can run during implementation based on
+`cleanup_passes_every_cycles`; end-of-run finalization runs after validation.
 
-- one active run per project via `.aidlc/run.lock`
-- run state persists under `.aidlc/runs/<run_id>/state.json`
-- checkpoint and report artifacts are written throughout the run
-- `atexit` + `SIGINT`/`SIGTERM` handlers flip `state.status` from `running`
-  → `interrupted` on non-clean exit
-- on resume, any `running`/`interrupted` run with `last_updated` older than
-  1 hour is surfaced as `abandoned` (yellow ABANDONED badge in
-  `aidlc status`); user is offered resume or fresh-start
+## Terminal Outcomes
+
+Current runs can finish with specific complete statuses:
+
+| Status | Meaning |
+|---|---|
+| `complete_clean` | No unresolved issues, validation passed or was not required, and no recovered failures were recorded. |
+| `complete_with_recovered_failures` | Work completed, but provider failures, issue retries, validation fixes, or earlier failed validation attempts occurred. |
+| `complete_validation_skipped` | Work completed but validation was skipped by flag/config or had no configured tests. |
+| `complete_validation_failed_allowed` | Validation failed or remained incomplete, but strict settings did not pause the run. |
+| `complete_with_blocked_issues` | One or more issues remain pending, in progress, blocked, or failed. |
+| `complete` | Legacy complete status still readable from older run state files. |
+
+`aidlc summarize-runs` scans active and archived runs and prints compact
+columns for outcome, issue count, validation, provider failures, time, and next
+action.
+
+## Reset
+
+`aidlc reset` deletes generated AIDLC state from the target repository.
+
+Default reset deletes:
+
+- `.aidlc/runs/`
+- `.aidlc/reports/`
+- `.aidlc/issues/`
+- `.aidlc/session/`
+- `.aidlc/discovery/`
+- `.aidlc/research/`
+- `.aidlc/audit_result.json`
+- `.aidlc/planning_index.md`
+- `.aidlc/CONFLICTS.md`
+- `.aidlc/run.lock`
+- `.aidlc/_archive/`
+
+It preserves `.aidlc/config.json` unless `--all` is used. `--keep-issues`
+preserves `.aidlc/issues/`.

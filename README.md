@@ -1,50 +1,60 @@
 # AIDLC
 
-Python CLI for an **AI-assisted development lifecycle** inside a target
-repository.
+AIDLC is a Python CLI for running an AI-assisted development lifecycle inside a
+target repository.
 
-The flow is intentionally narrow:
+The workflow is intentionally narrow:
 
-1. The customer writes `BRAINDUMP.md` — what to build, what matters.
-2. `aidlc run` scans the repo, plans work as issues, implements them with
-   provider-backed agents, validates, and reports.
+1. Write `BRAINDUMP.md` at the target repository root.
+2. Run `aidlc run`.
+3. AIDLC scans the repo, plans work as issues, implements, validates,
+   finalizes, and writes run reports under `.aidlc/`.
 
-For new repos, the BRAINDUMP describes the product. For existing repos, it
-describes what to add or change next. Either way, AIDLC works from the
-braindump plus whatever supporting docs are present.
-
-## Run locally
+## Run Locally
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -e ".[dev]"
 
-aidlc init --project /path/to/target-repo   # scaffolds .aidlc/ + BRAINDUMP.md
-# edit BRAINDUMP.md to describe what you want built
-aidlc run  --project /path/to/target-repo
+aidlc init --project /path/to/target-repo
+# edit /path/to/target-repo/BRAINDUMP.md
+aidlc run --project /path/to/target-repo
 ```
 
-Isolated CLI install (optional):
+Useful local checks:
 
 ```bash
-pipx install --editable '/path/to/aidlc/checkout[dev]'
+make lint
+python -m pytest -q
+make security
 ```
 
-- **Python:** 3.11+
-- **Providers:** Configure Claude CLI, OpenAI Codex CLI, GitHub Copilot CLI, etc. per the **target repo’s** `.aidlc/config.json` (see [docs/configuration.md](docs/configuration.md)). Use `dry_run: true` or `--dry-run` to exercise flows without calling a provider.
+## Runtime Basics
 
-## Lint and format
+- Python 3.11+ is required.
+- The installed command is `aidlc`.
+- Runtime state is written to the target repository's `.aidlc/` directory.
+- Default provider config enables Codex/OpenAI and disables Claude/Copilot.
+- Non-dry-run work requires the relevant provider CLI to be installed and
+  authenticated.
+- `aidlc run --dry-run` exercises the lifecycle without provider calls.
 
-```bash
-make lint    # check-only: ruff lint + ruff format --check (same as CI)
-make format  # write formatting changes to aidlc/ and tests/
-```
+## Distribution
+
+AIDLC can run from an editable checkout, pipx install, or built wheel. There is
+no server process to deploy.
+
+See [docs/deployment.md](docs/deployment.md) for install and automation notes.
 
 ## Documentation
 
-All guides and reference material (architecture, lifecycle, config, deployment, migration) are in **[`docs/`](docs/README.md)**. Start at the **[documentation index](docs/README.md)**.
+Detailed docs live in [docs/](docs/README.md):
 
-## Deploy / distribute
-
-Install from a git checkout or a built wheel; entry point `aidlc`. See **[docs/deployment.md](docs/deployment.md)**.
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [cli-lifecycle.md](docs/cli-lifecycle.md)
+- [configuration.md](docs/configuration.md)
+- [local-development.md](docs/local-development.md)
+- [deployment.md](docs/deployment.md)
+- [known-limitations.md](docs/known-limitations.md)
+- [deprecations.md](docs/deprecations.md)
